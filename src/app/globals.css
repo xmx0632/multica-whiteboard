@@ -76,3 +76,46 @@ body {
     opacity: 1;
   }
 }
+
+/* —— ZOO-152 手机横屏适配（粗指针 + 横向 + 矮视口；桌面 / 竖屏零变化）——
+ * 高度上限与 src/lib/landscape.ts 的 PHONE_LANDSCAPE_MAX_HEIGHT 同源（500px）：
+ * 覆盖 iPhone Pro Max 横屏（430），排除平板横屏（≥ 680）。 */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  /* 工具栏：左侧竖排双列 → 底部横排单列，左侧整幅让给画布
+   * （Tailwind v4 位移走原生 translate 属性，覆盖须同属性；transform 不生效） */
+  .touch-toolbar {
+    display: flex;
+    flex-direction: row;
+    top: auto;
+    bottom: 0.75rem;
+    left: 50%;
+    translate: -50% 0;
+  }
+  /* 顶部菜单：不换行，超宽横向滚动（保单行，画布纵向不被挤占） */
+  .touch-menubar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .touch-menubar::-webkit-scrollbar {
+    display: none;
+  }
+  /* 右侧面板：中部常驻 → 右下浮层（默认收起，展开盖在画布上，画布触点即收）。
+   * 底部抬升 4.25rem 让位折叠 chip；宽度 / 高度收窄 + 内滚，画布占屏比最大化 */
+  .touch-side-panel {
+    top: auto;
+    bottom: 4.25rem;
+    translate: none;
+    width: min(240px, calc(100vw - 12rem));
+    max-height: calc(100dvh - 9.5rem);
+    overflow-y: auto;
+  }
+  /* EquationEditor 中段内滚区：横屏高度预算紧张，滚动改由面板整体承担 */
+  .touch-scroll {
+    max-height: none;
+  }
+  /* 历史弹窗：横屏宽度充裕，放宽窄屏 264px 上限 */
+  .touch-modal {
+    width: min(480px, calc(100vw - 2rem));
+  }
+}

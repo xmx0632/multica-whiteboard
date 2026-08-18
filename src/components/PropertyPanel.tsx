@@ -7,12 +7,14 @@
  * 3. 其余 → 既有工具默认面板（零回归）。
  * 错误占位元素经「重新编辑方程」进原位替换流（editingId，原型决策 4）。
  */
-import { useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
 import { COLORS, MathPlotElement, WhiteboardElement } from '@/lib/types';
 import { validateEquation } from '@/lib/math/validate';
 import { mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
+import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
+import { usePhoneLandscape } from '@/lib/usePhoneLandscape';
 import EquationEditor from './math/EquationEditor';
 import MathPlotParams, { type MathPlotParamsValue } from './math/MathPlotParams';
 
@@ -36,14 +38,86 @@ export default function PropertyPanel() {
       ? elements.find((e) => e.id === editingId) ?? null
       : null;
 
+  // —— ZOO-152 手机横屏：面板可折叠（默认收起为 chip，方程 / 参数面板出现时自动展开）——
+  const phoneLandscape = usePhoneLandscape();
+  const [fold, dispatchFold] = useReducer(nextPanelFold, 'unfolded');
+  const panelState: PanelState =
+    activeTool === 'equation' || editingEl
+      ? 'equation'
+      : selectedEl?.type === 'mathPlot'
+        ? 'mathplot'
+        : 'tool';
+
+  // 旋转进入 / 离开手机横屏：默认收起 / 恢复常驻
+  useEffect(() => {
+    dispatchFold({ type: 'phone-landscape', active: phoneLandscape });
+  }, [phoneLandscape]);
+
+  // 面板态切换：方程 / 参数面板出现时自动展开（ƒ 工具点开必须见到编辑器）
+  const prevPanelStateRef = useRef(panelState);
+  useEffect(() => {
+    if (prevPanelStateRef.current !== panelState) {
+      prevPanelStateRef.current = panelState;
+      dispatchFold({ type: 'panel-state', panel: panelState });
+    }
+  }, [panelState]);
+
+  // 画布触点（Canvas pointerdown 派发）：颜色面板自动收起
+  useEffect(() => {
+    const onCanvasInteract = () => dispatchFold({ type: 'canvas-interact', panel: prevPanelStateRef.current });
+    window.addEventListener(CANVAS_INTERACT_EVENT, onCanvasInteract);
+    return () => window.removeEventListener(CANVAS_INTERACT_EVENT, onCanvasInteract);
+  }, []);
+
+  const folded = phoneLandscape && fold === 'folded';
+
+  /**
+   * 折叠包装（ZOO-152）：仅手机横屏收起时隐藏面板本体、只渲染底部 chip
+   * （tool 态显示当前触笔色，方程 / 参数态显示对应图标）；桌面 / 竖屏原样透传。
+   */
+  const renderFoldable = (panel: React.ReactNode) => (
+    <>
+      <div className={folded ? 'hidden' : undefined}>{panel}</div>
+      {/* 展开态收起钮（贴面板左下角）：方程 / 参数面板不吃「画布触点即收」，需显式收起出口 */}
+      {!folded && phoneLandscape && (
+        <button
+          type="button"
+          aria-label="收起面板"
+          onClick={() => dispatchFold({ type: 'toggle' })}
+          className="touch-target absolute right-[264px] bottom-[68px] w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 text-gray-500 flex items-center justify-center active:bg-gray-100 z-10"
+        >
+          ⌄
+        </button>
+      )}
+      {folded && (
+        <button
+          type="button"
+          aria-label={panelState === 'tool' ? '展开触笔颜色面板' : panelState === 'equation' ? '展开方程面板' : '展开参数面板'}
+          onClick={() => dispatchFold({ type: 'toggle' })}
+          className="touch-target absolute right-3 bottom-3 z-20 w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 flex items-center justify-center active:bg-gray-100"
+        >
+          {panelState === 'tool' ? (
+            <span className="w-6 h-6 rounded-full border-2 border-gray-300" style={{ backgroundColor: strokeColor }} />
+          ) : panelState === 'equation' ? (
+            <span className="font-serif italic text-blue-500 text-lg leading-none">ƒ</span>
+          ) : (
+            <span className="text-gray-600 text-base leading-none">⚙</span>
+          )}
+        </button>
+      )}
+    </>
+  );
+
   // —— 态 1：方程编辑器（equation 工具新建）——
   if (activeTool === 'equation') {
-    return <EquationEditor onConfirm={(payload) => requestMathPlotInsert(payload)} />;
+    return renderFoldable(
+      <EquationEditor onConfirm={(payload) => requestMathPlotInsert(payload)} />,
+    );
   }
 
   // —— 态 1.5：原位替换（错误占位 / 既有元素「重新编辑方程」）——
   if (editingEl && editingEl.type === 'mathPlot') {
-    return (
+    return renderFoldable(
       <EquationEditor
         key={editingEl.id}
         initialEquation={editingEl.equation}
@@ -53,7 +127,7 @@ export default function PropertyPanel() {
           setEditingId(null);
           setSelected(editingEl.id);
         }}
-      />
+      />,
     );
   }
 
@@ -125,7 +199,7 @@ export default function PropertyPanel() {
       }
     };
 
-    return (
+    return renderFoldable(
       <MathPlotParams
         value={value}
         onChange={handleParamsChange}
@@ -138,7 +212,7 @@ export default function PropertyPanel() {
         }}
         onDelete={() => deleteElement(el.id)}
         onRequestEdit={() => setEditingId(el.id)}
-      />
+      />,
     );
   }
 
@@ -146,8 +220,8 @@ export default function PropertyPanel() {
   const showFill = ['rectangle', 'circle'].includes(activeTool);
   const showFont = activeTool === 'text';
 
-  return (
-    <div className="touch-panel absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
+  return renderFoldable(
+    <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div>
         <label className="text-xs font-medium text-gray-500 mb-1 block">Stroke</label>
         <div className="flex flex-wrap gap-1">
@@ -225,6 +299,6 @@ export default function PropertyPanel() {
           />
         </div>
       )}
-    </div>
+    </div>,
   );
 }

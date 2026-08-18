@@ -6,6 +6,7 @@ import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, h
 import { WhiteboardElement, PathElement, Point, MathPlotElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt } from '@/lib/gestures';
+import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { v4 as uuidv4 } from 'uuid';
 
 /** 活跃指针记录（ZOO-144 Pointer 输入层）：坐标为画布 rect 相对屏幕 px */
@@ -190,6 +191,9 @@ export default function Canvas() {
     if (!canvas) return;
     const local = getLocalPoint(e);
     activePointersRef.current.set(e.pointerId, { x: local.x, y: local.y, type: e.pointerType });
+
+    // ZOO-152：画布触点广播（手机横屏颜色面板自动收起；桌面 / 竖屏无折叠 UI，空操作）
+    window.dispatchEvent(new CustomEvent(CANVAS_INTERACT_EVENT));
 
     // 捕获指针：手势跨出画布边界仍持续到抬指（替代原 onMouseLeave 提交语义；
     // 合成事件 / 指针已失效时 setPointerCapture 会抛 NotFoundError，防御忽略）

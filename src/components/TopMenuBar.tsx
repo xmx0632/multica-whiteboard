@@ -62,7 +62,7 @@ export default function TopMenuBar() {
   }, [isDirty, newDocument]);
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center gap-1 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-2 py-1.5 z-10">
+    <div className="touch-menubar absolute top-3 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center gap-1 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-2 py-1.5 z-10">
       <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title="New (Ctrl+N)">
         New
       </button>

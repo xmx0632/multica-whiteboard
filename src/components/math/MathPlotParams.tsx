@@ -103,7 +103,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   };
 
   return (
-    <div className="touch-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
+    <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5 pb-0.5">
         <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
         数学图形

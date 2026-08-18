@@ -74,7 +74,7 @@ export default function HistoryPanel() {
 
       {open && (
         <div className="absolute inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={() => setOpen(false)}>
-          <div className="touch-panel bg-white rounded-2xl shadow-2xl w-[480px] max-w-[calc(100vw-1.5rem)] max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="touch-panel touch-modal bg-white rounded-2xl shadow-2xl w-[480px] max-w-[calc(100vw-1.5rem)] max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Whiteboards</h2>
               <button onClick={() => setOpen(false)} className="touch-target text-gray-400 hover:text-gray-600 text-xl">&times;</button>
