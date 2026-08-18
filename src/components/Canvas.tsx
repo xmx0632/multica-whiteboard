@@ -2,8 +2,9 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas } from '@/lib/renderer';
-import { WhiteboardElement, PathElement, Point } from '@/lib/types';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle } from '@/lib/renderer';
+import { WhiteboardElement, PathElement, Point, MathPlotElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { createMathPlotElement } from '@/lib/mathplotElement';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function Canvas() {
@@ -20,10 +21,13 @@ export default function Canvas() {
   // pan 的 rAF 合并（技术方案 §6.4）：mousemove 只记最新位移，每帧至多一次 setViewport
   const panRafRef = useRef<number | null>(null);
   const panPendingRef = useRef<Point | null>(null);
+  // mathPlot 8 控点缩放（§11 D-1）：startEl 为手势前快照，mouseUp 压一条 update 快照
+  const resizeRef = useRef<{ handle: MathPlotHandle; startEl: MathPlotElement; startWorld: Point } | null>(null);
 
   const {
     elements, selectedId, activeTool, strokeColor, strokeWidth, fillColor, fontSize,
     viewport, addElement, updateElement, setSelected, setViewport, pushOperations,
+    pendingMathPlot, consumeMathPlotInsert, setTool,
   } = useStore();
 
   const render = useCallback(() => {
@@ -59,6 +63,29 @@ export default function Canvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, [render]);
 
+  // 方程确认 → 建元素落点（技术方案 §8）：外框中心 = 画布可视区中心；
+  // 默认 480×360 超出可视区时按比例收缩。创建后自动选中并切回 select。
+  useEffect(() => {
+    if (!pendingMathPlot) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const vp = useStore.getState().viewport;
+    const center = screenToCanvas({ x: rect.width / 2, y: rect.height / 2 }, vp);
+    const el = createMathPlotElement(pendingMathPlot.payload, {
+      centerX: center.x,
+      centerY: center.y,
+      maxWidth: (rect.width / vp.scale) * 0.8,
+      maxHeight: (rect.height / vp.scale) * 0.8,
+      strokeColor: pendingMathPlot.strokeColor,
+      strokeWidth: pendingMathPlot.strokeWidth,
+    });
+    addElement(el);
+    setTool('select'); // setTool 清选中，故先切工具再选中
+    setSelected(el.id);
+    consumeMathPlotInsert();
+  }, [pendingMathPlot, addElement, setTool, setSelected, consumeMathPlotInsert]);
+
   const getCanvasPoint = useCallback((e: React.MouseEvent): Point => {
     const rect = canvasRef.current!.getBoundingClientRect();
     return screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, viewport);
@@ -77,6 +104,17 @@ export default function Canvas() {
     isDrawingRef.current = true;
 
     if (activeTool === 'select') {
+      // mathPlot 控点缩放优先于元素命中（D-1：8 控点画在包围盒外沿）
+      const sel = elements.find((e) => e.id === selectedId);
+      if (sel && sel.type === 'mathPlot') {
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const handle = hitTestSelectionHandle(sel, { x: e.clientX - rect.left, y: e.clientY - rect.top }, viewport);
+        if (handle) {
+          resizeRef.current = { handle, startEl: { ...sel }, startWorld: point };
+          isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在 mouseLeave 时用陈旧起点压脏快照
+          return;
+        }
+      }
       let found = false;
       for (let i = elements.length - 1; i >= 0; i--) {
         if (hitTest(elements[i], point, viewport)) {
@@ -87,6 +125,12 @@ export default function Canvas() {
         }
       }
       if (!found) setSelected(null);
+      return;
+    }
+
+    // equation 工具不在画布上落笔：输入与确认在右侧方程面板
+    if (activeTool === 'equation') {
+      isDrawingRef.current = false;
       return;
     }
 
@@ -147,7 +191,7 @@ export default function Canvas() {
           break;
       }
     }
-  }, [activeTool, elements, strokeColor, strokeWidth, fillColor, fontSize, spaceDown, viewport, getCanvasPoint, setSelected, addElement]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, fillColor, fontSize, spaceDown, viewport, getCanvasPoint, setSelected, addElement]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {
@@ -168,12 +212,59 @@ export default function Canvas() {
     };
   }, []);
 
+  /** 控点缩放几何（§5.2 缩放语义）：equalRatio 角拖拽锁定纵横比 → y 视窗随宽高比保持，圆不变形。 */
+  const applyResize = useCallback((rs: { handle: MathPlotHandle; startEl: MathPlotElement; startWorld: Point }, world: Point) => {
+    const { viewport } = useStore.getState();
+    const minW = Math.max(MATHPLOT_MIN_WIDTH, 48 / viewport.scale);
+    const minH = Math.max(MATHPLOT_MIN_HEIGHT, 36 / viewport.scale);
+    const { startEl, handle } = rs;
+    let left = startEl.x;
+    let top = startEl.y;
+    let right = startEl.x + startEl.width;
+    let bottom = startEl.y + startEl.height;
+
+    if (handle.includes('w')) left = Math.min(world.x, right - minW);
+    if (handle.includes('e')) right = Math.max(world.x, left + minW);
+    if (handle.includes('n')) top = Math.min(world.y, bottom - minH);
+    if (handle.includes('s')) bottom = Math.max(world.y, top + minH);
+
+    let width = right - left;
+    let height = bottom - top;
+    if (startEl.equalRatio && handle.length === 2) {
+      const aspect = startEl.height / startEl.width;
+      // 主导轴优先：x 变化折算的 height 与直接拖出的 height 取更接近拖拽意图的一侧
+      if (Math.abs(width - startEl.width) >= Math.abs(height - startEl.height) / (aspect || 1)) {
+        height = width * aspect;
+      } else {
+        width = height / (aspect || 1);
+      }
+      if (handle.includes('n')) top = bottom - height;
+      else bottom = top + height;
+      if (handle.includes('w')) left = right - width;
+      else right = left + width;
+    }
+    return { x: left, y: top, width: Math.max(width, minW), height: Math.max(height, minH) };
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isPanningRef.current) {
       panPendingRef.current = { x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y };
       if (panRafRef.current === null) {
         panRafRef.current = requestAnimationFrame(applyPanFromRaf);
       }
+      return;
+    }
+
+    // mathPlot 控点缩放拖拽（静默直改，mouseUp 统一压快照 —— 与移动拖拽同构）
+    const rs = resizeRef.current;
+    if (rs) {
+      const point = getCanvasPoint(e);
+      const next = applyResize(rs, point);
+      useStore.setState({
+        elements: useStore.getState().elements.map((el) =>
+          el.id === rs.startEl.id ? { ...el, ...next } : el
+        ),
+      });
       return;
     }
 
@@ -218,7 +309,7 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getCanvasPoint, render, applyPanFromRaf]);
+  }, [activeTool, selectedId, viewport, getCanvasPoint, render, applyPanFromRaf, applyResize]);
 
   const handleMouseUp = useCallback(() => {
     if (isPanningRef.current) {
@@ -238,6 +329,26 @@ export default function Canvas() {
       }
       return;
     }
+    // mathPlot 缩放提交：一次拖拽 = 一条可撤销快照（D5 同构）
+    const rs = resizeRef.current;
+    if (rs) {
+      resizeRef.current = null;
+      const cur = useStore.getState().elements.find((el): el is MathPlotElement => el.id === rs.startEl.id && el.type === 'mathPlot');
+      if (cur) {
+        const moved =
+          cur.x !== rs.startEl.x || cur.y !== rs.startEl.y ||
+          cur.width !== rs.startEl.width || cur.height !== rs.startEl.height;
+        if (moved) {
+          pushOperations([{
+            type: 'update', elementId: rs.startEl.id,
+            before: rs.startEl,
+            after: { ...cur },
+          }]);
+        }
+      }
+      return;
+    }
+
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
 
@@ -261,7 +372,7 @@ export default function Canvas() {
         }
       }
     }
-  }, [activeTool, selectedId, addElement, setViewport]);
+  }, [activeTool, selectedId, addElement, setViewport, pushOperations]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -301,6 +412,14 @@ export default function Canvas() {
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {activeTool === 'equation' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-[5]">
+          <div className="px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow border border-gray-200 text-sm text-gray-500 flex items-center gap-1.5">
+            <span className="font-serif italic text-blue-500">ƒ</span>
+            在右侧面板输入方程，回车插入图形
+          </div>
+        </div>
+      )}
     </div>
   );
 }

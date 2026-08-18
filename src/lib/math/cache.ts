@@ -73,6 +73,33 @@ export interface PlotRenderEntry {
 const plotCache = new WeakMap<object, PlotRenderEntry>();
 let plotCacheWrites = 0;
 
+/**
+ * 元素 id → 稳定缓存键（ZOO-136 集成）。渲染缓存若直接以元素对象引用为键，
+ * store 不可变更新（拖拽移动 / updateElementTransient 调参 / 撤销重做）每帧换
+ * 引用 → 全量 miss，违反 §6.3「平移 / 改颜色线宽透明度不重采样」。改为按 id
+ * 取同一 token 对象作 WeakMap 键：引用换、id 不变即命中；LRU 封顶防泄漏
+ * （淘汰的 token 失联后 WeakMap 条目自动回收）。
+ */
+const PLOT_TOKEN_MAX = 256;
+const plotTokens = new Map<string, object>();
+
+export function plotTokenFor(id: string): object {
+  const hit = plotTokens.get(id);
+  if (hit) {
+    plotTokens.delete(id);
+    plotTokens.set(id, hit);
+    return hit;
+  }
+  const token = {};
+  plotTokens.set(id, token);
+  while (plotTokens.size > PLOT_TOKEN_MAX) {
+    const oldest = plotTokens.keys().next().value;
+    if (oldest === undefined) break;
+    plotTokens.delete(oldest);
+  }
+  return token;
+}
+
 /** 渲染签名（键序由调用方固定，保证同输入同签名）。 */
 export function plotSignature(parts: Record<string, unknown>): string {
   return JSON.stringify(parts);

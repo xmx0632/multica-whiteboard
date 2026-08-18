@@ -37,7 +37,7 @@ export function useShortcuts() {
 
       const toolMap: Record<string, ToolType> = {
         v: 'select', b: 'pen', r: 'rectangle', c: 'circle',
-        l: 'line', a: 'arrow', t: 'text', e: 'eraser',
+        l: 'line', a: 'arrow', t: 'text', e: 'eraser', f: 'equation',
       };
       const tool = toolMap[e.key.toLowerCase()];
       if (tool && tool !== activeTool) {

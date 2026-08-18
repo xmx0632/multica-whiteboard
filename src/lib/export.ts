@@ -1,5 +1,8 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement } from './types';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement } from './types';
 import { renderElement, getAllElementsBounds } from './renderer';
+import { resolvePlotRender, stepForAxis, formatTickLabel, MIN_GRID_PX, MIN_TICK_LABEL_PX } from './math/plot';
+import { plotTokenFor } from './math/cache';
+import { beautifyEquation } from './math/label';
 
 export interface ExportOptions {
   format: 'png' | 'jpg' | 'svg';
@@ -74,9 +77,153 @@ function elementToSvg(el: WhiteboardElement): string {
       ).join('');
       return `<text x="${el.x}" y="${el.y}" font-size="${el.fontSize}" font-family="${el.fontFamily || 'sans-serif'}" fill="${el.color}"${opacity}>${tspans}</text>`;
     }
+    case 'mathPlot':
+      return mathPlotToSvg(el);
     default:
       return '';
   }
+}
+
+/**
+ * MathPlot 元素 → SVG（技术方案 §5.3：轴/网格/曲线 → path+line，标签 → text）。
+ * 与 drawGraphCore / drawMathPlot 同一套数据（resolvePlotRender 缓存折线）与
+ * 同一套可见性规则（网格最小像素间距、刻度抽稀），坐标 = 元素局部 px + el.x/y。
+ */
+function mathPlotToSvg(el: MathPlotElement): string {
+  const { x, y, width: w, height: h } = el;
+  if (!(w > 0) || !(h > 0)) return '';
+  const opacity = el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
+
+  const render = resolvePlotRender(
+    {
+      equation: el.equation,
+      kind: el.kind,
+      errorMessage: el.error ?? undefined,
+      xAxis: el.xAxis,
+      equalRatio: el.equalRatio,
+      sampleCount: el.sampleCount,
+    },
+    { width: w, height: h },
+    plotTokenFor(el.id)
+  );
+
+  const parts: string[] = [
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="rgba(255,255,255,0.88)" stroke="#e5e7eb" stroke-width="1"${opacity}/>`
+  ];
+
+  if (render.error) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+    parts.push(`<rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${h - 8}" rx="8" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,4"/>`);
+    parts.push(`<text x="${cx}" y="${cy - 14}" font-size="12" font-weight="bold" font-family="system-ui, sans-serif" fill="#ef4444" text-anchor="middle">⚠ ${escapeXml(clip(render.error, 44))}</text>`);
+    parts.push(`<text x="${cx}" y="${cy + 2}" font-size="11" font-family="system-ui, sans-serif" fill="#6b7280" text-anchor="middle">${escapeXml(clip(beautifyEquation(el.equation), 44))}</text>`);
+    parts.push(`<text x="${cx}" y="${cy + 18}" font-size="10" font-family="system-ui, sans-serif" fill="#9ca3af" text-anchor="middle">点击「重新编辑方程」修正</text>`);
+    return parts.join('');
+  }
+
+  // 内嵌绘图区（四周 6px 内边距，与 drawMathPlot 一致）
+  const pad = 6;
+  const gx = x + pad;
+  const gy = y + pad;
+  const gw = w - pad * 2;
+  const gh = h - pad * 2;
+  const view = render.view;
+  const unitX = gw / (view.xMax - view.xMin || 1);
+  const unitY = gh / (view.yMax - view.yMin || 1);
+  const toX = (mx: number) => gx + (mx - view.xMin) * unitX;
+  const toY = (my: number) => gy + gh - (my - view.yMin) * unitY;
+
+  const sx = stepForAxis(view.xMin, view.xMax, gw, 45);
+  const sy = stepForAxis(view.yMin, view.yMax, gh, 45);
+
+  const gridLines: string[] = [];
+  if (el.showGrid) {
+    if ((sx.step / (view.xMax - view.xMin)) * gw >= MIN_GRID_PX) {
+      for (let v = Math.ceil(view.xMin / sx.step) * sx.step; v <= view.xMax + 1e-9; v += sx.step) {
+        const px = toX(v).toFixed(1);
+        gridLines.push(`<line x1="${px}" y1="${gy}" x2="${px}" y2="${gy + gh}" stroke="#e5e7eb" stroke-width="1"/>`);
+      }
+    }
+    if ((sy.step / (view.yMax - view.yMin)) * gh >= MIN_GRID_PX) {
+      for (let v = Math.ceil(view.yMin / sy.step) * sy.step; v <= view.yMax + 1e-9; v += sy.step) {
+        const py = toY(v).toFixed(1);
+        gridLines.push(`<line x1="${gx}" y1="${py}" x2="${gx + gw}" y2="${py}" stroke="#e5e7eb" stroke-width="1"/>`);
+      }
+    }
+  }
+  parts.push(...gridLines);
+
+  const vertAxisIn = view.xMin <= 0 && view.xMax >= 0;
+  const horizAxisIn = view.yMin <= 0 && view.yMax >= 0;
+  if (el.showAxis && (vertAxisIn || horizAxisIn)) {
+    if (vertAxisIn) parts.push(`<line x1="${toX(0).toFixed(1)}" y1="${gy}" x2="${toX(0).toFixed(1)}" y2="${gy + gh}" stroke="#9ca3af" stroke-width="1"/>`);
+    if (horizAxisIn) parts.push(`<line x1="${gx}" y1="${toY(0).toFixed(1)}" x2="${gx + gw}" y2="${toY(0).toFixed(1)}" stroke="#9ca3af" stroke-width="1"/>`);
+
+    const strideX = Math.max(1, Math.ceil(MIN_TICK_LABEL_PX / ((sx.step / (view.xMax - view.xMin)) * gw || 1)));
+    const strideY = Math.max(1, Math.ceil(MIN_TICK_LABEL_PX / ((sy.step / (view.yMax - view.yMin)) * gh || 1)));
+    const labels: string[] = [];
+    const axisY = toY(0);
+    const axisX = toX(0);
+    if (horizAxisIn) {
+      let idx = 0;
+      for (let v = Math.ceil(view.xMin / sx.step) * sx.step; v <= view.xMax + 1e-9; v += sx.step, idx++) {
+        if (idx % strideX !== 0 || Math.abs(v) < sx.step * 0.01) continue;
+        const px = Math.min(Math.max(toX(v), gx + 4), gx + gw - 4);
+        const py = Math.min(Math.max(axisY + 3, gy + 2), gy + gh - 10);
+        labels.push(`<text x="${px.toFixed(1)}" y="${(py + 9).toFixed(1)}" font-size="10" font-family="system-ui, sans-serif" fill="#6b7280" text-anchor="middle">${escapeXml(formatTickLabel(v, sx.pi, sx.step))}</text>`);
+      }
+    }
+    if (vertAxisIn) {
+      let idx = 0;
+      let zeroDrawn = false;
+      for (let v = Math.ceil(view.yMin / sy.step) * sy.step; v <= view.yMax + 1e-9; v += sy.step, idx++) {
+        if (idx % strideY !== 0) continue;
+        const isZero = Math.abs(v) < sy.step * 0.01;
+        if (isZero) {
+          if (zeroDrawn) continue;
+          zeroDrawn = true;
+        }
+        const py = Math.min(Math.max(toY(v), gy + 5), gy + gh - 3);
+        const px = Math.min(Math.max(axisX - 4, gx + 14), gx + gw - 2);
+        labels.push(`<text x="${px.toFixed(1)}" y="${(py + 3.5).toFixed(1)}" font-size="10" font-family="system-ui, sans-serif" fill="#6b7280" text-anchor="end">${escapeXml(isZero ? '0' : formatTickLabel(v, sy.pi, sy.step))}</text>`);
+      }
+    }
+    parts.push(...labels);
+  }
+
+  if (render.polylines.length > 0) {
+    let d = '';
+    for (const pl of render.polylines) {
+      let drawing = false;
+      for (const p of pl) {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+          drawing = false;
+          continue;
+        }
+        const px = toX(p.x);
+        const py = toY(p.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py) || Math.abs(py) > 1e6) {
+          drawing = false;
+          continue;
+        }
+        d += `${drawing ? 'L' : 'M'} ${px.toFixed(2)} ${py.toFixed(2)} `;
+        drawing = true;
+      }
+    }
+    if (d) {
+      parts.push(`<path d="${d.trim()}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`);
+    }
+  }
+
+  if (el.showLabel) {
+    const text = beautifyEquation(el.equation);
+    const cw = text.length * 6.6 + 14;
+    parts.push(`<rect x="${x + 6}" y="${y + h - 22}" width="${cw.toFixed(0)}" height="18" rx="9" fill="rgba(59,130,246,0.08)"/>`);
+    parts.push(`<text x="${x + 13}" y="${y + h - 9}" font-size="11" font-family="serif" fill="#3B82F6">${escapeXml(text)}</text>`);
+  }
+
+  return parts.join('');
 }
 
 export function exportToSvg(elements: WhiteboardElement[], options?: Partial<ExportOptions>): string {

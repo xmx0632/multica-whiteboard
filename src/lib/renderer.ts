@@ -1,4 +1,6 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, Viewport, Point } from './types';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, Viewport, Point } from './types';
+import { drawMathPlot, resolvePlotRender } from './math/plot';
+import { plotTokenFor } from './math/cache';
 
 export function renderGrid(
   ctx: CanvasRenderingContext2D,
@@ -180,6 +182,45 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextElement, viewport: View
   ctx.restore();
 }
 
+/**
+ * MathPlot 元素绘制（技术方案 §5.2 三层坐标映射，与 drawRectangle 同构）：
+ * translate(el.x·scale+offset) → scale → drawMathPlot。采样 / Path2D 经
+ * resolvePlotRender 走按 id 的稳定键缓存（math/cache.ts plotTokenFor）——
+ * 拖拽移动、改颜色线宽透明度、轴网显隐均命中缓存不重采样（§6.3）。
+ */
+function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement, viewport: Viewport) {
+  if (!(el.width > 0) || !(el.height > 0)) return;
+  const render = resolvePlotRender(
+    {
+      equation: el.equation,
+      kind: el.kind,
+      errorMessage: el.error ?? undefined,
+      xAxis: el.xAxis,
+      equalRatio: el.equalRatio,
+      sampleCount: el.sampleCount,
+    },
+    { width: el.width, height: el.height },
+    plotTokenFor(el.id)
+  );
+  const { offsetX, offsetY, scale } = viewport;
+  ctx.save();
+  ctx.translate(el.x * scale + offsetX, el.y * scale + offsetY);
+  ctx.scale(scale, scale);
+  drawMathPlot(ctx, {
+    x: 0,
+    y: 0,
+    width: el.width,
+    height: el.height,
+    render,
+    style: { strokeColor: el.strokeColor, strokeWidth: el.strokeWidth, opacity: el.opacity },
+    showAxis: el.showAxis,
+    showGrid: el.showGrid,
+    showLabel: el.showLabel,
+    equation: el.equation,
+  });
+  ctx.restore();
+}
+
 export function renderElement(ctx: CanvasRenderingContext2D, el: WhiteboardElement, viewport: Viewport) {
   switch (el.type) {
     case 'path': drawPath(ctx, el, viewport); break;
@@ -188,6 +229,7 @@ export function renderElement(ctx: CanvasRenderingContext2D, el: WhiteboardEleme
     case 'line': drawLine(ctx, el, viewport); break;
     case 'arrow': drawArrow(ctx, el, viewport); break;
     case 'text': drawText(ctx, el, viewport); break;
+    case 'mathPlot': drawMathPlotElement(ctx, el, viewport); break;
   }
 }
 
@@ -224,6 +266,32 @@ export function renderElements(
   }
 }
 
+/**
+ * 选中框控点布局（§11 D-1）：mathPlot 为 8 控点（4 角 + 4 边中点，已验收基线），
+ * 其余元素维持既有 4 角控点（零回归）。返回屏幕 px 的控点左上角数组。
+ */
+function selectionHandleRects(el: WhiteboardElement, x: number, y: number, w: number, h: number): [number, number][] {
+  const s = 8;
+  const r = x + w + 4;
+  const b = y + h + 4;
+  if (el.type === 'mathPlot') {
+    return [
+      [x - 4, y - 4], [r - s, y - 4],            // nw ne
+      [x - 4, b - s], [r - s, b - s],            // sw se
+      [(x - 4 + r) / 2 - s / 2, y - 4],          // n
+      [(x - 4 + r) / 2 - s / 2, b - s],          // s
+      [x - 4, (y - 4 + b) / 2 - s / 2],          // w
+      [r - s, (y - 4 + b) / 2 - s / 2],          // e
+    ];
+  }
+  return [
+    [x - 4, y - 4],
+    [r - s, y - 4],
+    [x - 4, b - s],
+    [r - s, b - s],
+  ];
+}
+
 export function renderSelection(
   ctx: CanvasRenderingContext2D,
   el: WhiteboardElement,
@@ -245,18 +313,44 @@ export function renderSelection(
   ctx.strokeRect(x - 4, y - 4, w + 8, h + 8);
   ctx.setLineDash([]);
 
-  const handleSize = 8;
-  const handles = [
-    [x - 4, y - 4],
-    [x + w + 4 - handleSize, y - 4],
-    [x - 4, y + h + 4 - handleSize],
-    [x + w + 4 - handleSize, y + h + 4 - handleSize],
-  ];
   ctx.fillStyle = '#3B82F6';
-  for (const [hx, hy] of handles) {
-    ctx.fillRect(hx, hy, handleSize, handleSize);
+  for (const [hx, hy] of selectionHandleRects(el, x, y, w, h)) {
+    ctx.fillRect(hx, hy, 8, 8);
   }
   ctx.restore();
+}
+
+/** mathPlot 控点方位标识（拖拽缩放语义见 Canvas.tsx resizeState）。 */
+export type MathPlotHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+const HANDLE_ORDER: MathPlotHandle[] = ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'];
+
+/**
+ * 选中框控点命中（屏幕 px，画布 rect 相对坐标）。仅 mathPlot 有可拖控点
+ * （D-1：8 控点缩放只给 mathPlot，其他元素维持现状返回 null）。
+ */
+export function hitTestSelectionHandle(
+  el: WhiteboardElement,
+  screen: Point,
+  viewport: Viewport
+): MathPlotHandle | null {
+  if (el.type !== 'mathPlot') return null;
+  const bbox = getElementBounds(el);
+  if (!bbox) return null;
+  const { offsetX, offsetY, scale } = viewport;
+  const x = bbox.x * scale + offsetX;
+  const y = bbox.y * scale + offsetY;
+  const w = bbox.width * scale;
+  const h = bbox.height * scale;
+  const rects = selectionHandleRects(el, x, y, w, h);
+  const m = 2; // 判定外扩，降低精确点选难度
+  for (let i = 0; i < rects.length; i++) {
+    const [hx, hy] = rects[i];
+    if (screen.x >= hx - m && screen.x <= hx + 8 + m && screen.y >= hy - m && screen.y <= hy + 8 + m) {
+      return HANDLE_ORDER[i];
+    }
+  }
+  return null;
 }
 
 export function getElementBounds(el: WhiteboardElement): { x: number; y: number; width: number; height: number } | null {
@@ -274,6 +368,7 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
     }
     case 'rectangle':
     case 'circle':
+    case 'mathPlot':
       return { x: el.x, y: el.y, width: el.width, height: el.height };
     case 'line':
     case 'arrow': {

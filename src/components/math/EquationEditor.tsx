@@ -28,6 +28,8 @@ export interface EquationEditorProps {
   initialEquation?: string;
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
+  /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
+  onCancel?: () => void;
   /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。 */
   createPreviewPolylines?: (equation: string, outcome: StructuralOutcome) => PreviewData | null;
 }
@@ -35,6 +37,7 @@ export interface EquationEditorProps {
 export default function EquationEditor({
   initialEquation = '',
   onConfirm,
+  onCancel,
   createPreviewPolylines = samplePreviewPolylines,
 }: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
@@ -90,6 +93,15 @@ export default function EquationEditor({
       <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5 pb-0.5">
         <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
         方程 Equation
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="ml-auto border-none bg-transparent text-gray-400 text-[11px] cursor-pointer hover:text-gray-600 transition-colors"
+          >
+            ✕ 取消
+          </button>
+        )}
       </div>
 
       <div>

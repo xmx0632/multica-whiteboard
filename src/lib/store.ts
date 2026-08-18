@@ -10,6 +10,7 @@ import {
   DEFAULT_STROKE_WIDTH,
   DEFAULT_FONT_SIZE,
 } from './types';
+import type { EquationDraftPayload } from './math/types';
 
 interface WhiteboardState {
   // Document
@@ -38,9 +39,16 @@ interface WhiteboardState {
   isDirty: boolean;
   lastSavedAt: number | null;
 
+  // MathPlot 插入握手（ZOO-136）：编辑面板确认 → Canvas 按画布中心落点建元素
+  pendingMathPlot: { payload: EquationDraftPayload; strokeColor: string; strokeWidth: number } | null;
+  requestMathPlotInsert: (payload: EquationDraftPayload) => void;
+  consumeMathPlotInsert: () => void;
+
   // Actions - Elements
   addElement: (element: WhiteboardElement) => void;
   updateElement: (id: string, updates: Partial<WhiteboardElement>) => void;
+  /** 直改不入栈（技术方案 D5）：滑杆拖动实时预览；提交时由调用方 pushOperations 压一条快照 */
+  updateElementTransient: (id: string, updates: Partial<WhiteboardElement>) => void;
   deleteElement: (id: string) => void;
   deleteSelected: () => void;
   clearAll: () => void;
@@ -97,6 +105,9 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   isDirty: false,
   lastSavedAt: null,
 
+  // MathPlot 插入握手
+  pendingMathPlot: null,
+
   // Element actions
   addElement: (element) => {
     const ops: Operation[] = [{ type: 'create', elementId: element.id, after: element }];
@@ -117,6 +128,13 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       elements: s.elements.map((e) => (e.id === id ? Object.assign({}, e, updates) as WhiteboardElement : e)),
       undoStack: [...s.undoStack.slice(-99), ops],
       redoStack: [],
+      isDirty: true,
+    }));
+  },
+
+  updateElementTransient: (id, updates) => {
+    set((s) => ({
+      elements: s.elements.map((e) => (e.id === id ? Object.assign({}, e, updates) as WhiteboardElement : e)),
       isDirty: true,
     }));
   },
@@ -161,6 +179,12 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   setStrokeWidth: (width) => set({ strokeWidth: width }),
   setFillColor: (color) => set({ fillColor: color }),
   setFontSize: (size) => set({ fontSize: size }),
+
+  // MathPlot 插入握手：面板只投递载荷，落点（画布中心）由 Canvas 用自身 rect 计算
+  requestMathPlotInsert: (payload) => set((s) => ({
+    pendingMathPlot: { payload, strokeColor: s.strokeColor, strokeWidth: s.strokeWidth },
+  })),
+  consumeMathPlotInsert: () => set({ pendingMathPlot: null }),
 
   // Viewport
   setViewport: (vp) => set((s) => ({ viewport: { ...s.viewport, ...vp } })),

@@ -1,4 +1,4 @@
-export type ToolType = 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser';
+export type ToolType = 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
 
 export interface Point {
   x: number;
@@ -56,13 +56,45 @@ export interface TextElement extends BaseElement {
   height: number;
 }
 
+/**
+ * 数学图形元素（技术方案 §5.1 数据模型，ZOO-136 集成）。
+ *
+ * 外框语义同 rectangle（x/y 为左上角、width/height 为世界 px）——命中 / 选中 /
+ * 移动 / 导出包围盒全部复用外框。y 视窗与原点不落字段：4c 渲染管线
+ * （resolvePlotRender）按 equalRatio + 外框纵横比推导 y 视窗、原点固定 (0,0)，
+ * 折线 / Path2D 等运行时态走 math/cache.ts 的旁路缓存，序列化保持纯数据。
+ */
+export interface MathPlotElement extends BaseElement {
+  type: 'mathPlot';
+  width: number;
+  height: number;
+
+  // —— 方程 ——
+  equation: string;
+  kind: 'explicit' | 'circle' | 'ellipse' | 'error';
+  /** kind === 'error' 时的用户可读原因 */
+  error?: string | null;
+
+  // —— 数学视窗（局部坐标系定义，数学单位）——
+  xAxis: { min: number; max: number };
+  /** x/y 单位等比；circle/ellipse 强制 true（几何不失真） */
+  equalRatio: boolean;
+
+  // —— 绘制参数 ——
+  sampleCount: 160 | 320 | 640;
+  showAxis: boolean;
+  showGrid: boolean;
+  showLabel: boolean;
+}
+
 export type WhiteboardElement =
   | PathElement
   | RectangleElement
   | CircleElement
   | LineElement
   | ArrowElement
-  | TextElement;
+  | TextElement
+  | MathPlotElement;
 
 export interface Viewport {
   offsetX: number;
@@ -78,6 +110,8 @@ export interface WhiteboardDocument {
   createdAt: number;
   updatedAt: number;
   thumbnail?: string;
+  /** 数据模型版本占位（技术方案 §5.3）：当前不写值，为未来迁移预留 */
+  schemaVersion?: number;
 }
 
 export interface Operation {
@@ -95,3 +129,24 @@ export const COLORS = [
 export const DEFAULT_STROKE_COLOR = '#000000';
 export const DEFAULT_STROKE_WIDTH = 2;
 export const DEFAULT_FONT_SIZE = 20;
+
+// —— MathPlot 元素默认常量（技术方案 §8 创建落点；原型基线曲线色 #3B82F6）——
+export const MATHPLOT_DEFAULT_WIDTH = 480;
+export const MATHPLOT_DEFAULT_HEIGHT = 360;
+/** 8 控点拖拽缩放的最小外框（世界 px；屏幕最小值由 Canvas 按 scale 换算加严） */
+export const MATHPLOT_MIN_WIDTH = 120;
+export const MATHPLOT_MIN_HEIGHT = 90;
+export const MATHPLOT_CURVE_COLOR = '#3B82F6';
+export const DEFAULT_MATHPLOT = {
+  width: MATHPLOT_DEFAULT_WIDTH,
+  height: MATHPLOT_DEFAULT_HEIGHT,
+  xAxis: { min: -10, max: 10 },
+  sampleCount: 320,
+  equalRatio: true,
+  showAxis: true,
+  showGrid: true,
+  showLabel: true,
+  strokeColor: MATHPLOT_CURVE_COLOR,
+  strokeWidth: 2,
+  opacity: 1,
+} as const;
