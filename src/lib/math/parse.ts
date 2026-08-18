@@ -26,6 +26,8 @@ function detectGeometry(src: string): ParseResult | null {
   let m = src.match(/^\(?x([+-][\d.]+)?\)?\^2\+\(?y([+-][\d.]+)?\)?\^2=([\d.]+)$/);
   if (m) {
     const r = Math.sqrt(parseFloat(m[3]));
+    // r=0（如 x²+y²=0）是退化单点：交回隐式分类器出 kind='point'（ZOO-148）
+    if (r === 0) return null;
     if (!(r > 0)) return err('圆的半径必须为正');
     const params: CircleParams = {
       cx: m[1] ? -parseFloat(m[1]) : 0,
@@ -118,15 +120,16 @@ function mapSyntaxError(message: string): string {
   return '无法识别的表达式';
 }
 
-/** 隐式方程不支持文案（D7 引导式：非多项式隐式；退化 / 旋转 / 椭圆型另有专用文案）。 */
+/** 隐式方程不支持文案（D7 引导式：非多项式隐式；空集 / 旋转 / 椭圆型另有专用文案）。 */
 const UNSUPPORTED_IMPLICIT =
-  '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次方程与二元二次抛物线/双曲线（如 y²=4x、9x²−16y²=144）';
+  '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次与二元二次方程（抛物线 / 双曲线 / 退化两直线与单点，如 y²=4x、9x²−16y²=144、x²−y²=0）';
 
 /**
- * 隐式二元方程分类（D7，ZOO-146/147）：顶层 split `=` → F=lhs−rhs → 复用本文件
- * 安全管线（字符白名单 / AST 白名单含 y / compile LRU）→ conic.ts 数值探针。
+ * 隐式二元方程分类（D7，ZOO-146/147/148）：顶层 split `=` → F=lhs−rhs → 复用
+ * 本文件安全管线（字符白名单 / AST 白名单含 y / compile LRU）→ conic.ts 数值探针。
  * 二元一次 → kind='line'（含竖线）；二次判别式 → 'parabola' / 'hyperbola'
- * （B=0 轴对齐含平移）；常数等式 / 退化形友好报错；旋转项 / 椭圆型 / 非多项式 → 引导文案。
+ * （B=0 轴对齐含平移）；退化形 → 'linePair'（两直线）/ 'point'（单点）出图、
+ * 空集友好报错；旋转项 / 椭圆型 / 非多项式 → 引导文案。
  */
 function parseImplicit(src: string): ParseResult {
   const split = splitTopLevelEquals(src);
@@ -160,6 +163,8 @@ function parseImplicit(src: string): ParseResult {
     };
     const outcome = classifyImplicit(fn);
     if (outcome.kind === 'line') return { kind: 'line', params: outcome.params };
+    if (outcome.kind === 'linePair') return { kind: 'linePair', params: outcome.params };
+    if (outcome.kind === 'point') return { kind: 'point', params: outcome.params };
     if (outcome.kind === 'parabola') return { kind: 'parabola', params: outcome.params };
     if (outcome.kind === 'hyperbola') return { kind: 'hyperbola', params: outcome.params };
     if (outcome.kind === 'degenerate' || outcome.kind === 'unsupported') return err(outcome.message);

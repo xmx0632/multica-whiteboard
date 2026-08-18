@@ -9,7 +9,7 @@
  */
 import type { Point } from '../types';
 
-export type EquationKind = 'explicit' | 'line' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+export type EquationKind = 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
 
 /** 二元一次方程一般式 ax+by=c 的探针系数（ZOO-146 / D7，含 b=0 竖线）。 */
 export interface LineParams {
@@ -48,6 +48,24 @@ export interface HyperbolaParams {
   axis: 'x' | 'y';
 }
 
+/**
+ * 退化直线对参数（ZOO-148 / D7）：二次方程退化为两条直线（重合时只留一条）。
+ * 相交（δ>0 且 K≈0，如 x²−y²=0）/ 平行（抛物线型缺轴向项且两实根，如 x²=4）/
+ * 重合（判别式≈0，如 (x−1)²=0）。
+ */
+export interface LinePairParams {
+  /** 退化出的直线（一般式系数）；重合时长度 1 */
+  lines: LineParams[];
+  /** 退化形态（面板文案与教学 detail 分支） */
+  mode: 'intersecting' | 'parallel' | 'coincident';
+}
+
+/** 退化单点参数（ZOO-148 / D7）：椭圆型 K≈0（如 x²+y²=0 → 点 (0,0)）。 */
+export interface DegeneratePointParams {
+  x: number;
+  y: number;
+}
+
 export interface CircleParams {
   cx: number;
   cy: number;
@@ -65,6 +83,8 @@ export interface EllipseParams {
 export type StructuralOutcome =
   | { kind: 'explicit' }
   | { kind: 'line'; params: LineParams }
+  | { kind: 'linePair'; params: LinePairParams }
+  | { kind: 'point'; params: DegeneratePointParams }
   | { kind: 'parabola'; params: ParabolaParams }
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
@@ -75,6 +95,8 @@ export type StructuralOutcome =
 export type ParseResult =
   | { kind: 'explicit'; fn: (x: number) => number }
   | { kind: 'line'; params: LineParams }
+  | { kind: 'linePair'; params: LinePairParams }
+  | { kind: 'point'; params: DegeneratePointParams }
   | { kind: 'parabola'; params: ParabolaParams }
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }

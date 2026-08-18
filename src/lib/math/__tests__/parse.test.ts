@@ -15,7 +15,7 @@ const errorMessage = (raw: string) => {
 };
 
 describe('parseEquation 分类：14 模板 + PRD 方程族', () => {
-  it('全部 14 个模板可解析', () => {
+  it('全部 17 个模板可解析', () => {
     for (const t of EQUATION_TEMPLATES) {
       const r = parseEquation(t.equation);
       expect(r.kind, `模板「${t.name}」${t.equation}`).not.toBe('error');
@@ -55,8 +55,8 @@ describe('parseEquation 分类：14 模板 + PRD 方程族', () => {
     expect(b).toEqual({ kind: 'ellipse', params: { cx: 1, cy: -2, rx: 2, ry: 4 } });
   });
 
-  it('圆半径/椭圆参数非正 → 明确报错', () => {
-    expect(parseEquation('x²+y²=0')).toEqual({ kind: 'error', message: '圆的半径必须为正' });
+  it('圆半径/椭圆参数非正 → 明确报错；r=0 交回分类器出退化点（ZOO-148）', () => {
+    expect(parseEquation('x²+y²=0')).toEqual({ kind: 'point', params: { x: 0, y: 0 } });
     expect(parseEquation('x²/0+y²/4=1')).toEqual({ kind: 'error', message: '椭圆参数必须为正' });
   });
 });
@@ -236,16 +236,62 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
 
   it('隐式方程：非多项式仍明确拒绝（不白屏）', () => {
     const msg =
-      '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次方程与二元二次抛物线/双曲线（如 y²=4x、9x²−16y²=144）';
+      '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次与二元二次方程（抛物线 / 双曲线 / 退化两直线与单点，如 y²=4x、9x²−16y²=144、x²−y²=0）';
     expect(errorMessage('sin(x)=y')).toBe(msg); // 非多项式隐式
     expect(errorMessage('x³+y=1')).toBe(msg); // 三次
   });
 
-  it('隐式方程：xy 旋转项 / 椭圆型一般式 / 退化形的引导文案', () => {
+  it('隐式方程：xy 旋转项 / 椭圆型一般式的引导文案', () => {
     expect(errorMessage('x*y=1')).toBe('该方程含 xy 交叉项（旋转圆锥曲线），暂不支持出图'); // ZOO-149
     expect(errorMessage('2x²+3y²=12')).toBe('该方程为椭圆型二次方程：请改用椭圆标准形（如 x²/9+y²/4=1）后再输入');
-    expect(errorMessage('x²-y²=0')).toBe('该二次方程为退化曲线（如两条平行/相交直线、单点或空集），暂不支持出图'); // ZOO-148
-    expect(errorMessage('x²=4')).toBe('该二次方程为退化曲线（如两条平行/相交直线、单点或空集），暂不支持出图');
+  });
+
+  it('退化二次方程出图：两直线 / 单点（ZOO-148）', () => {
+    expect(parseEquation('x²-y²=0')).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: -1, c: 0 },
+          { a: 1, b: 1, c: 0 },
+        ],
+        mode: 'intersecting',
+      },
+    });
+    expect(parseEquation('x²=4')).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: 0, c: -2 },
+          { a: 1, b: 0, c: 2 },
+        ],
+        mode: 'parallel',
+      },
+    });
+    // 等价书写：变序 / 全体 ×(−1) / 因式分解形均命中
+    expect(parseEquation('0=x²-y²')).toEqual(parseEquation('x²-y²=0'));
+    expect(parseEquation('y²-x²=0')).toEqual(parseEquation('x²-y²=0'));
+    expect(parseEquation('(x-y)(x+y)=0')).toEqual(parseEquation('x²-y²=0'));
+    expect(parseEquation('y²-9=0')).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 0, b: 1, c: -3 },
+          { a: 0, b: 1, c: 3 },
+        ],
+        mode: 'parallel',
+      },
+    });
+    expect(parseEquation('(x-1)²=0')).toEqual({ kind: 'linePair', params: { lines: [{ a: 1, b: 0, c: 1 }], mode: 'coincident' } });
+    expect(parseEquation('x²+y²=0')).toEqual({ kind: 'point', params: { x: 0, y: 0 } });
+    expect(parseEquation('(x-1)²+(y+2)²=0')).toEqual({ kind: 'point', params: { x: 1, y: -2 } });
+  });
+
+  it('退化空集：错误占位承载教学文案（ZOO-148）', () => {
+    expect(errorMessage('x²+y²=-1')).toBe('该方程为空集：左侧恒正（或恒负）、无法等于 0，实数平面内无图像（如 x²+y²=−1）');
+    expect(errorMessage('x²=-4')).toBe('该方程为空集：x 的二次式判别式小于 0、无实根，实数平面内无图像（如 x²=−4）');
+    expect(errorMessage('y²+4=0').startsWith('该方程为空集：y 的二次式判别式小于 0')).toBe(true);
+    // 平移空集：(x−1)²+(y+2)²=−4
+    expect(errorMessage('(x-1)²+(y+2)²=-4').startsWith('该方程为空集：')).toBe(true);
   });
 
   it('隐式方程：常数等式 / 等号异常的友好文案', () => {

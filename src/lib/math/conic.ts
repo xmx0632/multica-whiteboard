@@ -5,8 +5,9 @@
  * （顶层 split `=` → F=lhs−rhs → AST 白名单 + compile，scope 含 x/y）注入，
  * 故本模块可脱离 mathjs 独立单测。P0 交付二元一次 → kind='line'（含竖线）；
  * ZOO-147 增二次 9 点探针 + 判别式分类 → 'parabola' / 'hyperbola'（B=0 轴对齐，
- * 含平移与四开口方向）；退化形给友好文案（完整拆解留 ZOO-148）、xy 旋转项与
- * 椭圆型一般式给引导文案（旋转留 ZOO-149）。
+ * 含平移与四开口方向）；ZOO-148 增退化拆解 → 'linePair'（相交/平行/重合直线）
+ * 与 'point'（单点），空集给教学文案；xy 旋转项与椭圆型一般式给引导文案
+ * （旋转留 ZOO-149）。
  *
  * 线性探针（研究报告 §2.1，mathjs 不能 parse 裸等式，故顶层 `=` 手工 split）：
  *   a = F(1,0)−F(0,0)   b = F(0,1)−F(0,0)   c = −F(0,0)
@@ -15,8 +16,12 @@
  * 二次探针（研究报告 §3，ZOO-147）：F(x,y)=Ax²+Bxy+Cy²+Dx+Ey+F₀ 的 9 点求值
  * 精确恢复系数（对称差分，见 probeQuadratic）；分类走判别式 δ=B²−4AC（旋转
  * 不变量）：δ≈0 抛物线、δ>0 双曲线、δ<0 椭圆型（本环引导至标准形输入）。
+ *
+ * 退化拆解（ZOO-148，研究报告 §3.2）：两直线（相交 / 平行 / 重合）分解为
+ * linePair 出图（复用 line 全部设施）；单点出标记点 kind='point'；空集给
+ * 教学文案（错误占位元素承载，研究报告建议）。
  */
-import type { HyperbolaParams, LineParams, ParabolaParams } from './types';
+import type { DegeneratePointParams, HyperbolaParams, LineParams, LinePairParams, ParabolaParams } from './types';
 
 /** F(x,y) 安全求值器（求值异常 / 非 number 一律 NaN，与 explicit 求值函数同约定）。 */
 export type BinaryFn = (x: number, y: number) => number;
@@ -76,12 +81,14 @@ export function isLinear(f: BinaryFn, p: LineParams): boolean {
 }
 
 /**
- * 隐式分类结果：line / parabola / hyperbola 出图；nonlinear 为非多项式（sin 等）；
- * degenerate 携教学文案（常数等式 / 二次退化形，完整拆解见 ZOO-148）；
- * unsupported 携引导文案（xy 旋转项 / 椭圆型一般式，见 ZOO-149）。
+ * 隐式分类结果：line / linePair / point / parabola / hyperbola 出图；nonlinear
+ * 为非多项式（sin 等）；degenerate 携教学文案（常数等式 / 空集——无图像，错误
+ * 占位元素承载）；unsupported 携引导文案（xy 旋转项 / 椭圆型一般式，ZOO-149）。
  */
 export type ImplicitOutcome =
   | { kind: 'line'; params: LineParams }
+  | { kind: 'linePair'; params: LinePairParams }
+  | { kind: 'point'; params: DegeneratePointParams }
   | { kind: 'parabola'; params: ParabolaParams }
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'nonlinear' }
@@ -195,14 +202,31 @@ const clean = (v: number) => (Math.abs(v) < 1e-9 ? 0 : v);
 
 const ROTATED_MSG = '该方程含 xy 交叉项（旋转圆锥曲线），暂不支持出图';
 const ELLIPSE_TYPE_MSG = '该方程为椭圆型二次方程：请改用椭圆标准形（如 x²/9+y²/4=1）后再输入';
-const QUAD_DEGENERATE_MSG = '该二次方程为退化曲线（如两条平行/相交直线、单点或空集），暂不支持出图';
+/** 空集文案（ZOO-148，研究报告 §3.2：错误占位元素承载，教学可解释）。 */
+const EMPTY_VAR_MSG = (v: 'x' | 'y') => `该方程为空集：${v} 的二次式判别式小于 0、无实根，实数平面内无图像（如 ${v}²=−4）`;
+const EMPTY_ELLIPSE_MSG = '该方程为空集：左侧恒正（或恒负）、无法等于 0，实数平面内无图像（如 x²+y²=−1）';
+
+/**
+ * 单变量二次 Av²+Pv+Q=0 的实根分解（判别式按各项量级取相对容差）：
+ * 两异根 → roots；重根 → double；无实根 → null（空集）。
+ */
+function solveQuadratic1v(A: number, P: number, Q: number): { roots: [number, number] } | { double: number } | null {
+  const disc = P * P - 4 * A * Q;
+  const tol = 1e-9 * (P * P + Math.abs(A * Q) + 1);
+  if (disc < -tol) return null;
+  if (Math.abs(disc) <= tol) return { double: -P / (2 * A) };
+  const s = Math.sqrt(disc);
+  return { roots: [(-P - s) / (2 * A), (-P + s) / (2 * A)] };
+}
 
 /**
  * 一般二次系数分类（B=0 轴对齐；系数先按二次部分归一）：
- * δ≈0 → parabola（配方取顶点与焦参数，轴向线性系数为零则退化）；
- * δ>0 → hyperbola（中心 (−D/2A, −E/2C)，K=Ah²+Ck²−F 的符号定实轴方向，
- *       K≈0 为退化相交直线）；
- * δ<0 → 椭圆型一般式，本环引导至标准形（ZOO-149 随旋转一并覆盖）。
+ * δ≈0 → parabola（配方取顶点与焦参数）；轴向线性系数为零则退化为平行/重合
+ *       直线或空集（单变量二次求根，ZOO-148）；
+ * δ>0 → hyperbola（中心 (−D/2A, −E/2C)，K=Ah²+Ck²−F 的符号定实轴方向）；
+ *       K≈0 退化为两条相交直线（过中心 (h,k)，ZOO-148）；
+ * δ<0 → 椭圆型：K≈0 退化为单点 (h,k)、K 与 A 异号为空集（ZOO-148），
+ *       否则引导至标准形输入（ZOO-149 随旋转一并覆盖）。
  */
 export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
   const quadScale = Math.max(Math.abs(q.A), Math.abs(q.B), Math.abs(q.C));
@@ -220,36 +244,73 @@ export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
   if (Math.abs(delta) <= DELTA_TOL) {
     // 抛物线型：A、C 恰一非零（|δ|≈0 ⟺ AC≈0）
     if (Math.abs(A) >= Math.abs(C)) {
-      // A x²+Dx+Ey+F = 0 → (x−h)² = 4p(y−k)，要求 E≠0（否则为平行直线族退化形）
+      // A x²+Dx+Ey+F = 0 → (x−h)² = 4p(y−k)，要求 E≠0；E=0 时为 x 的二次式
       if (Math.abs(E) <= LIN_TOL * Math.max(1, Math.abs(D), Math.abs(E), Math.abs(F))) {
-        return { kind: 'degenerate', message: QUAD_DEGENERATE_MSG };
+        return classifyAxisAlignedQuadratic(A, D, F, 'x');
       }
       const h = -D / (2 * A);
       const k = (A * h * h - F) / E;
       return { kind: 'parabola', params: { h: clean(h), k: clean(k), p: clean(-E / (4 * A)), axis: 'y' } };
     }
-    // C y²+Ey+Dx+F = 0 → (y−k)² = 4p(x−h)，要求 D≠0
+    // C y²+Ey+Dx+F = 0 → (y−k)² = 4p(x−h)，要求 D≠0；D=0 时为 y 的二次式
     if (Math.abs(D) <= LIN_TOL * Math.max(1, Math.abs(D), Math.abs(E), Math.abs(F))) {
-      return { kind: 'degenerate', message: QUAD_DEGENERATE_MSG };
+      return classifyAxisAlignedQuadratic(C, E, F, 'y');
     }
     const k = -E / (2 * C);
     const h = (C * k * k - F) / D;
     return { kind: 'parabola', params: { h: clean(h), k: clean(k), p: clean(-D / (4 * C)), axis: 'x' } };
   }
 
-  if (delta < 0) return { kind: 'unsupported', message: ELLIPSE_TYPE_MSG };
-
-  // 双曲线：A、C 异号非零。中心由一次项配方消去，K 的符号定实轴。
+  // 中心 (h,k)：一次项配方消去（椭圆型 / 双曲线型共用）
   const h = -D / (2 * A);
   const k = -E / (2 * C);
   const K = A * h * h + C * k * k - F;
   const kMag = Math.abs(A * h * h) + Math.abs(C * k * k) + Math.abs(F);
-  if (Math.abs(K) <= 1e-9 * (kMag + 1)) return { kind: 'degenerate', message: QUAD_DEGENERATE_MSG };
+
+  if (delta < 0) {
+    // 椭圆型（A、C 同号）：A(x−h)²+C(y−k)²=K
+    if (Math.abs(K) <= 1e-9 * (kMag + 1)) {
+      // K=0：平方和为零 ⟺ 两平方同时为零 → 退化单点 (h,k)
+      return { kind: 'point', params: { x: clean(h), y: clean(k) } };
+    }
+    if (K > 0 !== A > 0) return { kind: 'degenerate', message: EMPTY_ELLIPSE_MSG };
+    return { kind: 'unsupported', message: ELLIPSE_TYPE_MSG };
+  }
+
+  // 双曲线：A、C 异号非零，K 的符号定实轴。
+  if (Math.abs(K) <= 1e-9 * (kMag + 1)) {
+    // K=0：A(x−h)²=−C(y−k)²，两侧同号 → (x−h)=±√(−C/A)(y−k)，两条相交直线过 (h,k)
+    const m = Math.sqrt(-C / A);
+    return {
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: -m, c: clean(h - m * k) }, // x−m·y = h−m·k
+          { a: 1, b: m, c: clean(h + m * k) }, // x+m·y = h+m·k
+        ],
+        mode: 'intersecting',
+      },
+    };
+  }
   // A(x−h)²+C(y−k)²=K：与 K 同号的二次项系数所在轴为实轴（该项进 =1 侧为正）
   const xAxisTransverse = A > 0 === K > 0;
   const a = Math.sqrt(Math.abs(K / (xAxisTransverse ? A : C)));
   const b = Math.sqrt(Math.abs(K / (xAxisTransverse ? C : A)));
   return { kind: 'hyperbola', params: { h: clean(h), k: clean(k), a, b, axis: xAxisTransverse ? 'x' : 'y' } };
+}
+
+/**
+ * 抛物线型缺轴向项的退化拆解（ZOO-148）：A v²+Pv+Q=0（v 为残留二次变量）——
+ * 两异根 → 一对平行直线 v=root₁ / v=root₂；重根 → 一条（重合）直线；无实根 → 空集。
+ */
+function classifyAxisAlignedQuadratic(A: number, P: number, Q: number, v: 'x' | 'y'): ImplicitOutcome {
+  const solved = solveQuadratic1v(A, P, Q);
+  if (!solved) return { kind: 'degenerate', message: EMPTY_VAR_MSG(v) };
+  const lineOf = (root: number): LineParams => (v === 'x' ? { a: 1, b: 0, c: clean(root) } : { a: 0, b: 1, c: clean(root) });
+  if ('double' in solved) {
+    return { kind: 'linePair', params: { lines: [lineOf(solved.double)], mode: 'coincident' } };
+  }
+  return { kind: 'linePair', params: { lines: [lineOf(solved.roots[0]), lineOf(solved.roots[1])], mode: 'parallel' } };
 }
 
 // —— 直线教学参数（属性面板只读展示，D7「探针路线独有的教学收益」）——
@@ -396,5 +457,53 @@ export function hyperbolaTeachingInfo(p: HyperbolaParams): HyperbolaTeachingInfo
         : `${shiftTerm(p.h, 'x')} = ±${coefTerm(cross)}${shiftTerm(p.k, 'y')}`,
     directrices: p.axis === 'x' ? `x = ${axisOffset(p.h)}` : `y = ${axisOffset(p.k)}`,
     eccentricity: formatCoef(clean(e)),
+  };
+}
+
+// —— 退化形教学参数（ZOO-148，属性面板只读展示）——
+
+export interface LinePairTeachingInfo {
+  /** 退化形态：两条相交直线 / 两条平行直线 / 一对重合直线 */
+  label: string;
+  /** 各直线一般式（重合时一条） */
+  equations: string[];
+  /** 交点（相交）/ 间距（平行）/ 重合说明 */
+  detail: string;
+}
+
+/**
+ * 退化直线对 → 教学参数：相交给交点（两直线联立，即退化前的中心）；平行给
+ * 间距 d=|c₁−c₂|/√(a²+b²)（两线已同 a,b）；重合说明两根相等。
+ */
+export function linePairTeachingInfo(p: LinePairParams): LinePairTeachingInfo {
+  const equations = p.lines.map(formatGeneralForm);
+  if (p.mode === 'intersecting') {
+    const [l1, l2] = p.lines;
+    const det = l1.a * l2.b - l2.a * l1.b; // 相交 ⟹ 非零
+    if (det === 0) return { label: '两条相交直线', equations, detail: '' };
+    const px = (l1.c * l2.b - l2.c * l1.b) / det;
+    const py = (l1.a * l2.c - l2.a * l1.c) / det;
+    return { label: '两条相交直线', equations, detail: `交点 ${formatPoint(px, py)}` };
+  }
+  if (p.mode === 'parallel') {
+    const [l1, l2] = p.lines;
+    const d = Math.abs(l1.c - l2.c) / Math.hypot(l1.a, l1.b);
+    return { label: '两条平行直线', equations, detail: `间距 d = ${formatCoef(d)}` };
+  }
+  return { label: '一对重合直线', equations, detail: '判别式为 0，两根重合于同一条直线' };
+}
+
+export interface DegeneratePointTeachingInfo {
+  /** 点坐标 (x, y) */
+  point: string;
+  /** 解的表述（如 `x = 1, y = -2`） */
+  solution: string;
+}
+
+/** 退化单点 → 教学参数（点坐标 + 唯一解表述）。 */
+export function pointTeachingInfo(p: DegeneratePointParams): DegeneratePointTeachingInfo {
+  return {
+    point: formatPoint(p.x, p.y),
+    solution: `x = ${formatCoef(clean(p.x))}, y = ${formatCoef(clean(p.y))}`,
   };
 }

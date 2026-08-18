@@ -9,9 +9,11 @@
 import { parseEquation } from './parse';
 import type {
   CircleParams,
+  DegeneratePointParams,
   EllipseParams,
   HyperbolaParams,
   LineParams,
+  LinePairParams,
   MathViewport,
   ParabolaParams,
   ParseResult,
@@ -139,6 +141,31 @@ function aspectWindow(needX: number, needY: number, aspect: number): { halfX: nu
 }
 
 /**
+ * 直线视窗基准半宽（数学单位）：原点居中视窗的最小半宽，量级对齐显式默认域 ±10；
+ * 纳入离原点最近点与两轴截距（linePair 共用，ZOO-148）。
+ */
+function lineWindowBase(a: number, b: number, c: number): number {
+  const denom = a * a + b * b;
+  const xIntercept = a !== 0 && Number.isFinite(c / a) ? Math.abs(c / a) : 0;
+  const yIntercept = b !== 0 && Number.isFinite(c / b) ? Math.abs(c / b) : 0;
+  return Math.max(LINE_VIEW_BASE, Math.abs((a * c) / denom), Math.abs((b * c) / denom), xIntercept, yIntercept);
+}
+
+/** 直线采样折线：离原点最近点 P₀ 沿方向向量 (b,−a) 两端各延伸 r（越出卡片裁剪）。 */
+function linePolyline(a: number, b: number, c: number, r: number): Polyline {
+  const denom = a * a + b * b;
+  const norm = Math.sqrt(denom);
+  const p0x = (a * c) / denom;
+  const p0y = (b * c) / denom;
+  const dx = b / norm;
+  const dy = -a / norm;
+  return [
+    { x: p0x - r * dx, y: p0y - r * dy },
+    { x: p0x + r * dx, y: p0y + r * dy },
+  ];
+}
+
+/**
  * 直线参数化采样（D7 方案 A / 研究报告 §2.3）：直线无自然定义域，
  * 视窗取原点居中（保证坐标轴上下文可见），半宽纳入离原点最近点 P₀ 与两轴
  * 截距；采样折线沿方向向量 (b,−a) 越出视窗对角（两端各 2×最大半宽），
@@ -147,21 +174,49 @@ function aspectWindow(needX: number, needY: number, aspect: number): { halfX: nu
 function sampleLine(params: LineParams, aspect: number): SampleResult {
   const { a, b, c } = params;
   if (a === 0 && b === 0) return { error: '该方程不表示直线' };
-  const denom = a * a + b * b;
-  const p0x = (a * c) / denom; // 直线上离原点最近的点（视窗锚点之一）
-  const p0y = (b * c) / denom;
-  const xIntercept = a !== 0 && Number.isFinite(c / a) ? Math.abs(c / a) : 0;
-  const yIntercept = b !== 0 && Number.isFinite(c / b) ? Math.abs(c / b) : 0;
-  const base = Math.max(LINE_VIEW_BASE, Math.abs(p0x), Math.abs(p0y), xIntercept, yIntercept);
+  const base = lineWindowBase(a, b, c);
   const { halfX, halfY } = aspectWindow(base * 1.15 + 0.5, base * 1.15 + 0.5, aspect); // 15% + 0.5 内边距
-  const norm = Math.sqrt(denom);
   const r = 2 * Math.max(halfX, halfY); // 采样半径：必越出视窗对角线，卡片裁剪后两端不缺角
-  const dx = b / norm;
-  const dy = -a / norm;
-  const polyline: Polyline = [
-    { x: p0x - r * dx, y: p0y - r * dy },
-    { x: p0x + r * dx, y: p0y + r * dy },
-  ];
+  return { polylines: [linePolyline(a, b, c, r)], xMin: -halfX, xMax: halfX, yMin: -halfY, yMax: halfY };
+}
+
+/**
+ * 退化直线对采样（ZOO-148 / 研究报告 §3.2「复用 line 全部设施」）：两线共用
+ * 同一原点居中视窗（基准半宽取两线锚点的较大者，网格 / 轴上下文一致），
+ * 各产出一条贯穿折线；重合直线退化为单线。
+ */
+function sampleLinePair(params: LinePairParams, aspect: number): SampleResult {
+  if (params.lines.some((l) => l.a === 0 && l.b === 0)) return { error: '该方程不表示直线' };
+  const base = Math.max(...params.lines.map((l) => lineWindowBase(l.a, l.b, l.c)));
+  const { halfX, halfY } = aspectWindow(base * 1.15 + 0.5, base * 1.15 + 0.5, aspect);
+  const r = 2 * Math.max(halfX, halfY);
+  return {
+    polylines: params.lines.map((l) => linePolyline(l.a, l.b, l.c, r)),
+    xMin: -halfX,
+    xMax: halfX,
+    yMin: -halfY,
+    yMax: halfY,
+  };
+}
+
+/** 退化单点标记半径下限（数学单位）：视窗半宽 ×2%，保证默认视窗下可见的小圆点。 */
+const POINT_MARKER_MIN_R = 0.1;
+
+/**
+ * 退化单点采样（ZOO-148 / 研究报告 §3.2「极小标记点」）：点本身无尺寸，采样为
+ * 半径 = 视窗半宽 2%（下限 0.1）的小圆折线——恒可见且随元素整体缩放；视窗原点
+ * 居中、纳入点与 2 单位余量（坐标轴上下文可见，与 line 先例一致）。
+ */
+function samplePoint(params: DegeneratePointParams, aspect: number): SampleResult {
+  const { x, y } = params;
+  const { halfX, halfY } = aspectWindow(Math.max(5, Math.abs(x) + 2), Math.max(5, Math.abs(y) + 2), aspect);
+  const r = Math.max(POINT_MARKER_MIN_R, 0.02 * Math.min(halfX, halfY));
+  const polyline: Polyline = [];
+  const segments = 28;
+  for (let i = 0; i <= segments; i++) {
+    const t = (2 * Math.PI * i) / segments;
+    polyline.push({ x: x + r * Math.cos(t), y: y + r * Math.sin(t) });
+  }
   return { polylines: [polyline], xMin: -halfX, xMax: halfX, yMin: -halfY, yMax: halfY };
 }
 
@@ -224,15 +279,18 @@ function sampleHyperbola(params: HyperbolaParams, aspect: number): SampleResult 
   return { polylines: [branch(1), branch(-1)], xMin: -halfX, xMax: halfX, yMin: -halfY, yMax: halfY };
 }
 
-/** 几何方程参数化精确采样（直线两端点 / 圆/椭圆 θ 0→2π 闭合折线 / 抛物线单支 /
- *  双曲线两支）与适配视窗。aspect = 卡片高宽比（缺省 0.75 对齐默认卡片），
- *  视窗纵横比与其一致以保证等比渲染不失真（ZOO-147）。 */
+/** 几何方程参数化精确采样（直线两端点 / 退化直线对两线 / 退化单点小圆标记 /
+ *  圆/椭圆 θ 0→2π 闭合折线 / 抛物线单支 / 双曲线两支）与适配视窗。
+ *  aspect = 卡片高宽比（缺省 0.75 对齐默认卡片），视窗纵横比与其一致以保证
+ *  等比渲染不失真（ZOO-147）。 */
 export function sampleGeometry(
-  kind: 'line' | 'circle' | 'ellipse' | 'parabola' | 'hyperbola',
-  params: LineParams | CircleParams | EllipseParams | ParabolaParams | HyperbolaParams,
+  kind: 'line' | 'linePair' | 'point' | 'circle' | 'ellipse' | 'parabola' | 'hyperbola',
+  params: LineParams | LinePairParams | DegeneratePointParams | CircleParams | EllipseParams | ParabolaParams | HyperbolaParams,
   aspect: number = DEFAULT_ASPECT,
 ): SampleResult {
   if (kind === 'line') return sampleLine(params as LineParams, aspect);
+  if (kind === 'linePair') return sampleLinePair(params as LinePairParams, aspect);
+  if (kind === 'point') return samplePoint(params as DegeneratePointParams, aspect);
   if (kind === 'parabola') return sampleParabola(params as ParabolaParams, aspect);
   if (kind === 'hyperbola') return sampleHyperbola(params as HyperbolaParams, aspect);
   const rx = kind === 'circle' ? (params as CircleParams).r : (params as EllipseParams).rx;

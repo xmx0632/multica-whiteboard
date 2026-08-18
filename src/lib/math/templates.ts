@@ -1,6 +1,6 @@
 /**
  * 方程模板与插入符号（交互原型基线 1:1 平移）。
- * 16 个模板覆盖 PRD §5.2 P0/P1 方程族（含二元一次 → 直线 D7、抛物线/双曲线 ZOO-147）；6 个符号按钮在光标处插入对应文本。
+ * 17 个模板覆盖 PRD §5.2 P0/P1 方程族（含二元一次 → 直线 D7、抛物线/双曲线 ZOO-147、退化两直线 ZOO-148）；6 个符号按钮在光标处插入对应文本。
  */
 
 export interface EquationTemplate {
@@ -27,6 +27,7 @@ export const EQUATION_TEMPLATES: EquationTemplate[] = [
   { name: '椭圆', equation: 'x²/9+y²/4=1' },
   { name: '抛物线', equation: 'y²=4x' },
   { name: '双曲线', equation: 'x²/9-y²/4=1' },
+  { name: '退化两直线', equation: 'x²-y²=0' },
 ];
 
 export interface SymbolButton {

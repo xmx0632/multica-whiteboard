@@ -9,8 +9,10 @@ import {
   hyperbolaTeachingInfo,
   isLinear,
   isQuadratic,
+  linePairTeachingInfo,
   lineTeachingInfo,
   parabolaTeachingInfo,
+  pointTeachingInfo,
   probeLinear,
   probeQuadratic,
   splitTopLevelEquals,
@@ -161,13 +163,96 @@ describe('classifyQuadratic 判别式分类（B=0 轴对齐，ZOO-147）', () =>
     });
   });
 
-  it('退化形 → degenerate（相交直线 x²−y²=0 / 平行直线 x²=4 / 抛物线型缺轴向项）', () => {
+  it('退化相交直线 → linePair（x²−y²=0 → y=±x）', () => {
     expect(classifyQuadratic({ A: 1, B: 0, C: -1, D: 0, E: 0, F: 0 })).toEqual({
-      kind: 'degenerate',
-      message: '该二次方程为退化曲线（如两条平行/相交直线、单点或空集），暂不支持出图',
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: -1, c: 0 },
+          { a: 1, b: 1, c: 0 },
+        ],
+        mode: 'intersecting',
+      },
     });
-    expect(classifyQuadratic({ A: 1, B: 0, C: 0, D: 0, E: 0, F: -4 }).kind).toBe('degenerate');
-    expect(classifyQuadratic({ A: 1, B: 0, C: 0, D: -2, E: 0, F: 0 }).kind).toBe('degenerate'); // x²−2x=0 → x=0/x=2
+  });
+
+  it('退化相交直线（平移）：(x−1)²−(y+2)²=0 → x−y=3 与 x+y=−1', () => {
+    // (x−1)²−(y+2)²=0 展开：x²−y²−2x−4y−3=0
+    expect(classifyQuadratic({ A: 1, B: 0, C: -1, D: -2, E: -4, F: -3 })).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: -1, c: 3 },
+          { a: 1, b: 1, c: -1 },
+        ],
+        mode: 'intersecting',
+      },
+    });
+  });
+
+  it('退化平行直线 → linePair（x²=4 → x=±2；x²−2x=0 → x=0/x=2；4x²=9 → x=±1.5）', () => {
+    expect(classifyQuadratic({ A: 1, B: 0, C: 0, D: 0, E: 0, F: -4 })).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: 0, c: -2 },
+          { a: 1, b: 0, c: 2 },
+        ],
+        mode: 'parallel',
+      },
+    });
+    expect(classifyQuadratic({ A: 1, B: 0, C: 0, D: -2, E: 0, F: 0 })).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: 0, c: 0 },
+          { a: 1, b: 0, c: 2 },
+        ],
+        mode: 'parallel',
+      },
+    });
+    expect(classifyQuadratic({ A: 4, B: 0, C: 0, D: 0, E: 0, F: -9 })).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: 0, c: -1.5 },
+          { a: 1, b: 0, c: 1.5 },
+        ],
+        mode: 'parallel',
+      },
+    });
+  });
+
+  it('退化重合直线 → linePair 单线（(x−1)²=0 → x=1）', () => {
+    expect(classifyQuadratic({ A: 1, B: 0, C: 0, D: -2, E: 0, F: 1 })).toEqual({
+      kind: 'linePair',
+      params: { lines: [{ a: 1, b: 0, c: 1 }], mode: 'coincident' },
+    });
+  });
+
+  it('退化单点 → point（x²+y²=0 → (0,0)；平移 (x−1)²+(y+2)²=0 → (1,−2)）', () => {
+    expect(classifyQuadratic({ A: 1, B: 0, C: 1, D: 0, E: 0, F: 0 })).toEqual({ kind: 'point', params: { x: 0, y: 0 } });
+    // (x−1)²+(y+2)²=0 展开：x²+y²−2x+4y+5=0
+    expect(classifyQuadratic({ A: 1, B: 0, C: 1, D: -2, E: 4, F: 5 })).toEqual({ kind: 'point', params: { x: 1, y: -2 } });
+  });
+
+  it('空集 → degenerate 教学文案（椭圆型 x²+y²=−1 / 抛物线型 x²=−4、y²+4=0）', () => {
+    expect(classifyQuadratic({ A: 1, B: 0, C: 1, D: 0, E: 0, F: 1 })).toEqual({
+      kind: 'degenerate',
+      message: '该方程为空集：左侧恒正（或恒负）、无法等于 0，实数平面内无图像（如 x²+y²=−1）',
+    });
+    expect(classifyQuadratic({ A: 1, B: 0, C: 0, D: 0, E: 0, F: 4 })).toEqual({
+      kind: 'degenerate',
+      message: '该方程为空集：x 的二次式判别式小于 0、无实根，实数平面内无图像（如 x²=−4）',
+    });
+    expect(classifyQuadratic({ A: 0, B: 0, C: 1, D: 0, E: 0, F: 4 }).kind).toBe('degenerate'); // y²+4=0
+  });
+
+  it('非退化近邻不误判：x²+y²=1e-8（真单点级小圆）仍引导标准形、x²−y²=1e-8 相交', () => {
+    // K = 1e-8，相对 kMag=1 远大于容差 → 椭圆型一般式（真椭圆，仅极小）
+    expect(classifyQuadratic({ A: 1, B: 0, C: 1, D: 0, E: 0, F: -1e-8 }).kind).toBe('unsupported');
+    // K = −1e-8 双曲线型两支极近 → 仍判双曲线（非退化）
+    expect(classifyQuadratic({ A: 1, B: 0, C: -1, D: 0, E: 0, F: -1e-8 }).kind).toBe('hyperbola');
   });
 
   it('xy 旋转项 → unsupported（ZOO-149）', () => {
@@ -192,6 +277,41 @@ describe('classifyImplicit 二次接入（探针 → 校验 → 判别式）', (
     expect916(fnOf((x, y) => 9 * x * x - 16 * y * y - 144));
     expect916(fnOf((x, y) => 144 - 9 * x * x + 16 * y * y)); // 全体 ×(−1)
     expect916(fnOf((x, y) => (3 * x / 4 + y) * (3 * x / 4 - y) - 9)); // 因式分解形
+  });
+
+  it('退化形探针接入：求值函数路径命中 linePair / point / 空集（ZOO-148）', () => {
+    expect(classifyImplicit(fnOf((x, y) => x * x - y * y))).toEqual({
+      kind: 'linePair',
+      params: {
+        lines: [
+          { a: 1, b: -1, c: 0 },
+          { a: 1, b: 1, c: 0 },
+        ],
+        mode: 'intersecting',
+      },
+    });
+    // (x−0.5)²=0 展开：x²−x+0.25（浮点重根）
+    const coincident = classifyImplicit(fnOf((x) => x * x - x + 0.25));
+    expect(coincident.kind).toBe('linePair');
+    if (coincident.kind === 'linePair') {
+      expect(coincident.params.mode).toBe('coincident');
+      expect(coincident.params.lines).toHaveLength(1);
+      expect(coincident.params.lines[0].c).toBeCloseTo(0.5, 9);
+    }
+    // (x−0.1)²+(y+0.2)²=0 展开（浮点单点）
+    const pt = classifyImplicit(fnOf((x, y) => (x - 0.1) ** 2 + (y + 0.2) ** 2));
+    expect(pt.kind).toBe('point');
+    if (pt.kind === 'point') {
+      expect(pt.params.x).toBeCloseTo(0.1, 9);
+      expect(pt.params.y).toBeCloseTo(-0.2, 9);
+    }
+    // 因式分解书写的平行直线：(2x-3)(x+1)=0 → x=1.5 与 x=−1
+    // （非轴对齐直线对展开必含 xy 项 → 旋转形，属 ZOO-149 范围）
+    const factored = classifyImplicit(fnOf((x) => (2 * x - 3) * (x + 1)));
+    expect(factored.kind).toBe('linePair');
+    if (factored.kind === 'linePair') expect(factored.params.mode).toBe('parallel');
+    // 空集
+    expect(classifyImplicit(fnOf((x, y) => x * x + y * y + 1)).kind).toBe('degenerate');
   });
 
   it('浮点平移展开（除不尽的分数系数）不误判', () => {
@@ -296,5 +416,51 @@ describe('抛物线 / 双曲线教学参数（ZOO-147，面板只读展示）', 
 
   it('双曲线 a=1 分母省略：x²−y²/4=1', () => {
     expect(hyperbolaTeachingInfo({ h: 0, k: 0, a: 1, b: 2, axis: 'x' }).standardForm).toBe('x²-y²/4=1');
+  });
+});
+
+describe('退化形教学参数（ZOO-148，面板只读展示）', () => {
+  it('相交直线对：标签 / 两线一般式 / 交点', () => {
+    expect(
+      linePairTeachingInfo({
+        lines: [
+          { a: 1, b: -1, c: 0 },
+          { a: 1, b: 1, c: 0 },
+        ],
+        mode: 'intersecting',
+      }),
+    ).toEqual({ label: '两条相交直线', equations: ['x-y=0', 'x+y=0'], detail: '交点 (0, 0)' });
+    // 平移形：交点即退化前中心 (1, −2)
+    expect(
+      linePairTeachingInfo({
+        lines: [
+          { a: 1, b: -1, c: 3 },
+          { a: 1, b: 1, c: -1 },
+        ],
+        mode: 'intersecting',
+      }).detail,
+    ).toBe('交点 (1, -2)');
+  });
+
+  it('平行 / 重合直线对：间距 / 重合说明', () => {
+    expect(
+      linePairTeachingInfo({
+        lines: [
+          { a: 1, b: 0, c: -2 },
+          { a: 1, b: 0, c: 2 },
+        ],
+        mode: 'parallel',
+      }),
+    ).toEqual({ label: '两条平行直线', equations: ['x=-2', 'x=2'], detail: '间距 d = 4' });
+    expect(linePairTeachingInfo({ lines: [{ a: 1, b: 0, c: 1 }], mode: 'coincident' })).toEqual({
+      label: '一对重合直线',
+      equations: ['x=1'],
+      detail: '判别式为 0，两根重合于同一条直线',
+    });
+  });
+
+  it('退化单点：坐标与唯一解表述', () => {
+    expect(pointTeachingInfo({ x: 1, y: -2 })).toEqual({ point: '(1, -2)', solution: 'x = 1, y = -2' });
+    expect(pointTeachingInfo({ x: 0, y: 0 }).point).toBe('(0, 0)');
   });
 });

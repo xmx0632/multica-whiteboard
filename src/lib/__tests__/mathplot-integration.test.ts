@@ -173,6 +173,43 @@ describe('元素工厂（创建落点与分类）', () => {
     expect(hel.xAxis.min).toBeLessThanOrEqual(-5);
   });
 
+  it('退化形（ZOO-148 / D7）：linePair / point 建元素、equalRatio 强制、定义域取采样视窗', () => {
+    const pair: EquationDraftPayload = {
+      equation: 'x²-y²=0',
+      outcome: {
+        kind: 'linePair',
+        params: {
+          lines: [
+            { a: 1, b: -1, c: 0 },
+            { a: 1, b: 1, c: 0 },
+          ],
+          mode: 'intersecting',
+        },
+      },
+    };
+    const pairEl = createMathPlotElement(pair, { centerX: 0, centerY: 0 });
+    expect(pairEl.kind).toBe('linePair');
+    expect(pairEl.error).toBeNull();
+    expect(pairEl.equalRatio).toBe(true);
+    expect(pairEl.xAxis.min).toBeLessThan(0); // 原点居中（交点 / 坐标轴上下文）
+    expect(pairEl.xAxis.max).toBeGreaterThan(0);
+
+    const point: EquationDraftPayload = { equation: 'x²+y²=0', outcome: { kind: 'point', params: { x: 0, y: 0 } } };
+    const pointEl = createMathPlotElement(point, { centerX: 0, centerY: 0 });
+    expect(pointEl.kind).toBe('point');
+    expect(pointEl.error).toBeNull();
+    expect(pointEl.equalRatio).toBe(true);
+
+    // 空集：错误占位元素承载教学文案（研究报告 §3.2）
+    const empty: EquationDraftPayload = {
+      equation: 'x²+y²=-1',
+      outcome: { kind: 'error', message: '该方程为空集：左侧恒正（或恒负）、无法等于 0，实数平面内无图像（如 x²+y²=−1）' },
+    };
+    const emptyPatch = mathPlotFieldsFromPayload(empty);
+    expect(emptyPatch.kind).toBe('error');
+    expect(emptyPatch.error).toContain('空集');
+  });
+
   it('原位替换补丁：只动数学字段，样式 / 位置由调用方保留', () => {
     const patch = mathPlotFieldsFromPayload({ equation: 'y=cos(x)', outcome: { kind: 'explicit' } });
     expect(patch).toEqual({ equation: 'y=cos(x)', kind: 'explicit', error: null });
@@ -274,6 +311,56 @@ describe('渲染管线接入', () => {
       plotTokenFor(el.id),
     );
     expect(plotRenderWriteCount()).toBe(before);
+  });
+
+  it('linePair / point 元素（ZOO-148）：渲染管线 / 折线 / 缓存全链路', () => {
+    const pairEl = makeElement({
+      id: 'mp-linepair-1',
+      equation: 'x²-y²=0',
+      kind: 'linePair',
+      xAxis: { min: -9.2, max: 9.2 },
+    });
+    const { ctx } = createMockCtx();
+    expect(() => renderElement(ctx, pairEl, VP)).not.toThrow();
+    const pairRender = resolvePlotRender(
+      { equation: pairEl.equation, kind: pairEl.kind, xAxis: pairEl.xAxis, equalRatio: pairEl.equalRatio, sampleCount: pairEl.sampleCount },
+      { width: pairEl.width, height: pairEl.height },
+      plotTokenFor(pairEl.id),
+    );
+    expect(pairRender.error).toBeUndefined();
+    expect(pairRender.polylines).toHaveLength(2); // 两条直线
+    for (const pl of pairRender.polylines) expect(pl).toHaveLength(2);
+    // 每条折线落回 y=±x（lines[0]=x−y=0，lines[1]=x+y=0）
+    for (const p of pairRender.polylines[0]) expect(Math.abs(p.x - p.y)).toBeLessThan(1e-9);
+    for (const p of pairRender.polylines[1]) expect(Math.abs(p.x + p.y)).toBeLessThan(1e-9);
+    // 平移缩放不重采样：同 sig 二次调用零写入
+    const before = plotRenderWriteCount();
+    resolvePlotRender(
+      { equation: pairEl.equation, kind: pairEl.kind, xAxis: pairEl.xAxis, equalRatio: pairEl.equalRatio, sampleCount: pairEl.sampleCount },
+      { width: pairEl.width, height: pairEl.height },
+      plotTokenFor(pairEl.id),
+    );
+    expect(plotRenderWriteCount()).toBe(before);
+
+    const pointEl = makeElement({
+      id: 'mp-point-1',
+      equation: '(x-1)²+(y+2)²=0',
+      kind: 'point',
+      xAxis: { min: -9.2, max: 9.2 },
+    });
+    expect(() => renderElement(ctx, pointEl, VP)).not.toThrow();
+    const pointRender = resolvePlotRender(
+      { equation: pointEl.equation, kind: pointEl.kind, xAxis: pointEl.xAxis, equalRatio: pointEl.equalRatio, sampleCount: pointEl.sampleCount },
+      { width: pointEl.width, height: pointEl.height },
+      plotTokenFor(pointEl.id),
+    );
+    expect(pointRender.error).toBeUndefined();
+    expect(pointRender.polylines).toHaveLength(1); // 小圆标记
+    const pl = pointRender.polylines[0].slice(0, -1); // 去掉闭合重复点，均匀角度均值即圆心
+    const cx = pl.reduce((s2, p) => s2 + p.x, 0) / pl.length;
+    const cy = pl.reduce((s2, p) => s2 + p.y, 0) / pl.length;
+    expect(cx).toBeCloseTo(1, 6); // 标记圆心 = 退化点 (1, −2)
+    expect(cy).toBeCloseTo(-2, 6);
   });
 
   it('parabola / hyperbola 元素（ZOO-147）：渲染管线 / 折线 / 缓存全链路', () => {

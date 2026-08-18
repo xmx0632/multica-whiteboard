@@ -329,6 +329,127 @@ describe('sampleEquation 统一分发（4c 渲染管线入口）', () => {
   });
 });
 
+describe('sampleGeometry linePair / point（退化形采样，ZOO-148 / D7）', () => {
+  const onLine = (p: { x: number; y: number }, a: number, b: number, c: number) =>
+    Math.abs(a * p.x + b * p.y - c) < 1e-9 * Math.max(1, Math.abs(c));
+
+  it('相交直线对 x²−y²=0：两条折线、各在自身直线上、共享视窗且纵横比一致', () => {
+    const r = sampleGeometry('linePair', {
+      lines: [
+        { a: 1, b: -1, c: 0 },
+        { a: 1, b: 1, c: 0 },
+      ],
+      mode: 'intersecting',
+    });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(2);
+    for (const pl of r.polylines) expect(pl).toHaveLength(2); // 直线精确：两端点
+    for (const p of r.polylines[0]) expect(onLine(p, 1, -1, 0)).toBe(true);
+    for (const p of r.polylines[1]) expect(onLine(p, 1, 1, 0)).toBe(true);
+    expect(r.xMin).toBeCloseTo(-r.xMax!, 9); // 原点居中
+    expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!)).toBeCloseTo(0.75, 9);
+  });
+
+  it('平行直线对 x²=4：x=±2 两竖线，截距纳入视窗；远离原点的对共享放大的视窗', () => {
+    const r = sampleGeometry('linePair', {
+      lines: [
+        { a: 1, b: 0, c: -2 },
+        { a: 1, b: 0, c: 2 },
+      ],
+      mode: 'parallel',
+    });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(2);
+    for (const pl of r.polylines) {
+      for (const p of pl) expect(onLine(p, 1, 0, Math.sign(p.x) * 2)).toBe(true);
+      expect(Math.abs(pl[0].y)).toBeGreaterThan(r.yMax!); // 越出视窗（卡片裁剪贯穿）
+    }
+    expect(r.xMax!).toBeGreaterThanOrEqual(2);
+    expect(r.xMin!).toBeLessThanOrEqual(-2);
+
+    const far = sampleGeometry('linePair', {
+      lines: [
+        { a: 0, b: 1, c: 10 },
+        { a: 0, b: 1, c: 16 },
+      ],
+      mode: 'parallel',
+    });
+    expect('error' in far).toBe(false);
+    if (!('error' in far)) expect(far.yMax!).toBeGreaterThanOrEqual(16); // 远线可见
+  });
+
+  it('重合直线（单线）：一条折线', () => {
+    const r = sampleGeometry('linePair', { lines: [{ a: 1, b: 0, c: 1 }], mode: 'coincident' });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(1);
+    for (const p of r.polylines[0]) expect(onLine(p, 1, 0, 1)).toBe(true);
+  });
+
+  it('退化单点：小圆标记居中于点、半径恒为正、视窗纳入点与原点', () => {
+    const r = sampleGeometry('point', { x: 0, y: 0 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(1);
+    const pl = r.polylines[0];
+    expect(pl.length).toBeGreaterThanOrEqual(20); // 闭合小圆折线
+    expect(Math.hypot(pl[0].x - pl[pl.length - 1].x, pl[0].y - pl[pl.length - 1].y)).toBeLessThan(1e-12); // 闭合
+    const rs = pl.map((p) => Math.hypot(p.x, p.y));
+    expect(Math.min(...rs)).toBeGreaterThan(0); // 恒可见标记（半径 > 0）
+    expect(Math.max(...rs)).toBeLessThan(0.5); // 且不喧宾夺主
+    expect(r.xMin!).toBeLessThan(0);
+    expect(r.xMax!).toBeGreaterThan(0);
+
+    const moved = sampleGeometry('point', { x: 3, y: -1 }, 0.75);
+    expect('error' in moved).toBe(false);
+    if ('error' in moved) {
+      return;
+    }
+    expect(moved.xMax!).toBeGreaterThanOrEqual(3); // 点可见
+    expect(moved.xMin!).toBeLessThanOrEqual(0); // 原点上下文可见
+    expect((moved.yMax! - moved.yMin!) / (moved.xMax! - moved.xMin!)).toBeCloseTo(0.75, 9);
+    const ring = moved.polylines[0].slice(0, -1); // 去掉闭合重复点，均匀角度均值即圆心
+    const cx = ring.reduce((s2, p) => s2 + p.x, 0) / ring.length;
+    const cy = ring.reduce((s2, p) => s2 + p.y, 0) / ring.length;
+    expect(cx).toBeCloseTo(3, 6); // 标记圆心即退化点
+    expect(cy).toBeCloseTo(-1, 6);
+  });
+
+  it('aspect 参数：直线对 / 单点任意纵横比一致（等比不失真，ZOO-147 承诺延续）', () => {
+    for (const aspect of [0.75, 0.4, 1, 1.5]) {
+      const lp = sampleGeometry(
+        'linePair',
+        {
+          lines: [
+            { a: 1, b: -1, c: 0 },
+            { a: 1, b: 1, c: 0 },
+          ],
+          mode: 'intersecting',
+        },
+        aspect,
+      );
+      if ('error' in lp) throw new Error('unexpected error');
+      expect((lp.yMax! - lp.yMin!) / (lp.xMax! - lp.xMin!), `linePair aspect=${aspect}`).toBeCloseTo(aspect, 9);
+      const pt = sampleGeometry('point', { x: 1, y: 1 }, aspect);
+      if ('error' in pt) throw new Error('unexpected error');
+      expect((pt.yMax! - pt.yMin!) / (pt.xMax! - pt.xMin!), `point aspect=${aspect}`).toBeCloseTo(aspect, 9);
+    }
+  });
+
+  it('sampleEquation 全链路：x²−y²=0 解析→两折线；x²+y²=0 解析→闭合标记', () => {
+    const lp = sampleEquation(parseEquation('x²-y²=0'), { xMin: -10, xMax: 10, aspect: 0.75 });
+    expect('error' in lp).toBe(false);
+    if (!('error' in lp)) expect(lp.polylines).toHaveLength(2);
+    const pt = sampleEquation(parseEquation('x²+y²=0'), { xMin: -10, xMax: 10, aspect: 0.75 });
+    expect('error' in pt).toBe(false);
+    if (!('error' in pt)) expect(pt.polylines[0].length).toBeGreaterThanOrEqual(20);
+    const empty = sampleEquation(parseEquation('x²+y²=-1'), { xMin: -10, xMax: 10 });
+    expect('error' in empty ? empty.error : '').toContain('空集');
+  });
+});
+
 describe('createPreviewPolylines（编辑器预览注入点）', () => {
   it('显式函数：默认视窗 x∈[-10,10]，返回 y 自适应视窗', () => {
     const p = createPreviewPolylines('y=sin(x)', { kind: 'explicit' });

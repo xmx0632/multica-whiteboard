@@ -20,6 +20,10 @@ import type { EquationDraftPayload, PreviewData, StructuralOutcome } from '@/lib
 const KIND_LABELS: Record<string, string> = {
   explicit: '显式函数 y=f(x)',
   line: '直线（二元一次方程）',
+  linePair: '两条直线（退化二次方程）',
+  point: '单点（退化二次方程）',
+  parabola: '抛物线（二元二次方程）',
+  hyperbola: '双曲线（二元二次方程）',
   circle: '圆（几何方程）',
   ellipse: '椭圆（几何方程）',
 };
