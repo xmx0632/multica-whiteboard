@@ -10,16 +10,20 @@
  * onChange + onCommit。错误态走「重新编辑方程」回调（原位替换，原型决策）。
  */
 import { COLORS } from '@/lib/types';
-import { formatCoef, formatGeneralForm, lineTeachingInfo } from '@/lib/math/conic';
-import type { LineParams } from '@/lib/math/types';
+import { formatCoef, formatGeneralForm, hyperbolaTeachingInfo, lineTeachingInfo, parabolaTeachingInfo } from '@/lib/math/conic';
+import type { HyperbolaParams, LineParams, ParabolaParams } from '@/lib/math/types';
 
 export interface MathPlotParamsValue {
   equation: string;
-  kind: 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   errorMessage?: string;
   /** kind === 'line' 时的一般式系数（调用方经 validateEquation 重解析填充，D7 教学参数） */
   lineParams?: LineParams;
+  /** kind === 'parabola' 时的探针参数（顶点/焦参数/开口轴，ZOO-147 教学参数） */
+  parabolaParams?: ParabolaParams;
+  /** kind === 'hyperbola' 时的探针参数（中心/半轴/实轴方向，ZOO-147 教学参数） */
+  hyperbolaParams?: HyperbolaParams;
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -50,6 +54,8 @@ export interface MathPlotParamsProps {
 const KIND_BADGES: Record<MathPlotParamsValue['kind'], { label: string; cls: string }> = {
   explicit: { label: '显式函数', cls: 'bg-blue-50 text-blue-600' },
   line: { label: '直线 · 几何', cls: 'bg-blue-50 text-blue-600' },
+  parabola: { label: '抛物线 · 几何', cls: 'bg-blue-50 text-blue-600' },
+  hyperbola: { label: '双曲线 · 几何', cls: 'bg-blue-50 text-blue-600' },
   circle: { label: '圆 · 几何', cls: 'bg-blue-50 text-blue-600' },
   ellipse: { label: '椭圆 · 几何', cls: 'bg-blue-50 text-blue-600' },
   error: { label: '解析失败', cls: 'bg-red-50 text-red-600' },
@@ -72,6 +78,8 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   const isError = value.kind === 'error';
   const badge = KIND_BADGES[value.kind];
   const line = value.kind === 'line' && value.lineParams ? lineTeachingInfo(value.lineParams) : null;
+  const parabola = value.kind === 'parabola' && value.parabolaParams ? parabolaTeachingInfo(value.parabolaParams) : null;
+  const hyperbola = value.kind === 'hyperbola' && value.hyperbolaParams ? hyperbolaTeachingInfo(value.hyperbolaParams) : null;
 
   const patch = (p: Partial<MathPlotParamsValue>, commit = false) => {
     onChange(p);
@@ -199,6 +207,32 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                   </div>
                 )
               ) : null}
+            </div>
+          )}
+
+          {parabola && (
+            <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-2 flex flex-col gap-1">
+              <div className="font-serif text-[13px] text-gray-800">{parabola.standardForm}</div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">
+                顶点 {parabola.vertex} · 焦点 {parabola.focus}
+              </div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">
+                准线 {parabola.directrix} · 开口{parabola.opening}
+              </div>
+            </div>
+          )}
+
+          {hyperbola && (
+            <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-2 flex flex-col gap-1">
+              <div className="font-serif text-[13px] text-gray-800">{hyperbola.standardForm}</div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">
+                中心 {hyperbola.center} · {hyperbola.axes}
+              </div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">焦点 {hyperbola.foci}</div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">渐近线 {hyperbola.asymptotes}</div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">
+                准线 {hyperbola.directrices} · 离心率 e = {formatCoef(Number(hyperbola.eccentricity))}
+              </div>
             </div>
           )}
 

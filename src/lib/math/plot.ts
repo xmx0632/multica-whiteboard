@@ -51,7 +51,7 @@ export interface PlotStyle {
 /** 解析输入契约（4d 的 MathPlotElement 数学字段的子集）。 */
 export interface PlotSpec {
   equation: string;
-  kind: 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
   errorMessage?: string;
   /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定） */
   xAxis: { min: number; max: number };
@@ -534,6 +534,8 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
     xMax: spec.xAxis.max,
     ...(yWindow ?? {}),
     sampleCount: spec.sampleCount,
+    // 几何 kind 视窗与卡片纵横比一致（ZOO-147 等比修复）：显式路径忽略该参数
+    aspect: frame.height / Math.max(frame.width, 1),
   });
   if ('error' in sampled) {
     return { polylines: [], view: nominal, error: sampled.error, path2d: null };

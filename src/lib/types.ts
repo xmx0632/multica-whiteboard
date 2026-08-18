@@ -71,13 +71,13 @@ export interface MathPlotElement extends BaseElement {
 
   // —— 方程 ——
   equation: string;
-  kind: 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   error?: string | null;
 
   // —— 数学视窗（局部坐标系定义，数学单位）——
   xAxis: { min: number; max: number };
-  /** x/y 单位等比；line/circle/ellipse 强制 true（几何不失真） */
+  /** x/y 单位等比；几何 kind（line/parabola/hyperbola/circle/ellipse）强制 true（不失真） */
   equalRatio: boolean;
 
   // —— 绘制参数 ——

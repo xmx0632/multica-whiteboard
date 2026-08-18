@@ -118,13 +118,15 @@ function mapSyntaxError(message: string): string {
   return '无法识别的表达式';
 }
 
-/** 隐式方程不支持文案（D7 引导式：非线性的二次曲线出图属 ZOO-147/148）。 */
-const UNSUPPORTED_IMPLICIT = '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与二元一次方程（如 3x+2y=6）';
+/** 隐式方程不支持文案（D7 引导式：非多项式隐式；退化 / 旋转 / 椭圆型另有专用文案）。 */
+const UNSUPPORTED_IMPLICIT =
+  '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次方程与二元二次抛物线/双曲线（如 y²=4x、9x²−16y²=144）';
 
 /**
- * 隐式二元方程分类（D7，ZOO-146）：顶层 split `=` → F=lhs−rhs → 复用本文件
+ * 隐式二元方程分类（D7，ZOO-146/147）：顶层 split `=` → F=lhs−rhs → 复用本文件
  * 安全管线（字符白名单 / AST 白名单含 y / compile LRU）→ conic.ts 数值探针。
- * 二元一次 → kind='line'（含竖线）；常数等式友好报错；非线性 → 引导文案。
+ * 二元一次 → kind='line'（含竖线）；二次判别式 → 'parabola' / 'hyperbola'
+ * （B=0 轴对齐含平移）；常数等式 / 退化形友好报错；旋转项 / 椭圆型 / 非多项式 → 引导文案。
  */
 function parseImplicit(src: string): ParseResult {
   const split = splitTopLevelEquals(src);
@@ -158,7 +160,9 @@ function parseImplicit(src: string): ParseResult {
     };
     const outcome = classifyImplicit(fn);
     if (outcome.kind === 'line') return { kind: 'line', params: outcome.params };
-    if (outcome.kind === 'degenerate') return err(outcome.message);
+    if (outcome.kind === 'parabola') return { kind: 'parabola', params: outcome.params };
+    if (outcome.kind === 'hyperbola') return { kind: 'hyperbola', params: outcome.params };
+    if (outcome.kind === 'degenerate' || outcome.kind === 'unsupported') return err(outcome.message);
     return err(UNSUPPORTED_IMPLICIT);
   } catch {
     return err('无法识别的表达式');

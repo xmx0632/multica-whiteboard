@@ -61,13 +61,16 @@ export default function PropertyPanel() {
   if (selectedEl && selectedEl.type === 'mathPlot') {
     const el = selectedEl;
 
-    // 直线教学参数（D7）：元素只存方程原文，面板展示前经 validateEquation 重解析取系数
-    const revalidated = el.kind === 'line' ? validateEquation(el.equation) : null;
+    // 几何方程教学参数（D7 / ZOO-147）：元素只存方程原文，面板展示前经 validateEquation 重解析取系数
+    const revalidated =
+      el.kind === 'line' || el.kind === 'parabola' || el.kind === 'hyperbola' ? validateEquation(el.equation) : null;
     const value: MathPlotParamsValue = {
       equation: el.equation,
       kind: el.kind,
       errorMessage: el.error ?? undefined,
       lineParams: revalidated?.kind === 'line' ? revalidated.params : undefined,
+      parabolaParams: revalidated?.kind === 'parabola' ? revalidated.params : undefined,
+      hyperbolaParams: revalidated?.kind === 'hyperbola' ? revalidated.params : undefined,
       xAxis: el.xAxis,
       sampleCount: el.sampleCount,
       equalRatio: el.equalRatio,
@@ -81,11 +84,13 @@ export default function PropertyPanel() {
 
     const handleParamsChange = (patch: Partial<MathPlotParamsValue>) => {
       if (!gestureStartRef.current) gestureStartRef.current = el;
-      // errorMessage / lineParams 为面板派生字段（元素不落盘 lineParams），剥除后落元素
+      // errorMessage / lineParams / parabolaParams / hyperbolaParams 为面板派生字段（元素不落盘），剥除后落元素
       const rest: Partial<MathPlotParamsValue> = { ...patch };
       const errorMessage = rest.errorMessage;
       delete rest.errorMessage;
       delete rest.lineParams;
+      delete rest.parabolaParams;
+      delete rest.hyperbolaParams;
       updateElementTransient(el.id, { ...rest, ...(errorMessage !== undefined ? { error: errorMessage } : {}) } as Partial<WhiteboardElement>);
     };
 

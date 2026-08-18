@@ -157,7 +157,7 @@ describe('sampleGeometry line（二元一次参数化，ZOO-146 / D7）', () => 
   const onLine = (p: { x: number; y: number }, a: number, b: number, c: number) =>
     Math.abs(a * p.x + b * p.y - c) < 1e-9 * Math.max(1, Math.abs(c));
 
-  it('一般式：两端点在直线上，视窗为原点居中方形且覆盖两端点', () => {
+  it('一般式：两端点在直线上，视窗原点居中且纵横比与卡片一致（ZOO-147 等比修复）', () => {
     const r = sampleGeometry('line', { a: 3, b: 2, c: 6 });
     expect('error' in r).toBe(false);
     if ('error' in r) return;
@@ -167,10 +167,10 @@ describe('sampleGeometry line（二元一次参数化，ZOO-146 / D7）', () => 
     // 采样线段总长 ≥ 视窗对角线（任意方向均覆盖整个卡片，绘制层按矩形裁剪）
     const [e1, e2] = r.polylines[0];
     expect(Math.hypot(e2.x - e1.x, e2.y - e1.y)).toBeGreaterThanOrEqual(Math.SQRT2 * (r.xMax! - r.xMin!) - 1e-9);
-    // 原点居中方形：坐标轴上下文可见（教学）
+    // 原点居中：坐标轴上下文可见（教学）；y 跨度 = aspect·x 跨度（默认 0.75，等比不失真）
     expect(r.xMin).toBeCloseTo(-r.xMax!, 9);
     expect(r.yMin).toBeCloseTo(-r.yMax!, 9);
-    expect(r.xMax! - r.xMin!).toBeCloseTo(r.yMax! - r.yMin!, 9);
+    expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!)).toBeCloseTo(0.75, 9);
   });
 
   it('竖线 x=3：视窗半宽纳入截距，两端点跨越视窗', () => {
@@ -203,12 +203,113 @@ describe('sampleGeometry line（二元一次参数化，ZOO-146 / D7）', () => 
     expect(sampleGeometry('line', { a: 0, b: 0, c: 1 })).toEqual({ error: '该方程不表示直线' });
   });
 
+  it('aspect 参数：纵横比一致的视窗（等比渲染不失真，ZOO-147）', () => {
+    for (const aspect of [0.75, 0.4, 1, 1.5]) {
+      const r = sampleGeometry('line', { a: 3, b: 2, c: 6 }, aspect);
+      if ('error' in r) throw new Error('unexpected error');
+      expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!), `aspect=${aspect}`).toBeCloseTo(aspect, 9);
+      // 锚点（最近点/截距）均纳入视窗
+      expect(Math.abs(6 / 2)).toBeLessThanOrEqual(r.yMax! + 1e-9); // y 截距 3 可见
+      expect(Math.abs(6 / 3)).toBeLessThanOrEqual(r.xMax! + 1e-9); // x 截距 2 可见
+    }
+    // 圆：任意纵横比下形状完整且不裁剪（等比修复的核心回归）
+    const c = sampleGeometry('circle', { cx: 0, cy: 0, r: 3 }, 0.75);
+    if ('error' in c) throw new Error('unexpected error');
+    expect(c.xMin!).toBeLessThanOrEqual(-3);
+    expect(c.xMax!).toBeGreaterThanOrEqual(3);
+    expect(c.yMin!).toBeLessThanOrEqual(-3);
+    expect(c.yMax!).toBeGreaterThanOrEqual(3);
+    expect((c.yMax! - c.yMin!) / (c.xMax! - c.xMin!)).toBeCloseTo(0.75, 9);
+  });
+});
+
+describe('sampleGeometry parabola / hyperbola（二元二次参数化，ZOO-147 / D7）', () => {
+  it('抛物线 y²=4x：点满足方程、顶点/焦点纳入视窗、纵横比一致', () => {
+    const r = sampleGeometry('parabola', { h: 0, k: 0, p: 1, axis: 'x' });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(1); // 单支连续曲线
+    const pl = r.polylines[0];
+    expect(pl.length).toBeGreaterThanOrEqual(100);
+    for (const p of pl) {
+      expect(Math.abs(p.y * p.y - 4 * p.x)).toBeLessThan(1e-6 * Math.max(1, Math.abs(p.x)));
+    }
+    expect(pl[0].y).toBeLessThan(r.yMin!); // 两端越出卡片（裁剪贯穿）
+    expect(pl[pl.length - 1].y).toBeGreaterThan(r.yMax!);
+    expect(r.xMin!).toBeLessThanOrEqual(0); // 顶点可见
+    expect(r.xMax!).toBeGreaterThanOrEqual(1); // 焦点 (1,0) 可见
+    expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!)).toBeCloseTo(0.75, 9);
+  });
+
+  it('抛物线四方向 + 平移：开口向左 / 向上 / (y−1)²=8(x+2)', () => {
+    const left = sampleGeometry('parabola', { h: 0, k: 0, p: -1, axis: 'x' });
+    if ('error' in left) return;
+    for (const p of left.polylines[0]) expect(p.x).toBeLessThanOrEqual(1e-9);
+
+    const up = sampleGeometry('parabola', { h: 0, k: 0, p: 0.5, axis: 'y' });
+    if ('error' in up) return;
+    for (const p of up.polylines[0]) expect(p.y).toBeGreaterThanOrEqual(-1e-9);
+
+    const mv = sampleGeometry('parabola', { h: -2, k: 1, p: 2, axis: 'x' });
+    if ('error' in mv) return;
+    for (const p of mv.polylines[0]) {
+      expect(Math.abs((p.y - 1) * (p.y - 1) - 8 * (p.x + 2))).toBeLessThan(1e-5 * Math.max(1, Math.abs(p.x + 2)));
+    }
+    expect(mv.xMin!).toBeLessThanOrEqual(-2); // 顶点可见
+  });
+
+  it('双曲线 9x²−16y²=144（a=4,b=3）：两支、点满足方程、顶点/焦点纳入视窗', () => {
+    const r = sampleGeometry('hyperbola', { h: 0, k: 0, a: 4, b: 3, axis: 'x' });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(2); // 两支
+    const all = [...r.polylines[0], ...r.polylines[1]];
+    for (const p of all) {
+      expect(Math.abs((p.x * p.x) / 16 - (p.y * p.y) / 9 - 1)).toBeLessThan(1e-6);
+    }
+    const xs = all.map((p) => p.x);
+    expect(Math.min(...xs)).toBeLessThan(r.xMin! - 1); // 越出卡片（裁剪贯穿）
+    expect(Math.max(...xs)).toBeGreaterThan(r.xMax! + 1);
+    expect(r.xMax!).toBeGreaterThanOrEqual(5); // 焦点 (±5,0) 可见
+    expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!)).toBeCloseTo(0.75, 9);
+    // 两支各在顶点 x=±4 处有采样点（顶点可见）
+    expect(Math.min(...r.polylines[0].map((p) => p.x))).toBeCloseTo(4, 6);
+    expect(Math.max(...r.polylines[1].map((p) => p.x))).toBeCloseTo(-4, 6);
+  });
+
+  it('双曲线实轴 y + 平移：y²/9−x²/4=1 平移至中心 (1,−2)', () => {
+    const r = sampleGeometry('hyperbola', { h: 1, k: -2, a: 3, b: 2, axis: 'y' });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    for (const p of [...r.polylines[0], ...r.polylines[1]]) {
+      const dy = (p.y + 2) / 3;
+      const dx = (p.x - 1) / 2;
+      expect(Math.abs(dy * dy - dx * dx - 1)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('p=0 / 非法半轴防御：返回错误不崩溃', () => {
+    expect(sampleGeometry('parabola', { h: 0, k: 0, p: 0, axis: 'x' })).toEqual({ error: '该方程不表示抛物线' });
+    expect(sampleGeometry('hyperbola', { h: 0, k: 0, a: 0, b: 3, axis: 'x' })).toEqual({ error: '该方程不表示双曲线' });
+  });
+
+  it('sampleEquation 分发：y²=4x / 9x²−16y²=144 → 几何折线', () => {
+    const p = sampleEquation(parseEquation('y²=4x'), { xMin: -10, xMax: 10, aspect: 0.75 });
+    expect('error' in p).toBe(false);
+    if (!('error' in p)) expect(p.polylines).toHaveLength(1);
+    const h = sampleEquation(parseEquation('9x²-16y²=144'), { xMin: -10, xMax: 10, aspect: 0.75 });
+    expect('error' in h).toBe(false);
+    if (!('error' in h)) expect(h.polylines).toHaveLength(2);
+  });
+
   it('sampleEquation 分发：3x+2y=6 → line 折线', () => {
     const r = sampleEquation(parseEquation('3x+2y=6'), { xMin: -10, xMax: 10 });
     expect('error' in r).toBe(false);
     if ('error' in r) return;
     expect(r.polylines).toHaveLength(1);
-    for (const p of r.polylines[0]) expect(onLine(p, 3, 2, 6)).toBe(true);
+    for (const p of r.polylines[0]) {
+      expect(Math.abs(3 * p.x + 2 * p.y - 6)).toBeLessThan(1e-9 * Math.max(1, Math.abs(6)));
+    }
   });
 });
 

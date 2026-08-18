@@ -112,6 +112,61 @@ describe('parseEquation 二元一次方程 → 直线（ZOO-146 / D7）', () => 
   });
 });
 
+describe('parseEquation 二元二次 → 抛物线 / 双曲线（ZOO-147 / D7）', () => {
+  type ConicParams = { h: number; k: number; p?: number; a?: number; b?: number; axis: 'x' | 'y' };
+  const asConic = (raw: string, kind: 'parabola' | 'hyperbola') => {
+    const r = parseEquation(raw);
+    if (r.kind !== kind) throw new Error(`期望 ${kind}，得到 ${r.kind}: ${JSON.stringify(r)}`);
+    return r.params as unknown as ConicParams;
+  };
+  const close = (actual: number, expected: number, what: string) =>
+    expect(Math.abs(actual - expected), what).toBeLessThan(1e-9);
+
+  it('抛物线：y²=4x / x²=2y / 开口向左 y²=−4x / 平移 (y−1)²=8(x+2)', () => {
+    const p1 = asConic('y²=4x', 'parabola');
+    close(p1.h, 0, 'h'); close(p1.k, 0, 'k'); close(p1.p!, 1, 'p');
+    expect(p1.axis).toBe('x');
+
+    const p2 = asConic('x²=2y', 'parabola');
+    close(p2.p!, 0.5, 'p');
+    expect(p2.axis).toBe('y');
+
+    const p3 = asConic('y²=-4x', 'parabola');
+    close(p3.p!, -1, 'p');
+
+    const p4 = asConic('(y-1)²=8(x+2)', 'parabola');
+    close(p4.h, -2, 'h'); close(p4.k, 1, 'k'); close(p4.p!, 2, 'p');
+  });
+
+  it('双曲线：9x²−16y²=144（系数前置）/ −y²+x²=1（变序）/ 平移形 / 实轴 y', () => {
+    const h1 = asConic('9x²-16y²=144', 'hyperbola');
+    close(h1.h, 0, 'h'); close(h1.a!, 4, 'a'); close(h1.b!, 3, 'b');
+    expect(h1.axis).toBe('x');
+
+    const h2 = asConic('-y²+x²=1', 'hyperbola');
+    close(h2.a!, 1, 'a'); close(h2.b!, 1, 'b');
+
+    const h3 = asConic('(x-1)²/4-(y+2)²/9=1', 'hyperbola');
+    close(h3.h, 1, 'h'); close(h3.k, -2, 'k'); close(h3.a!, 2, 'a'); close(h3.b!, 3, 'b');
+
+    const h4 = asConic('y²/9-x²/4=1', 'hyperbola');
+    close(h4.a!, 3, 'a'); close(h4.b!, 2, 'b');
+    expect(h4.axis).toBe('y');
+  });
+
+  it('等价书写：两侧同乘 / 因式分解形 / 除法系数', () => {
+    const h = asConic('16y²-9x²=-144', 'hyperbola'); // 9x²−16y²=144 移项变序
+    close(h.a!, 4, 'a'); close(h.b!, 3, 'b');
+    const h2 = asConic('x²/4-y²/9=1', 'hyperbola');
+    close(h2.a!, 2, 'a'); close(h2.b!, 3, 'b');
+  });
+
+  it('validateEquation 消费契约：parabola / hyperbola 携带 params（面板教学参数来源）', () => {
+    expect(validateEquation('y²=4x')).toEqual({ kind: 'parabola', params: { h: 0, k: 0, p: 1, axis: 'x' } });
+    expect(validateEquation('9x²-16y²=144')).toEqual({ kind: 'hyperbola', params: { h: 0, k: 0, a: 4, b: 3, axis: 'x' } });
+  });
+});
+
 describe('parseEquation 求值正确性（mathjs number 构建）', () => {
   it('多项式与隐式乘法', () => {
     expect(asExplicit('y=x^2')(3)).toBe(9);
@@ -179,12 +234,18 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
     expect(errorMessage('y=2.5.3')).toBe('数字格式有误');
   });
 
-  it('隐式方程：二元一次之外仍明确拒绝（不白屏）', () => {
-    const msg = '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与二元一次方程（如 3x+2y=6）';
-    expect(errorMessage('x²-y²=1')).toBe(msg); // 双曲线（ZOO-147）
-    expect(errorMessage('x²=2y')).toBe(msg); // 抛物线（ZOO-147）
+  it('隐式方程：非多项式仍明确拒绝（不白屏）', () => {
+    const msg =
+      '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次方程与二元二次抛物线/双曲线（如 y²=4x、9x²−16y²=144）';
     expect(errorMessage('sin(x)=y')).toBe(msg); // 非多项式隐式
-    expect(errorMessage('x*y=1')).toBe(msg); // xy 交叉项（ZOO-148 之后的 P2）
+    expect(errorMessage('x³+y=1')).toBe(msg); // 三次
+  });
+
+  it('隐式方程：xy 旋转项 / 椭圆型一般式 / 退化形的引导文案', () => {
+    expect(errorMessage('x*y=1')).toBe('该方程含 xy 交叉项（旋转圆锥曲线），暂不支持出图'); // ZOO-149
+    expect(errorMessage('2x²+3y²=12')).toBe('该方程为椭圆型二次方程：请改用椭圆标准形（如 x²/9+y²/4=1）后再输入');
+    expect(errorMessage('x²-y²=0')).toBe('该二次方程为退化曲线（如两条平行/相交直线、单点或空集），暂不支持出图'); // ZOO-148
+    expect(errorMessage('x²=4')).toBe('该二次方程为退化曲线（如两条平行/相交直线、单点或空集），暂不支持出图');
   });
 
   it('隐式方程：常数等式 / 等号异常的友好文案', () => {

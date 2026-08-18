@@ -203,6 +203,49 @@ describe('resolvePlotRender（解析→采样→缓存编排）', () => {
     expect(r.view.xMin).toBeLessThan(-2); // cx-r-留边
     expect(r.view.xMax).toBeGreaterThan(4);
   });
+
+  it('几何方程等比单位（ZOO-147 修复）：4:3 卡片下 unitPxX === unitPxY，圆不为椭圆', () => {
+    vi.stubGlobal('Path2D', MockPath2D);
+    // 默认 480×360 元素卡：任何 aspect 的卡片，几何视窗纵横比必须与卡片一致
+    for (const [w, h] of [[480, 360], [360, 270], [300, 400]] as const) {
+      const r = resolvePlotRender(
+        { equation: '(x-1)²+(y-2)²=9', kind: 'circle', xAxis: { min: -5, max: 7 }, equalRatio: true, sampleCount: 320 },
+        { width: w, height: h },
+        {}
+      );
+      const unitX = w / (r.view.xMax - r.view.xMin);
+      const unitY = h / (r.view.yMax - r.view.yMin);
+      expect(unitX / unitY, `${w}×${h}`).toBeCloseTo(1, 9);
+    }
+  });
+
+  it('抛物线 / 双曲线：折线产出 + 等比单位（480×360 卡片）', () => {
+    vi.stubGlobal('Path2D', MockPath2D);
+    const parabola = resolvePlotRender(
+      { equation: 'y²=4x', kind: 'parabola', xAxis: { min: -8, max: 8 }, equalRatio: true, sampleCount: 320 },
+      { width: 480, height: 360 },
+      {}
+    );
+    expect(parabola.error).toBeUndefined();
+    expect(parabola.polylines).toHaveLength(1);
+    const pu = 480 / (parabola.view.xMax - parabola.view.xMin);
+    const pv = 360 / (parabola.view.yMax - parabola.view.yMin);
+    expect(pu / pv).toBeCloseTo(1, 9);
+
+    const hyperbola = resolvePlotRender(
+      { equation: '9x²-16y²=144', kind: 'hyperbola', xAxis: { min: -8, max: 8 }, equalRatio: true, sampleCount: 320 },
+      { width: 480, height: 360 },
+      {}
+    );
+    expect(hyperbola.error).toBeUndefined();
+    expect(hyperbola.polylines).toHaveLength(2);
+    const hu = 480 / (hyperbola.view.xMax - hyperbola.view.xMin);
+    const hv = 360 / (hyperbola.view.yMax - hyperbola.view.yMin);
+    expect(hu / hv).toBeCloseTo(1, 9);
+    // 渐近线教学正确性的渲染前提：顶点 ±4 与焦点 ±5 均在视窗内
+    expect(hyperbola.view.xMax).toBeGreaterThanOrEqual(5);
+    expect(hyperbola.view.xMin).toBeLessThanOrEqual(-5);
+  });
 });
 
 describe('drawGraphCore（网格/轴/刻度/曲线分层）', () => {

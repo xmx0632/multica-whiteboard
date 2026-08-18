@@ -212,7 +212,10 @@ function mathPlotToSvg(el: MathPlotElement): string {
       }
     }
     if (d) {
-      parts.push(`<path d="${d.trim()}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`);
+      // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
+      // canvas 有 ctx.clip 而 SVG 需显式 clipPath，否则导出的直线/双曲线溢出卡片
+      parts.push(`<defs><clipPath id="mpc-${el.id}"><rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/></clipPath></defs>`);
+      parts.push(`<path d="${d.trim()}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
     }
   }
 

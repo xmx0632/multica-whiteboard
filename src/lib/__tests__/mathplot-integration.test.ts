@@ -150,6 +150,29 @@ describe('元素工厂（创建落点与分类）', () => {
     expect(el.xAxis.max).toBeGreaterThan(2); // x 截距可见
   });
 
+  it('抛物线 / 双曲线（ZOO-147 / D7）：kind、equalRatio 强制、定义域取采样视窗', () => {
+    const parabola: EquationDraftPayload = {
+      equation: 'y²=4x',
+      outcome: { kind: 'parabola', params: { h: 0, k: 0, p: 1, axis: 'x' } },
+    };
+    const pel = createMathPlotElement(parabola, { centerX: 0, centerY: 0 });
+    expect(pel.kind).toBe('parabola');
+    expect(pel.error).toBeNull();
+    expect(pel.equalRatio).toBe(true);
+    expect(pel.xAxis.min).toBeLessThanOrEqual(0); // 顶点可见
+    expect(pel.xAxis.max).toBeGreaterThanOrEqual(1); // 焦点可见
+
+    const hyperbola: EquationDraftPayload = {
+      equation: '9x²-16y²=144',
+      outcome: { kind: 'hyperbola', params: { h: 0, k: 0, a: 4, b: 3, axis: 'x' } },
+    };
+    const hel = createMathPlotElement(hyperbola, { centerX: 0, centerY: 0 });
+    expect(hel.kind).toBe('hyperbola');
+    expect(hel.equalRatio).toBe(true);
+    expect(hel.xAxis.max).toBeGreaterThanOrEqual(5); // 焦点 (±5,0) 可见
+    expect(hel.xAxis.min).toBeLessThanOrEqual(-5);
+  });
+
   it('原位替换补丁：只动数学字段，样式 / 位置由调用方保留', () => {
     const patch = mathPlotFieldsFromPayload({ equation: 'y=cos(x)', outcome: { kind: 'explicit' } });
     expect(patch).toEqual({ equation: 'y=cos(x)', kind: 'explicit', error: null });
@@ -249,6 +272,40 @@ describe('渲染管线接入', () => {
       { equation: el.equation, kind: el.kind, xAxis: el.xAxis, equalRatio: el.equalRatio, sampleCount: el.sampleCount },
       { width: el.width, height: el.height },
       plotTokenFor(el.id),
+    );
+    expect(plotRenderWriteCount()).toBe(before);
+  });
+
+  it('parabola / hyperbola 元素（ZOO-147）：渲染管线 / 折线 / 缓存全链路', () => {
+    const pEl = makeElement({ id: 'mp-parabola-1', equation: 'y²=4x', kind: 'parabola', xAxis: { min: -8, max: 8 } });
+    const { ctx } = createMockCtx();
+    expect(() => renderElement(ctx, pEl, VP)).not.toThrow();
+    const pRender = resolvePlotRender(
+      { equation: pEl.equation, kind: pEl.kind, xAxis: pEl.xAxis, equalRatio: pEl.equalRatio, sampleCount: pEl.sampleCount },
+      { width: pEl.width, height: pEl.height },
+      plotTokenFor(pEl.id),
+    );
+    expect(pRender.error).toBeUndefined();
+    expect(pRender.polylines).toHaveLength(1);
+    for (const p of pRender.polylines[0]) {
+      expect(Math.abs(p.y * p.y - 4 * p.x)).toBeLessThan(1e-5 * Math.max(1, Math.abs(p.x)));
+    }
+
+    const hEl = makeElement({ id: 'mp-hyperbola-1', equation: '9x²-16y²=144', kind: 'hyperbola', xAxis: { min: -8, max: 8 } });
+    expect(() => renderElement(ctx, hEl, VP)).not.toThrow();
+    const hRender = resolvePlotRender(
+      { equation: hEl.equation, kind: hEl.kind, xAxis: hEl.xAxis, equalRatio: hEl.equalRatio, sampleCount: hEl.sampleCount },
+      { width: hEl.width, height: hEl.height },
+      plotTokenFor(hEl.id),
+    );
+    expect(hRender.error).toBeUndefined();
+    expect(hRender.polylines).toHaveLength(2); // 两支
+    // 平移缩放不重采样承诺保持：同 sig 二次调用零写入
+    const before = plotRenderWriteCount();
+    resolvePlotRender(
+      { equation: hEl.equation, kind: hEl.kind, xAxis: hEl.xAxis, equalRatio: hEl.equalRatio, sampleCount: hEl.sampleCount },
+      { width: hEl.width, height: hEl.height },
+      plotTokenFor(hEl.id),
     );
     expect(plotRenderWriteCount()).toBe(before);
   });

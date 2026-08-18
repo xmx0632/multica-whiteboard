@@ -9,13 +9,43 @@
  */
 import type { Point } from '../types';
 
-export type EquationKind = 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
+export type EquationKind = 'explicit' | 'line' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
 
 /** 二元一次方程一般式 ax+by=c 的探针系数（ZOO-146 / D7，含 b=0 竖线）。 */
 export interface LineParams {
   a: number;
   b: number;
   c: number;
+}
+
+/**
+ * 抛物线探针参数（ZOO-147 / D7）：axis='x' 即 (y−k)²=4p(x−h)（沿 x 轴开口），
+ * axis='y' 即 (x−h)²=4p(y−k)。p 带符号，符号即开口方向，覆盖平移 + 四方向。
+ */
+export interface ParabolaParams {
+  /** 顶点 */
+  h: number;
+  k: number;
+  /** 焦参数（顶点到焦点的带符号距离） */
+  p: number;
+  /** 开口轴向：'x' 左右开 / 'y' 上下开 */
+  axis: 'x' | 'y';
+}
+
+/**
+ * 双曲线探针参数（ZOO-147 / D7）：axis='x' 即 (x−h)²/a²−(y−k)²/b²=1，
+ * axis='y' 即 (y−k)²/a²−(x−h)²/b²=1（a 恒为实半轴），含平移。
+ */
+export interface HyperbolaParams {
+  /** 中心 */
+  h: number;
+  k: number;
+  /** 实半轴（焦点所在轴） */
+  a: number;
+  /** 虚半轴 */
+  b: number;
+  /** 实轴方向 */
+  axis: 'x' | 'y';
 }
 
 export interface CircleParams {
@@ -35,6 +65,8 @@ export interface EllipseParams {
 export type StructuralOutcome =
   | { kind: 'explicit' }
   | { kind: 'line'; params: LineParams }
+  | { kind: 'parabola'; params: ParabolaParams }
+  | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'error'; message: string };
@@ -43,6 +75,8 @@ export type StructuralOutcome =
 export type ParseResult =
   | { kind: 'explicit'; fn: (x: number) => number }
   | { kind: 'line'; params: LineParams }
+  | { kind: 'parabola'; params: ParabolaParams }
+  | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'error'; message: string };

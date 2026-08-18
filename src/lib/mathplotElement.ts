@@ -26,6 +26,8 @@ export interface MathPlotPlacement {
 function geometryFields(
   outcome:
     | { kind: 'line'; params: { a: number; b: number; c: number } }
+    | { kind: 'parabola'; params: { h: number; k: number; p: number; axis: 'x' | 'y' } }
+    | { kind: 'hyperbola'; params: { h: number; k: number; a: number; b: number; axis: 'x' | 'y' } }
     | { kind: 'circle'; params: { cx: number; cy: number; r: number } }
     | { kind: 'ellipse'; params: { cx: number; cy: number; rx: number; ry: number } }
 ): Pick<MathPlotElement, 'xAxis' | 'equalRatio'> {
@@ -50,7 +52,13 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPl
     kind: outcome.kind,
     error: outcome.kind === 'error' ? outcome.message : null,
   };
-  if (outcome.kind === 'line' || outcome.kind === 'circle' || outcome.kind === 'ellipse') {
+  if (
+    outcome.kind === 'line' ||
+    outcome.kind === 'parabola' ||
+    outcome.kind === 'hyperbola' ||
+    outcome.kind === 'circle' ||
+    outcome.kind === 'ellipse'
+  ) {
     return { ...base, ...geometryFields(outcome) };
   }
   return base;
