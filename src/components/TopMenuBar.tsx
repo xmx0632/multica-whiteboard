@@ -62,47 +62,47 @@ export default function TopMenuBar() {
   }, [isDirty, newDocument]);
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-2 py-1.5 z-10">
-      <button onClick={handleNew} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-md" title="New (Ctrl+N)">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center gap-1 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-2 py-1.5 z-10">
+      <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title="New (Ctrl+N)">
         New
       </button>
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <button onClick={undo} disabled={undoStack.length === 0} className="px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md disabled:opacity-30" title="Undo (Ctrl+Z)">
+      <button onClick={undo} disabled={undoStack.length === 0} className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30" title="Undo (Ctrl+Z)">
         ↩
       </button>
-      <button onClick={redo} disabled={redoStack.length === 0} className="px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md disabled:opacity-30" title="Redo (Ctrl+Shift+Z)">
+      <button onClick={redo} disabled={redoStack.length === 0} className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30" title="Redo (Ctrl+Shift+Z)">
         ↪
       </button>
 
       <div className="w-px h-5 bg-gray-200" />
 
       <div className="relative">
-        <button onClick={() => setShowExport(!showExport)} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-md">
+        <button onClick={() => setShowExport(!showExport)} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
           Export
         </button>
         {showExport && (
           <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[120px]">
-            <button onClick={handleExportPng} className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50">Export PNG</button>
-            <button onClick={handleExportJpg} className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50">Export JPG</button>
-            <button onClick={handleExportSvg} className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50">Export SVG</button>
+            <button onClick={handleExportPng} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">Export PNG</button>
+            <button onClick={handleExportJpg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">Export JPG</button>
+            <button onClick={handleExportSvg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">Export SVG</button>
           </div>
         )}
       </div>
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <button onClick={handleSaveLocal} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-md">
+      <button onClick={handleSaveLocal} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
         Save
       </button>
-      <button onClick={handleSaveServer} disabled={saving} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-md disabled:opacity-50">
+      <button onClick={handleSaveServer} disabled={saving} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-50">
         {saving ? '...' : 'Save Server'}
       </button>
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <button onClick={handleClear} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-md">
+      <button onClick={handleClear} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
         Clear
       </button>
 

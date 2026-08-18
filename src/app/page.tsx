@@ -11,7 +11,7 @@ export default function Home() {
   useShortcuts();
 
   return (
-    <div className="w-screen h-screen overflow-hidden relative bg-gray-50 flex flex-col">
+    <div className="w-dvw h-dvh overflow-hidden relative bg-gray-50 flex flex-col">
       <Canvas />
       <LeftToolbar />
       <PropertyPanel />

@@ -129,7 +129,7 @@ export default function PropertyPanel() {
   const showFont = activeTool === 'text';
 
   return (
-    <div className="absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
+    <div className="touch-panel absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div>
         <label className="text-xs font-medium text-gray-500 mb-1 block">Stroke</label>
         <div className="flex flex-wrap gap-1">
@@ -137,7 +137,7 @@ export default function PropertyPanel() {
             <button
               key={c}
               onClick={() => setStrokeColor(c)}
-              className={`w-5 h-5 rounded-full border-2 ${strokeColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
+              className={`touch-swatch w-5 h-5 rounded-full border-2 ${strokeColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
               style={{ backgroundColor: c }}
             />
           ))}
@@ -145,7 +145,7 @@ export default function PropertyPanel() {
             type="color"
             value={strokeColor}
             onChange={(e) => setStrokeColor(e.target.value)}
-            className="w-5 h-5 rounded cursor-pointer border border-gray-300"
+            className="touch-swatch w-5 h-5 rounded cursor-pointer border border-gray-300"
           />
         </div>
       </div>
@@ -158,13 +158,13 @@ export default function PropertyPanel() {
           max={50}
           value={strokeWidth}
           onChange={(e) => setStrokeWidth(Number(e.target.value))}
-          className="w-full accent-blue-500"
+          className="touch-target w-full accent-blue-500"
         />
       </div>
 
       {showFill && (
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
+          <label className="touch-target text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
             <input
               type="checkbox"
               checked={fillColor !== null}
@@ -179,7 +179,7 @@ export default function PropertyPanel() {
                 <button
                   key={c}
                   onClick={() => setFillColor(c)}
-                  className={`w-5 h-5 rounded-full border-2 ${fillColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
+                  className={`touch-swatch w-5 h-5 rounded-full border-2 ${fillColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
                   style={{ backgroundColor: c }}
                 />
               ))}
@@ -187,7 +187,7 @@ export default function PropertyPanel() {
                 type="color"
                 value={fillColor}
                 onChange={(e) => setFillColor(e.target.value)}
-                className="w-5 h-5 rounded cursor-pointer border border-gray-300"
+                className="touch-swatch w-5 h-5 rounded cursor-pointer border border-gray-300"
               />
             </div>
           )}
@@ -203,7 +203,7 @@ export default function PropertyPanel() {
             max={72}
             value={fontSize}
             onChange={(e) => setFontSize(Number(e.target.value))}
-            className="w-full accent-blue-500"
+            className="touch-target w-full accent-blue-500"
           />
         </div>
       )}

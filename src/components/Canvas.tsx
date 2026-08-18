@@ -5,7 +5,15 @@ import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle } from '@/lib/renderer';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { createMathPlotElement } from '@/lib/mathplotElement';
+import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt } from '@/lib/gestures';
 import { v4 as uuidv4 } from 'uuid';
+
+/** 活跃指针记录（ZOO-144 Pointer 输入层）：坐标为画布 rect 相对屏幕 px */
+interface ActivePointer {
+  x: number;
+  y: number;
+  type: string; // 'mouse' | 'pen' | 'touch'
+}
 
 export default function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -18,11 +26,23 @@ export default function Canvas() {
   const dragElementStartRef = useRef<Point>({ x: 0, y: 0 });
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const panOffsetStartRef = useRef<Point>({ x: 0, y: 0 });
-  // pan 的 rAF 合并（技术方案 §6.4）：mousemove 只记最新位移，每帧至多一次 setViewport
+  // pan 的 rAF 合并（技术方案 §6.4）：pointermove 只记最新位移，每帧至多一次 setViewport
   const panRafRef = useRef<number | null>(null);
   const panPendingRef = useRef<Point | null>(null);
-  // mathPlot 8 控点缩放（§11 D-1）：startEl 为手势前快照，mouseUp 压一条 update 快照
+  // mathPlot 8 控点缩放（§11 D-1）：startEl 为手势前快照，抬指压一条 update 快照
   const resizeRef = useRef<{ handle: MathPlotHandle; startEl: MathPlotElement; startWorld: Point } | null>(null);
+
+  // —— Pointer 输入层（ZOO-144：鼠标 / 触摸 / 触控笔统一通道）——
+  const activePointersRef = useRef<Map<number, ActivePointer>>(new Map());
+  /** 当前驱动工具手势的指针（单指）；其余指针不参与绘制 */
+  const toolPointerIdRef = useRef<number | null>(null);
+  /** 双指手势快照：pointerIds + 起点两指位置 + 起手 viewport */
+  const pinchRef = useRef<(PinchSnapshot & { pointerIds: [number, number] }) | null>(null);
+  const pinchRafRef = useRef<number | null>(null);
+  /** 惰性指针：捏合后的残余手指（抬指前不再驱动工具，防双指后误画）/ 触控笔在位时的掌压触摸 */
+  const inertPointersRef = useRef<Set<number>>(new Set());
+  /** select 拖拽中的元素 id（双指取消时恢复原位用） */
+  const dragElementIdRef = useRef<string | null>(null);
 
   const {
     elements, selectedId, activeTool, strokeColor, strokeWidth, fillColor, fontSize,
@@ -86,18 +106,126 @@ export default function Canvas() {
     consumeMathPlotInsert();
   }, [pendingMathPlot, addElement, setTool, setSelected, consumeMathPlotInsert]);
 
-  const getCanvasPoint = useCallback((e: React.MouseEvent): Point => {
+  /** 事件 → 画布 rect 相对屏幕坐标（PointerEvent / MouseEvent 同构） */
+  const getLocalPoint = useCallback((e: { clientX: number; clientY: number }): Point => {
     const rect = canvasRef.current!.getBoundingClientRect();
-    return screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, viewport);
-  }, [viewport]);
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }, []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const getCanvasPoint = useCallback((e: { clientX: number; clientY: number }): Point => {
+    return screenToCanvas(getLocalPoint(e), useStore.getState().viewport);
+  }, [getLocalPoint]);
+
+  const touchCount = useCallback(() => {
+    let n = 0;
+    for (const p of activePointersRef.current.values()) if (p.type === 'touch') n++;
+    return n;
+  }, []);
+
+  /** 双指提升时取消进行中的工具手势：丢弃临时元素 / 恢复拖拽缩放前状态（验收：双指落下不产生元素） */
+  const cancelToolGesture = useCallback(() => {
+    tempElementRef.current = null;
+    isDrawingRef.current = false;
+    toolPointerIdRef.current = null;
+
+    const rs = resizeRef.current;
+    if (rs) {
+      resizeRef.current = null;
+      const st = useStore.getState();
+      if (st.elements.some((el) => el.id === rs.startEl.id)) {
+        useStore.setState({
+          elements: st.elements.map((el) => (el.id === rs.startEl.id ? rs.startEl : el)),
+        });
+      }
+    }
+
+    const dragId = dragElementIdRef.current;
+    if (dragId) {
+      dragElementIdRef.current = null;
+      const st = useStore.getState();
+      useStore.setState({
+        elements: st.elements.map((el) =>
+          el.id === dragId ? { ...el, x: dragElementStartRef.current.x, y: dragElementStartRef.current.y } : el
+        ),
+      });
+    }
+  }, []);
+
+  /** 以当前头两个非惰性触摸指针起手双指手势 */
+  const beginPinch = useCallback(() => {
+    const touches = [...activePointersRef.current.entries()].filter(
+      ([id, p]) => p.type === 'touch' && !inertPointersRef.current.has(id)
+    );
+    if (touches.length < 2) return;
+    const [[idA, pa], [idB, pb]] = touches;
+    pinchRef.current = {
+      pointerIds: [idA, idB],
+      viewport: { ...useStore.getState().viewport },
+      a: { x: pa.x, y: pa.y },
+      b: { x: pb.x, y: pb.y },
+    };
+  }, []);
+
+  // pinch 帧回调：双指每帧至多一次 setViewport（与 pan 的 rAF 合并同构）
+  const applyPinchFromRaf = useCallback(() => {
+    pinchRafRef.current = null;
+    const p = pinchRef.current;
+    if (!p) return;
+    const a = activePointersRef.current.get(p.pointerIds[0]);
+    const b = activePointersRef.current.get(p.pointerIds[1]);
+    if (!a || !b) return;
+    setViewport(pinchViewport(p, a, b));
+  }, [setViewport]);
+
+  // 卸载时取消未决 rAF
+  useEffect(() => {
+    return () => {
+      if (panRafRef.current !== null) cancelAnimationFrame(panRafRef.current);
+      if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
+    };
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const local = getLocalPoint(e);
+    activePointersRef.current.set(e.pointerId, { x: local.x, y: local.y, type: e.pointerType });
+
+    // 捕获指针：手势跨出画布边界仍持续到抬指（替代原 onMouseLeave 提交语义；
+    // 合成事件 / 指针已失效时 setPointerCapture 会抛 NotFoundError，防御忽略）
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* noop */
+    }
+
+    // 触控笔在位时忽略触摸（最小掌压防护）：掌压不驱动任何手势
+    let penActive = false;
+    for (const p of activePointersRef.current.values()) {
+      if (p.type === 'pen') { penActive = true; break; }
+    }
+    if (penActive && e.pointerType === 'touch') {
+      inertPointersRef.current.add(e.pointerId);
+      return;
+    }
+
+    // 双指提升（ZOO-144 验收：双指落下不产生元素）：取消工具手势，进入画布平移缩放
+    if (e.pointerType === 'touch' && shouldPromoteToPinch(touchCount())) {
+      if (isDrawingRef.current || resizeRef.current || dragElementIdRef.current) cancelToolGesture();
+      if (!pinchRef.current) beginPinch();
+      return;
+    }
+
+    // 该指针接管当前手势通道（工具 / pan 均独占，后续 move 只认它）
+    toolPointerIdRef.current = e.pointerId;
+
     if (spaceDown || e.button === 1) {
       isPanningRef.current = true;
       panStartRef.current = { x: e.clientX, y: e.clientY };
       panOffsetStartRef.current = { x: viewport.offsetX, y: viewport.offsetY };
       return;
     }
+    if (e.button > 1) return; // 右键等非主键不启动手势（长按呼出菜单已被 contextmenu 拦截）
 
     const point = getCanvasPoint(e);
     dragStartRef.current = point;
@@ -105,13 +233,12 @@ export default function Canvas() {
 
     if (activeTool === 'select') {
       // mathPlot 控点缩放优先于元素命中（D-1：8 控点画在包围盒外沿）
-      const sel = elements.find((e) => e.id === selectedId);
+      const sel = elements.find((el) => el.id === selectedId);
       if (sel && sel.type === 'mathPlot') {
-        const rect = canvasRef.current!.getBoundingClientRect();
-        const handle = hitTestSelectionHandle(sel, { x: e.clientX - rect.left, y: e.clientY - rect.top }, viewport);
+        const handle = hitTestSelectionHandle(sel, local, viewport);
         if (handle) {
           resizeRef.current = { handle, startEl: { ...sel }, startWorld: point };
-          isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在 mouseLeave 时用陈旧起点压脏快照
+          isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在抬指时用陈旧起点压脏快照
           return;
         }
       }
@@ -120,6 +247,7 @@ export default function Canvas() {
         if (hitTest(elements[i], point, viewport)) {
           setSelected(elements[i].id);
           dragElementStartRef.current = { x: elements[i].x, y: elements[i].y };
+          dragElementIdRef.current = elements[i].id;
           found = true;
           break;
         }
@@ -191,7 +319,7 @@ export default function Canvas() {
           break;
       }
     }
-  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, fillColor, fontSize, spaceDown, viewport, getCanvasPoint, setSelected, addElement]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, fillColor, fontSize, spaceDown, viewport, getLocalPoint, getCanvasPoint, setSelected, addElement, cancelToolGesture, beginPinch, touchCount]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {
@@ -204,13 +332,6 @@ export default function Canvas() {
       offsetY: panOffsetStartRef.current.y + d.y,
     });
   }, [setViewport]);
-
-  // 卸载时取消未决 rAF
-  useEffect(() => {
-    return () => {
-      if (panRafRef.current !== null) cancelAnimationFrame(panRafRef.current);
-    };
-  }, []);
 
   /** 控点缩放几何（§5.2 缩放语义）：equalRatio 角拖拽锁定纵横比 → y 视窗随宽高比保持，圆不变形。 */
   const applyResize = useCallback((rs: { handle: MathPlotHandle; startEl: MathPlotElement; startWorld: Point }, world: Point) => {
@@ -246,7 +367,26 @@ export default function Canvas() {
     return { x: left, y: top, width: Math.max(width, minW), height: Math.max(height, minH) };
   }, []);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const local = getLocalPoint(e);
+    const rec = activePointersRef.current.get(e.pointerId);
+    if (rec) {
+      rec.x = local.x;
+      rec.y = local.y;
+    }
+
+    // 双指手势进行中：合并到每帧一次的 viewport 计算
+    if (pinchRef.current) {
+      if (pinchRafRef.current === null) {
+        pinchRafRef.current = requestAnimationFrame(applyPinchFromRaf);
+      }
+      return;
+    }
+
+    // 惰性指针（捏合残余指 / 掌压）与非工具指针不驱动绘制
+    if (inertPointersRef.current.has(e.pointerId)) return;
+    if (toolPointerIdRef.current !== null && e.pointerId !== toolPointerIdRef.current) return;
+
     if (isPanningRef.current) {
       panPendingRef.current = { x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y };
       if (panRafRef.current === null) {
@@ -255,7 +395,7 @@ export default function Canvas() {
       return;
     }
 
-    // mathPlot 控点缩放拖拽（静默直改，mouseUp 统一压快照 —— 与移动拖拽同构）
+    // mathPlot 控点缩放拖拽（静默直改，抬指统一压快照 —— 与移动拖拽同构）
     const rs = resizeRef.current;
     if (rs) {
       const point = getCanvasPoint(e);
@@ -309,9 +449,34 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getCanvasPoint, render, applyPanFromRaf, applyResize]);
+  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf]);
 
-  const handleMouseUp = useCallback(() => {
+  /** 抬指 / 手势被系统打断（pointercancel）的统一收尾 */
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+
+    // 双指之一抬起：结束捏合并落定最终帧；残余触摸标记惰性（防止误画）
+    const pinch = pinchRef.current;
+    if (pinch && pinch.pointerIds.includes(e.pointerId)) {
+      if (pinchRafRef.current !== null) {
+        cancelAnimationFrame(pinchRafRef.current);
+        pinchRafRef.current = null;
+      }
+      const a = activePointersRef.current.get(pinch.pointerIds[0]);
+      const b = activePointersRef.current.get(pinch.pointerIds[1]);
+      if (a && b) setViewport(pinchViewport(pinch, a, b));
+      pinchRef.current = null;
+      for (const [id, p] of activePointersRef.current) {
+        if (p.type === 'touch') inertPointersRef.current.add(id);
+      }
+      return;
+    }
+
+    if (inertPointersRef.current.delete(e.pointerId)) return;
+
+    if (toolPointerIdRef.current !== e.pointerId) return; // 非工具指针（第三指等）抬指不影响手势
+    toolPointerIdRef.current = null;
+
     if (isPanningRef.current) {
       isPanningRef.current = false;
       // 结束 pan：取消未决帧并同步落定最终位移（避免停留在倒数第二帧位置）
@@ -351,6 +516,7 @@ export default function Canvas() {
 
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
+    dragElementIdRef.current = null;
 
     const temp = tempElementRef.current;
     if (temp) {
@@ -374,18 +540,20 @@ export default function Canvas() {
     }
   }, [activeTool, selectedId, addElement, setViewport, pushOperations]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const { scale, offsetX, offsetY } = viewport;
-    const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.max(0.1, Math.min(5, scale * factor));
-    const newOffsetX = mx - (mx - offsetX) * (newScale / scale);
-    const newOffsetY = my - (my - offsetY) * (newScale / scale);
-    setViewport({ offsetX: newOffsetX, offsetY: newOffsetY, scale: newScale });
-  }, [viewport, setViewport]);
+  // 滚轮缩放：原生非 passive 监听（React 合成 onWheel 为 passive，preventDefault 无效）
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { viewport, setViewport } = useStore.getState();
+      const rect = canvas.getBoundingClientRect();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setViewport(zoomAt(viewport, { x: e.clientX - rect.left, y: e.clientY - rect.top }, viewport.scale * factor));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -403,13 +571,12 @@ export default function Canvas() {
     <div ref={containerRef} className="flex-1 relative overflow-hidden">
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full"
+        className="whiteboard-canvas absolute inset-0 w-full h-full"
         style={{ cursor: spaceDown ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onContextMenu={(e) => e.preventDefault()}
       />
       {activeTool === 'equation' && (

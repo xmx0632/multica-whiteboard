@@ -67,29 +67,29 @@ export default function HistoryPanel() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 z-10"
+        className="touch-target absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 z-10"
       >
         ☰ History
       </button>
 
       {open && (
         <div className="absolute inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-[480px] max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="touch-panel bg-white rounded-2xl shadow-2xl w-[480px] max-w-[calc(100vw-1.5rem)] max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Whiteboards</h2>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              <button onClick={() => setOpen(false)} className="touch-target text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
 
             <div className="flex border-b">
               <button
                 onClick={() => setTab('local')}
-                className={`flex-1 py-2 text-sm font-medium ${tab === 'local' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                className={`touch-target flex-1 py-2 text-sm font-medium ${tab === 'local' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
               >
                 Browser Storage ({localDocs.length})
               </button>
               <button
                 onClick={() => setTab('server')}
-                className={`flex-1 py-2 text-sm font-medium ${tab === 'server' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                className={`touch-target flex-1 py-2 text-sm font-medium ${tab === 'server' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
               >
                 Server ({serverDocs.length})
               </button>
@@ -109,13 +109,13 @@ export default function HistoryPanel() {
                     </div>
                     <button
                       onClick={() => handleLoad(doc.id, tab)}
-                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      className="touch-target px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 active:bg-blue-200"
                     >
                       Open
                     </button>
                     <button
                       onClick={() => handleDelete(doc.id, tab)}
-                      className="px-2 py-1 text-xs text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="touch-target touch-visible px-2 py-1 text-xs text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Delete
                     </button>
@@ -127,7 +127,7 @@ export default function HistoryPanel() {
             <div className="p-3 border-t">
               <button
                 onClick={handleNew}
-                className="w-full py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                className="touch-target w-full py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 transition-colors"
               >
                 New Whiteboard
               </button>

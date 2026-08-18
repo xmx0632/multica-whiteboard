@@ -19,6 +19,60 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ZOO-144：禁滚动链 / 下拉刷新穿透（面板内滚动不外溢到页面） */
+html,
+body {
+  overscroll-behavior: none;
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* ZOO-144：画布触摸手势全接管 —— 浏览器默认触摸行为（滚动 / 双指缩放 /
+ * 双击放大 / 长按选择呼出）全部隔离，Pointer 事件成为唯一输入通道 */
+.whiteboard-canvas {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* —— ZOO-144 触控可用性（仅粗指针设备生效，桌面零变化）——
+ * touch-target：控件命中区 ≥ 44×44（Apple HIG 最小触控目标）
+ * touch-swatch：色板小方块放大到 44×44
+ * touch-toolbar：竖排工具栏改双列（横屏手机高度放不下 9×44 单列）
+ * touch-panel：右侧面板小屏防溢出（宽度收窄 + 高度内滚）
+ * touch-visible：桌面 hover 才显现的控件（如删除按钮）触屏常显 */
+@media (pointer: coarse) {
+  .touch-target {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  .touch-swatch {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  .touch-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .touch-toolbar .toolbar-divider {
+    display: none;
+  }
+  .touch-panel {
+    /* 小屏给画布至少留 9rem（左工具栏 + 余量）；竖屏内容超高时内滚 */
+    width: min(264px, calc(100vw - 9rem));
+    max-height: calc(100dvh - 9rem);
+    overflow-y: auto;
+  }
+  /* 面板中段内滚区（EquationEditor）：头部 / 方程输入 / 插入按钮钉在可视区 */
+  .touch-scroll {
+    max-height: calc(100dvh - 22rem);
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .touch-visible {
+    opacity: 1;
+  }
 }

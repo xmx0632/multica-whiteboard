@@ -74,7 +74,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   };
 
   return (
-    <div className="absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
+    <div className="touch-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5 pb-0.5">
         <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
         数学图形
@@ -88,7 +88,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           <button
             type="button"
             onClick={onRequestEdit}
-            className="w-full py-1.5 border-none rounded-lg bg-blue-500 text-white text-[13px] font-semibold cursor-pointer hover:bg-[#2f7ae5] transition-colors"
+            className="touch-target w-full py-1.5 border-none rounded-lg bg-blue-500 text-white text-[13px] font-semibold cursor-pointer hover:bg-[#2f7ae5] active:bg-[#2564c4] transition-colors"
           >
             重新编辑方程
           </button>
@@ -103,7 +103,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               onBlur={onCommit}
               autoComplete="off"
               spellCheck={false}
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg font-serif text-sm text-gray-900 outline-none bg-white select-text focus:border-blue-500"
+              className="touch-target w-full px-2 py-1.5 border border-gray-300 rounded-lg font-serif text-sm text-gray-900 outline-none bg-white select-text focus:border-blue-500"
               aria-label="方程"
             />
           </div>
@@ -122,7 +122,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                       if (Number.isFinite(v)) patch({ xAxis: { ...value.xAxis, min: v } });
                     }}
                     onBlur={onCommit}
-                    className="w-full px-1.5 py-1 border border-gray-300 rounded-md text-xs outline-none select-text focus:border-blue-500"
+                    className="touch-target w-full px-1.5 py-1 border border-gray-300 rounded-md text-xs outline-none select-text focus:border-blue-500"
                     aria-label="x 最小值"
                   />
                   <span className="text-gray-400">~</span>
@@ -135,7 +135,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                       if (Number.isFinite(v)) patch({ xAxis: { ...value.xAxis, max: v } });
                     }}
                     onBlur={onCommit}
-                    className="w-full px-1.5 py-1 border border-gray-300 rounded-md text-xs outline-none select-text focus:border-blue-500"
+                    className="touch-target w-full px-1.5 py-1 border border-gray-300 rounded-md text-xs outline-none select-text focus:border-blue-500"
                     aria-label="x 最大值"
                   />
                 </div>
@@ -147,7 +147,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                         key={p.label}
                         type="button"
                         onClick={() => patch({ xAxis: { min: p.min, max: p.max } }, true)}
-                        className={`flex-1 border rounded-md font-serif text-[10px] py-1 cursor-pointer transition-colors ${
+                        className={`touch-target flex-1 border rounded-md font-serif text-[10px] py-1 cursor-pointer transition-colors ${
                           active ? 'border-blue-500 text-blue-500' : 'border-gray-200 bg-white text-gray-500 hover:border-blue-500 hover:text-blue-500'
                         }`}
                       >
@@ -166,7 +166,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                       key={s.count}
                       type="button"
                       onClick={() => patch({ sampleCount: s.count }, true)}
-                      className={`flex-1 border-none text-xs py-1.5 cursor-pointer transition-colors ${
+                      className={`touch-target flex-1 border-none text-xs py-1.5 cursor-pointer transition-colors ${
                         value.sampleCount === s.count ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
                       }`}
                     >
@@ -183,20 +183,20 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">坐标系</label>
             <div className="flex flex-wrap gap-x-2.5 gap-y-1">
-              <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+              <label className="touch-target text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
                 <input type="checkbox" checked={value.showAxis} onChange={(e) => patch({ showAxis: e.target.checked }, true)} className="accent-blue-500" />
                 坐标轴
               </label>
-              <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+              <label className="touch-target text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
                 <input type="checkbox" checked={value.showGrid} onChange={(e) => patch({ showGrid: e.target.checked }, true)} className="accent-blue-500" />
                 网格
               </label>
-              <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+              <label className="touch-target text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
                 <input type="checkbox" checked={value.showLabel} onChange={(e) => patch({ showLabel: e.target.checked }, true)} className="accent-blue-500" />
                 方程标签
               </label>
               {isFn && (
-                <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                <label className="touch-target text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={value.equalRatio}
@@ -217,7 +217,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                   key={c}
                   type="button"
                   onClick={() => patch({ strokeColor: c }, true)}
-                  className={`w-5 h-5 rounded-full border-2 ${value.strokeColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
+                  className={`touch-swatch w-5 h-5 rounded-full border-2 ${value.strokeColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
                   style={{ backgroundColor: c }}
                 />
               ))}
@@ -225,7 +225,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                 type="color"
                 value={value.strokeColor}
                 onChange={(e) => patch({ strokeColor: e.target.value }, true)}
-                className="w-5 h-5 rounded cursor-pointer border border-gray-300"
+                className="touch-swatch w-5 h-5 rounded cursor-pointer border border-gray-300"
                 aria-label="自定义颜色"
               />
             </div>
@@ -242,7 +242,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               onChange={(e) => patch({ strokeWidth: Number(e.target.value) })}
               onPointerUp={onCommit}
               onKeyUp={onCommit}
-              className="w-full accent-blue-500"
+              className="touch-target w-full accent-blue-500"
             />
           </div>
 
@@ -256,7 +256,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               onChange={(e) => patch({ opacity: Number(e.target.value) / 100 })}
               onPointerUp={onCommit}
               onKeyUp={onCommit}
-              className="w-full accent-blue-500"
+              className="touch-target w-full accent-blue-500"
             />
           </div>
         </>
@@ -266,14 +266,14 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
         <button
           type="button"
           onClick={onDuplicate}
-          className="flex-1 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-500 text-xs cursor-pointer hover:bg-gray-100 transition-colors"
+          className="touch-target flex-1 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-500 text-xs cursor-pointer hover:bg-gray-100 active:bg-gray-200 transition-colors"
         >
           复制
         </button>
         <button
           type="button"
           onClick={onDelete}
-          className="py-1.5 px-3.5 border border-red-200 rounded-lg bg-white text-red-600 text-xs cursor-pointer hover:bg-red-50 transition-colors"
+          className="touch-target py-1.5 px-3.5 border border-red-200 rounded-lg bg-white text-red-600 text-xs cursor-pointer hover:bg-red-50 active:bg-red-100 transition-colors"
         >
           删除
         </button>
