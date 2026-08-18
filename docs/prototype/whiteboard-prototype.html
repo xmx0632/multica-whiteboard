@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教学白板 · 方程出图 交互原型 v1.0</title>
+<!--
+  教学白板「方程输入 + 自动出图」高保真交互原型
+  Issue: ZOO-130 | 版本 v1.0 (2026-08-17) | 单文件、零依赖、离线可用
+  视觉基线：multica-whiteboard src/components/*（LeftToolbar / PropertyPanel / TopMenuBar）
+  产品依据：ZOO-129 PRD v1.0（MathPlot 元素 · 创建即出图 · 元素自带局部坐标系）
+  说明：方程解析为原型内置安全实现（递归下降语法分析，禁用 eval），生产选型以技术方案为准
+-->
+<style>
+  :root{
+    --c-bg:#f8f9fa; --c-dot:#d1d5db; --c-border:#e5e7eb;
+    --c-blue:#3B82F6; --c-gray5:#6b7280; --c-gray4:#9ca3af;
+    --panel:rgba(255,255,255,.9);
+  }
+  *{box-sizing:border-box; user-select:none;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#171717;}
+
+  /* ---------- 画布（点阵网格，与 renderGrid 一致：20px 间距 #d1d5db 点） ---------- */
+  #board{position:fixed;inset:0;background-color:var(--c-bg);
+    background-image:radial-gradient(circle,var(--c-dot) 1px,transparent 1px);
+    background-size:20px 20px;cursor:default;}
+  #elements-layer{position:absolute;inset:0;}
+  #elements-layer.tool-select{cursor:default;}
+
+  /* ---------- 空态提示 ---------- */
+  #empty-hint{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
+    text-align:center;pointer-events:none;transition:opacity .3s;}
+  #empty-hint .glyph{font-family:Georgia,'Times New Roman',serif;font-style:italic;
+    font-size:88px;line-height:1;color:#d1d5db;}
+  #empty-hint .t1{margin-top:14px;font-size:15px;color:#9ca3af;}
+  #empty-hint .t2{margin-top:6px;font-size:12px;color:#c9ced6;}
+  #empty-hint code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:11px;color:#9ca3af;}
+
+  /* ---------- 浮层通用视觉（对齐现有 white/90 + blur + rounded-xl + shadow-lg） ---------- */
+  .float{position:absolute;background:var(--panel);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    border:1px solid var(--c-border);border-radius:12px;box-shadow:0 10px 25px -5px rgba(0,0,0,.12),0 4px 10px -4px rgba(0,0,0,.08);z-index:10;}
+
+  /* ---------- 顶部菜单栏（复刻 TopMenuBar） ---------- */
+  #topbar{top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:6px 8px;}
+  .tb-btn{padding:4px 8px;font-size:12px;color:#4b5563;border:none;background:none;border-radius:6px;cursor:pointer;white-space:nowrap;}
+  .tb-btn:hover{background:#f3f4f6;}
+  .tb-btn:disabled{opacity:.3;cursor:default;background:none;}
+  .tb-btn.icon{padding:4px 6px;font-size:14px;}
+  .tb-sep{width:1px;height:20px;background:#e5e7eb;margin:0 3px;}
+  #zoom-label{font-size:12px;color:#6b7280;padding:0 4px;}
+  #save-msg{font-size:12px;color:#16a34a;padding:0 4px;}
+  #dirty-dot{width:8px;height:8px;border-radius:50%;background:#fb923c;margin:0 3px;}
+  #export-menu{position:absolute;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid var(--c-border);
+    border-radius:8px;box-shadow:0 10px 25px -5px rgba(0,0,0,.12);padding:4px 0;min-width:120px;display:none;}
+  #export-menu.open{display:block;}
+  #export-menu button{display:block;width:100%;padding:6px 12px;border:none;background:none;
+    font-size:12px;color:#374151;text-align:left;cursor:pointer;}
+  #export-menu button:hover{background:#f9fafb;}
+
+  /* ---------- 左侧工具栏（复刻 LeftToolbar，底部新增 ƒ 方程组） ---------- */
+  #leftbar{left:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;padding:6px;}
+  .tool-btn{width:36px;height:36px;border-radius:8px;border:none;background:none;display:flex;
+    align-items:center;justify-content:center;font-size:16px;color:#4b5563;cursor:pointer;transition:all .12s;}
+  .tool-btn:hover{background:#f3f4f6;}
+  .tool-btn.active{background:var(--c-blue);color:#fff;box-shadow:0 4px 10px -2px rgba(59,130,246,.5);}
+  .tool-btn .fx{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:19px;line-height:1;}
+  .tool-sep{height:1px;background:#e5e7eb;margin:3px 4px;}
+
+  /* ---------- 右侧属性面板（复刻 PropertyPanel 视觉，方程态加宽至 264px） ---------- */
+  #panel{right:12px;top:50%;transform:translateY(-50%);width:192px;padding:12px;display:flex;flex-direction:column;gap:12px;}
+  #panel.wide{width:264px;}
+  .pp-title{font-size:13px;font-weight:600;color:#374151;display:flex;align-items:center;gap:6px;padding-bottom:2px;}
+  .pp-title .fx{font-family:Georgia,serif;font-style:italic;color:var(--c-blue);font-size:16px;}
+  .pp-label{font-size:12px;font-weight:500;color:#6b7280;margin-bottom:4px;display:block;}
+  .pp-sub{font-size:11px;color:#9ca3af;line-height:1.5;}
+  .swatches{display:flex;flex-wrap:wrap;gap:4px;}
+  .sw{width:20px;height:20px;border-radius:50%;border:2px solid #d1d5db;cursor:pointer;padding:0;}
+  .sw.on{border-color:var(--c-blue);transform:scale(1.12);}
+  .sw-custom{width:20px;height:20px;border-radius:4px;border:1px solid #d1d5db;padding:0;cursor:pointer;background:none;}
+  input[type=range]{width:100%;accent-color:var(--c-blue);}
+  input[type=checkbox]{accent-color:var(--c-blue);}
+  .chk{font-size:12px;color:#4b5563;display:flex;align-items:center;gap:5px;cursor:pointer;}
+
+  /* 方程输入 */
+  #eq-input{width:100%;padding:7px 9px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;
+    font-family:Georgia,'Times New Roman',serif;color:#111827;outline:none;background:#fff;user-select:text;}
+  #eq-input:focus{border-color:var(--c-blue);box-shadow:0 0 0 3px rgba(59,130,246,.15);}
+  #eq-input.err{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12);}
+  .status-line{font-size:11px;display:flex;align-items:center;gap:4px;line-height:1.4;}
+  .status-ok{color:#16a34a;} .status-err{color:#ef4444;} .status-wait{color:#9ca3af;}
+  #eq-preview{width:100%;height:96px;background:#fff;border:1px solid #eef0f3;border-radius:8px;display:block;}
+  .sym-row{display:flex;gap:4px;flex-wrap:wrap;}
+  .sym-btn{min-width:28px;height:24px;padding:0 6px;border:1px solid #e5e7eb;background:#fff;border-radius:6px;
+    font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#374151;cursor:pointer;}
+  .sym-btn:hover{border-color:var(--c-blue);color:var(--c-blue);}
+  .tpl-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+  .tpl{border:1px solid #e5e7eb;background:#fff;border-radius:6px;padding:4px 6px;text-align:left;cursor:pointer;}
+  .tpl:hover{border-color:var(--c-blue);background:#f8faff;}
+  .tpl .n{display:block;font-size:10px;color:#9ca3af;}
+  .tpl .e{display:block;font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .btn-row{display:flex;gap:6px;}
+  .btn-primary{flex:1;padding:7px 0;border:none;border-radius:8px;background:var(--c-blue);color:#fff;
+    font-size:13px;font-weight:600;cursor:pointer;}
+  .btn-primary:hover{background:#2f7ae5;}
+  .btn-ghost{padding:7px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#6b7280;font-size:12px;cursor:pointer;}
+  .btn-ghost:hover{background:#f3f4f6;}
+  .badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:99px;background:#eef4ff;color:#2563eb;font-weight:600;}
+
+  /* 参数行 */
+  .num-row{display:flex;align-items:center;gap:5px;}
+  .num-row input[type=number]{width:100%;padding:4px 5px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;outline:none;user-select:text;}
+  .num-row input[type=number]:focus{border-color:var(--c-blue);}
+  .num-row .tilde{color:#9ca3af;}
+  .preset-row{display:flex;gap:4px;margin-top:4px;}
+  .preset{flex:1;border:1px solid #e5e7eb;background:#fff;border-radius:6px;font-size:10px;color:#6b7280;
+    padding:3px 0;cursor:pointer;font-family:Georgia,serif;}
+  .preset:hover,.preset.on{border-color:var(--c-blue);color:var(--c-blue);}
+  .seg{display:flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;}
+  .seg button{flex:1;border:none;background:#fff;font-size:11px;color:#6b7280;padding:5px 0;cursor:pointer;}
+  .seg button.on{background:var(--c-blue);color:#fff;}
+  .danger-btn{width:100%;padding:6px 0;border:1px solid #fecaca;background:#fff;border-radius:8px;color:#dc2626;font-size:12px;cursor:pointer;}
+  .danger-btn:hover{background:#fef2f2;}
+
+  /* ---------- MathPlot 元素 ---------- */
+  .mp{position:absolute;border-radius:10px;}
+  .mp .mp-frame{position:absolute;inset:0;border-radius:10px;overflow:hidden;
+    background:rgba(255,255,255,.88);border:1px solid rgba(17,24,39,.07);}
+  .mp.selected .mp-frame{border-color:rgba(59,130,246,.55);}
+  .mp svg{display:block;}
+  .mp-chip{position:absolute;left:8px;bottom:6px;font-family:Georgia,'Times New Roman',serif;font-style:italic;
+    font-size:12px;color:#6b7280;background:rgba(255,255,255,.92);border:1px solid #eef0f3;
+    border-radius:6px;padding:1px 7px;pointer-events:none;white-space:nowrap;}
+  .mp.selected .mp-chip{color:#2563eb;border-color:#dbeafe;background:#f8faff;}
+  /* 选中框 + 8 控点（对齐 renderSelection #3B82F6） */
+  .mp-bbox{position:absolute;inset:-3px;border:1.5px solid var(--c-blue);border-radius:12px;pointer-events:none;}
+  .h{position:absolute;width:8px;height:8px;background:#fff;border:1.5px solid var(--c-blue);border-radius:2px;pointer-events:auto;}
+  .h[data-h=nw]{left:-5px;top:-5px;cursor:nwse-resize;} .h[data-h=n]{left:50%;top:-5px;margin-left:-4px;cursor:ns-resize;}
+  .h[data-h=ne]{right:-5px;top:-5px;cursor:nesw-resize;} .h[data-h=e]{right:-5px;top:50%;margin-top:-4px;cursor:ew-resize;}
+  .h[data-h=se]{right:-5px;bottom:-5px;cursor:nwse-resize;} .h[data-h=s]{left:50%;bottom:-5px;margin-left:-4px;cursor:ns-resize;}
+  .h[data-h=sw]{left:-5px;bottom:-5px;cursor:nesw-resize;} .h[data-h=w]{left:-5px;top:50%;margin-top:-4px;cursor:ew-resize;}
+  /* 出图中态 */
+  .mp-gen{position:absolute;inset:0;border-radius:10px;background:rgba(255,255,255,.94);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;}
+  .spinner{width:26px;height:26px;border:3px solid #dbeafe;border-top-color:var(--c-blue);border-radius:50%;
+    animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .mp-gen .gt{font-size:12px;color:#6b7280;}
+  .mp-gen .skeleton{width:72%;height:34px;}
+  .mp-gen .skeleton path{stroke:#bfdbfe;stroke-width:2.5;fill:none;stroke-dasharray:7 7;
+    animation:dash 1.2s linear infinite;}
+  @keyframes dash{to{stroke-dashoffset:-56;}}
+  /* 错误态 */
+  .mp-err{position:absolute;inset:0;border-radius:10px;background:#fef2f2;border:1.5px dashed #fca5a5;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;text-align:center;}
+  .mp-err .big{font-size:26px;line-height:1;}
+  .mp-err .em{font-size:13px;font-weight:600;color:#b91c1c;max-width:86%;}
+  .mp-err .hint{font-size:11px;color:#9ca3af;}
+  .mp-err:hover{background:#fee2e2;}
+
+  /* 装饰元素（演示"与现有元素共存"：手写批注 / 文本） */
+  .deco{position:absolute;pointer-events:none;}
+  .deco.path svg{display:block;overflow:visible;}
+  .deco.text{font-size:20px;color:#374151;background:rgba(255,255,255,.6);padding:2px 6px;border-radius:6px;}
+
+  /* ---------- Toast ---------- */
+  #toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%) translateY(8px);background:#111827;color:#fff;
+    font-size:12px;padding:8px 16px;border-radius:8px;opacity:0;pointer-events:none;transition:all .25s;z-index:60;max-width:70vw;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---------- 评审演示面板 ---------- */
+  #demo{bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px 10px;z-index:20;}
+  #demo .cap{font-size:11px;color:#9ca3af;white-space:nowrap;}
+  .demo-btn{border:1px solid #e5e7eb;background:#fff;border-radius:99px;font-size:11px;color:#4b5563;
+    padding:4px 11px;cursor:pointer;white-space:nowrap;}
+  .demo-btn:hover{border-color:var(--c-blue);color:var(--c-blue);}
+  .demo-btn.on{background:var(--c-blue);border-color:var(--c-blue);color:#fff;}
+  #demo .kbd{font-size:10px;color:#c9ced6;white-space:nowrap;padding-left:4px;border-left:1px solid #e5e7eb;padding-left:8px;}
+</style>
+</head>
+<body>
+
+<div id="board">
+  <div id="elements-layer"></div>
+  <div id="empty-hint">
+    <div class="glyph">ƒ</div>
+    <div class="t1">选择左侧 <b>ƒ 方程工具</b>（快捷键 <code>F</code>），输入方程自动生成图形</div>
+    <div class="t2">支持 y=sin(x)、y=x²-2x-3、y=√x、(x-1)²+(y-2)²=9 等常见方程</div>
+  </div>
+</div>
+
+<!-- 顶部菜单栏（复刻现有 TopMenuBar） -->
+<div id="topbar" class="float">
+  <button class="tb-btn" id="btn-new">New</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn icon" id="btn-undo" title="Undo (Ctrl+Z)">↩</button>
+  <button class="tb-btn icon" id="btn-redo" title="Redo (Ctrl+Shift+Z)">↪</button>
+  <div class="tb-sep"></div>
+  <div style="position:relative">
+    <button class="tb-btn" id="btn-export">Export ▾</button>
+    <div id="export-menu">
+      <button data-x="png">Export PNG</button>
+      <button data-x="jpg">Export JPG</button>
+      <button data-x="svg">Export SVG</button>
+    </div>
+  </div>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-save">Save</button>
+  <button class="tb-btn" id="btn-save-srv">Save Server</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-clear">Clear</button>
+  <div class="tb-sep"></div>
+  <span id="zoom-label">100%</span>
+  <span id="save-msg"></span>
+  <span id="dirty-dot" style="display:none" title="Unsaved changes"></span>
+</div>
+
+<!-- 左侧工具栏（复刻现有 8 工具 + 新增 ƒ Equation，快捷键 F） -->
+<div id="leftbar" class="float">
+  <button class="tool-btn" data-tool="select"     title="Select (V)">⇱</button>
+  <button class="tool-btn" data-tool="pen"        title="Pen (B)">✎</button>
+  <button class="tool-btn" data-tool="rectangle"  title="Rectangle (R)">▭</button>
+  <button class="tool-btn" data-tool="circle"     title="Circle (C)">○</button>
+  <button class="tool-btn" data-tool="line"       title="Line (L)">╱</button>
+  <button class="tool-btn" data-tool="arrow"      title="Arrow (A)">→</button>
+  <button class="tool-btn" data-tool="text"       title="Text (T)">T</button>
+  <button class="tool-btn" data-tool="eraser"     title="Eraser (E)">⌫</button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="equation"   title="Equation (F)"><span class="fx">ƒ</span></button>
+</div>
+
+<!-- 右侧属性面板：内容由 JS 按模式渲染 -->
+<div id="panel" class="float"></div>
+
+<div id="toast"></div>
+
+<!-- 评审演示面板：一键切换关键状态（对应 ZOO-130 验收的 5 类状态） -->
+<div id="demo" class="float">
+  <span class="cap">评审演示</span>
+  <button class="demo-btn" data-s="empty">① 空态</button>
+  <button class="demo-btn" data-s="inputting">② 输入中</button>
+  <button class="demo-btn" data-s="generating">③ 出图中</button>
+  <button class="demo-btn" data-s="error">④ 错误态</button>
+  <button class="demo-btn" data-s="multi">⑤ 多图形共存</button>
+  <button class="demo-btn" data-s="selected">⑥ 选中编辑</button>
+  <span class="kbd">F 方程 · ⏎ 插入 · Del 删除 · Ctrl+Z 撤销</span>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+ * 0. 全局状态
+ * ===================================================================*/
+const COLORS = ['#000000','#FFFFFF','#EF4444','#F97316','#EAB308','#22C55E','#14B8A6','#3B82F6','#6366F1','#A855F7','#EC4899','#78716C'];
+
+const state = {
+  tool: 'select',
+  elements: [],          // MathPlot 元素 + 装饰元素
+  selectedId: null,
+  draft: '',             // 方程编辑器草稿
+  editTargetId: null,    // 正在修正的错误元素（插入时原位替换）
+  defaults: { strokeColor:'#3B82F6', strokeWidth:2.5, strokeWidthPen:2 },
+  history: [], hIdx: -1,
+  dirty: false,
+};
+let uid = 1;
+const $ = s => document.querySelector(s);
+const layer = $('#elements-layer'), panel = $('#panel');
+
+function toast(msg, ms=2200){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._tm); t._tm = setTimeout(()=>t.classList.remove('show'), ms);
+}
+
+/* =====================================================================
+ * 1. 方程解析（原型内置安全实现：递归下降，禁用 eval）
+ *    生产环境按技术方案采用 mathjs 等成熟解析器
+ * ===================================================================*/
+const FUNCS = new Set(['sin','cos','tan','sqrt','abs','ln','log','exp','asin','acos','atan']);
+const IDS = ['asin','acos','atan','sqrt','abs','sin','cos','tan','exp','log','ln','pi','e','x']; /* 贪心切分用，长在前 */
+const parseErr = msg => ({ __err:true, message:msg });
+
+const SUPMAP = {'²':'^2','³':'^3','⁴':'^4','⁰':'^0','¹':'^1','ˣ':'^x'};
+function normalizeSrc(raw){
+  let s = String(raw).trim().replace(/\s+/g,'');
+  s = s.replace(/π/g,'PI');
+  s = s.replace(/√\(([^)]*)\)/g, 'sqrt($1)');            /* √(x+1) 整体 */
+  s = s.replace(/√([0-9.]+|x|PI)/g, 'sqrt($1)');         /* √x / √2 / √π 左侧形式 */
+  s = s.replace(/√/g,'sqrt');                            /* 其余 √( 形式交给函数调用 */
+  s = s.replace(/[·×]/g,'*').replace(/÷/g,'/').replace(/[−–]/g,'-')
+       .replace(/[²³⁴⁰¹ˣ]/g, ch => SUPMAP[ch]);
+  return s;
+}
+function tokenize(s){
+  const toks = []; let i = 0;
+  while(i < s.length){
+    const c = s[i];
+    if(/[0-9.]/.test(c)){
+      let j = i; while(j < s.length && /[0-9.]/.test(s[j])) j++;
+      const num = s.slice(i,j);
+      if((num.match(/\./g)||[]).length > 1) throw parseErr('数字格式有误');
+      toks.push({t:'num', v:parseFloat(num)}); i = j; continue;
+    }
+    if(/[a-zA-Z]/.test(c)){
+      /* 贪心切分字母串：PIx → pi·x，2πx → 2·pi·x */
+      let rest = s.slice(i);
+      let matched = null;
+      for(const id of IDS){
+        if(rest.toLowerCase().startsWith(id)){ matched = id; break; }
+      }
+      if(!matched){
+        let j = i; while(j < s.length && /[a-zA-Z]/.test(s[j])) j++;
+        throw parseErr(`无法识别的符号 “${s.slice(i,j)}”`);
+      }
+      i += matched.length;
+      if(matched === 'pi'){ toks.push({t:'num', v:Math.PI}); continue; }
+      if(matched === 'e'){ toks.push({t:'num', v:Math.E}); continue; }
+      if(matched === 'x'){ toks.push({t:'var'}); continue; }
+      toks.push({t:'func', v:matched}); continue;
+    }
+    if('+-*/^(),|'.includes(c)){ toks.push({t:c}); i++; continue; }
+    throw parseErr(`无法识别的字符 “${c}”`);
+  }
+  return toks;
+}
+/* 隐式乘法：2x → 2*x，2sin(x) → 2*sin(x)，x(x+1) → x*(x+1)，2π → 2*PI */
+function insertImplicit(toks){
+  const out = [];
+  for(let k = 0; k < toks.length; k++){
+    const t = toks[k], n = toks[k+1];
+    out.push(t);
+    if(!n) break;
+    const aEnd  = t.t==='num' || t.t==='var' || t.t===')';
+    const bStart = n.t==='num' || n.t==='var' || n.t==='func' || n.t==='(';
+    if(aEnd && bStart) out.push({t:'*'});
+  }
+  return out;
+}
+function parseTokens(toks){
+  let p = 0;
+  const peek = () => toks[p];
+  const expect = tt => {
+    const t = peek();
+    if(!t || t.t !== tt) throw parseErr((tt===')'||tt==='|') ? '括号或绝对值符号未闭合' : '方程表达式不完整');
+    p++;
+  };
+  function expr(){
+    let n = term();
+    while(peek() && (peek().t==='+' || peek().t==='-')){
+      const op = toks[p++].t; n = {op, a:n, b:term()};
+    }
+    return n;
+  }
+  function term(){
+    let n = unary();
+    while(peek() && (peek().t==='*' || peek().t==='/')){
+      const op = toks[p++].t; n = {op, a:n, b:unary()};
+    }
+    return n;
+  }
+  function unary(){
+    if(peek() && (peek().t==='-' || peek().t==='+')){
+      const op = toks[p++].t, u = unary();
+      return op==='-' ? {op:'neg', a:u} : u;
+    }
+    return power();
+  }
+  function power(){
+    const a = atom();
+    if(peek() && peek().t==='^'){ p++; return {op:'^', a, b:unary()}; }
+    return a;
+  }
+  function atom(){
+    const t = peek();
+    if(!t) throw parseErr('表达式不完整');
+    if(t.t==='num'){ p++; return {op:'const', v:t.v}; }
+    if(t.t==='var'){ p++; return {op:'x'}; }
+    if(t.t==='func'){ p++; expect('('); const arg = expr(); expect(')'); return {op:'call', f:t.v, a:arg}; }
+    if(t.t==='('){ p++; const n = expr(); expect(')'); return n; }
+    if(t.t==='|'){ p++; const n = expr(); expect('|'); return {op:'call', f:'abs', a:n}; }
+    throw parseErr('此处存在无法解析的符号');
+  }
+  const root = expr();
+  if(p < toks.length) throw parseErr('方程末尾存在多余内容');
+  return root;
+}
+function evalAst(n, x){
+  switch(n.op){
+    case 'const': return n.v;
+    case 'x': return x;
+    case 'neg': return -evalAst(n.a, x);
+    case '+': return evalAst(n.a,x) + evalAst(n.b,x);
+    case '-': return evalAst(n.a,x) - evalAst(n.b,x);
+    case '*': return evalAst(n.a,x) * evalAst(n.b,x);
+    case '/': { const d = evalAst(n.b,x); if(d === 0) return NaN; return evalAst(n.a,x) / d; }
+    case '^': { const a = evalAst(n.a,x), b = evalAst(n.b,x);
+                if(a < 0 && !Number.isInteger(b)) return NaN; return Math.pow(a,b); }
+    case 'call': {
+      const v = evalAst(n.a, x);
+      switch(n.f){
+        case 'sin': return Math.sin(v);  case 'cos': return Math.cos(v);
+        case 'tan': return Math.tan(v);
+        case 'sqrt': return v < 0 ? NaN : Math.sqrt(v);
+        case 'ln': return v <= 0 ? NaN : Math.log(v);
+        case 'log': return v <= 0 ? NaN : Math.log10(v);
+        case 'exp': return Math.exp(v);
+        case 'abs': return Math.abs(v);
+        case 'asin': return Math.asin(v); case 'acos': return Math.acos(v); case 'atan': return Math.atan(v);
+      }
+    }
+  }
+  return NaN;
+}
+/* 几何方程特判：圆 (x-a)²+(y-b)²=r² / 椭圆 x²/A+y²/B=1 */
+function detectGeometry(s){
+  let m = s.match(/^\(?x([+-][\d.]+)?\)?\^2\+\(?y([+-][\d.]+)?\)?\^2=([\d.]+)$/);
+  if(m){
+    const h = m[1] ? -parseFloat(m[1]) : 0;
+    const k = m[2] ? -parseFloat(m[2]) : 0;
+    const r = Math.sqrt(parseFloat(m[3]));
+    if(!(r > 0)) throw parseErr('圆的半径必须为正');
+    return {kind:'circle', h, k, r};
+  }
+  m = s.match(/^\(?x([+-][\d.]+)?\)?\^2\/([\d.]+)\+\(?y([+-][\d.]+)?\)?\^2\/([\d.]+)=1$/);
+  if(m){
+    const h = m[1] ? -parseFloat(m[1]) : 0;
+    const k = m[3] ? -parseFloat(m[3]) : 0;
+    const a = Math.sqrt(parseFloat(m[2])), b = Math.sqrt(parseFloat(m[4]));
+    if(!(a>0 && b>0)) throw parseErr('椭圆参数必须为正');
+    return {kind:'ellipse', h, k, a, b};
+  }
+  return null;
+}
+function parseSpec(raw){
+  const src = normalizeSrc(raw);
+  if(!src) throw parseErr('请输入方程');
+  const geo = detectGeometry(src);
+  if(geo) return {kind:geo.kind, src:raw, geo};
+  const body = src.replace(/^y=/,'').replace(/^f\(x\)=/,'');
+  if(!body) throw parseErr('方程缺少右侧表达式');
+  if(/(^|[^a-z0-9])y([^a-z0-9]|$)/.test(body))
+    throw parseErr('暂不支持该隐式方程：请使用 y=f(x) 形式（圆/椭圆除外）');
+  const ast = parseTokens(insertImplicit(tokenize(body)));
+  return {kind:'fn', src:raw, ast};
+}
+
+/* =====================================================================
+ * 2. 绘图核心（局部坐标系 + 采样曲线 → SVG）
+ * ===================================================================*/
+function niceStep(range, target){
+  const raw = range / target;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  for(const m of [1,2,2.5,5,10]) if(raw <= m*pow + 1e-12) return m*pow;
+  return 10*pow;
+}
+function fmtTick(v, step){
+  if(Math.abs(v) < step*1e-6) return '0';
+  const dec = Math.max(0, Math.min(4, Math.ceil(-Math.log10(step) - 1e-9)));
+  let s = v.toFixed(dec);
+  if(dec > 0) s = s.replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');
+  return s === '-0' ? '0' : s;
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+const PRECISION_N = { low:160, mid:320, high:640 };
+
+/* 返回 {ok, d, meta} 或 {ok:false, error} */
+function buildPlot(spec, W, H, opts){
+  const padX0 = W*0.08, padX1 = W*0.96, padY0 = H*0.09, padY1 = H*0.92;
+  const labelF = `font-size="9" fill="#9ca3af" font-family="Arial"`;
+
+  if(spec.kind === 'circle' || spec.kind === 'ellipse'){
+    const g = spec.geo;
+    const isC = spec.kind === 'circle';
+    const a = isC ? g.r : g.a, b = isC ? g.r : g.b;
+    const mx = a*0.35 + 0.5, my = b*0.35 + 0.5;
+    const xr = a + mx, yr = b + my;
+    const sc = Math.min((padX1-padX0)/(2*xr), (padY1-padY0)/(2*yr));
+    const cx = (padX0+padX1)/2, cy = (padY0+padY1)/2;
+    const X = x => cx + (x-g.h)*sc, Y = y => cy - (y-g.k)*sc;
+    /* 参数化采样（等比坐标，保证圆是圆） */
+    const N = 240; let d = '';
+    for(let i = 0; i <= N; i++){
+      const th = i/N*2*Math.PI;
+      const x = g.h + a*Math.cos(th), y = g.k + b*Math.sin(th);
+      d += (i ? 'L' : 'M') + X(x).toFixed(1) + ' ' + Y(y).toFixed(1);
+    }
+    d += 'Z';
+    /* 网格与刻度（按等比 scale 取整步长） */
+    const step = niceStep(Math.max(xr, yr)*2, Math.max(W,H)/58);
+    let gxml = '';
+    const x0 = g.h - xr, x1 = g.h + xr, y0 = g.k - yr, y1 = g.k + yr;
+    for(let tx = Math.ceil(x0/step)*step; tx <= x1; tx += step)
+      gxml += `<line x1="${X(tx)}" y1="${padY0}" x2="${X(tx)}" y2="${padY1}" stroke="#e5e7eb" stroke-width="1"/>`;
+    for(let ty = Math.ceil(y0/step)*step; ty <= y1; ty += step)
+      gxml += `<line x1="${padX0}" y1="${Y(ty)}" x2="${padX1}" y2="${Y(ty)}" stroke="#e5e7eb" stroke-width="1"/>`;
+    let ticks = '';
+    if(opts.showTicks){
+      for(let tx = Math.ceil(x0/step)*step; tx <= x1; tx += step){
+        if(Math.abs(tx-g.h) > step/2) ticks += `<text x="${X(tx)}" y="${Y(g.k)+11}" text-anchor="middle" ${labelF}>${fmtTick(tx,step)}</text>`;
+      }
+      for(let ty = Math.ceil(y0/step)*step; ty <= y1; ty += step){
+        if(Math.abs(ty-g.k) > step/2) ticks += `<text x="${X(g.h)-4}" y="${Y(ty)+3}" text-anchor="end" ${labelF}>${fmtTick(ty,step)}</text>`;
+      }
+    }
+    let axes = '';
+    if(opts.showAxis){
+      axes += `<line x1="${padX0}" y1="${Y(g.k)}" x2="${padX1-4}" y2="${Y(g.k)}" stroke="#9ca3af" stroke-width="1.2"/>` +
+              `<path d="M${padX1-4},${Y(g.k)} l-6,-3 l0,6 Z" fill="#9ca3af"/>` +
+              `<text x="${padX1-8}" y="${Y(g.k)-5}" text-anchor="end" font-style="italic" ${labelF.replace('9','10')}>x</text>`;
+      axes += `<line x1="${X(g.h)}" y1="${padY1}" x2="${X(g.h)}" y2="${padY0+4}" stroke="#9ca3af" stroke-width="1.2"/>` +
+              `<path d="M${X(g.h)},${padY0+4} l-3,6 l6,0 Z" fill="#9ca3af"/>` +
+              `<text x="${X(g.h)+7}" y="${padY0+13}" font-style="italic" ${labelF.replace('9','10')}>y</text>`;
+    }
+    return { ok:true, d,
+      svg:`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
+        (opts.showGrid ? gxml : '') + axes + ticks +
+        `<path d="${d}" fill="none" stroke="${opts.strokeColor}" stroke-width="${opts.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+      equalUnits:true };
+  }
+
+  /* ---- 显式函数 y=f(x) ---- */
+  const xmin = opts.xmin, xmax = opts.xmax;
+  if(!(xmax > xmin)) return { ok:false, error:'定义域无效：需满足 xmin < xmax' };
+  const N = PRECISION_N[opts.precision] || 320;
+  const xs = new Array(N+1), ys = new Array(N+1);
+  let finiteCount = 0, finiteVals = [];
+  for(let i = 0; i <= N; i++){
+    const x = xmin + (xmax-xmin)*i/N;
+    let y; try{ y = evalAst(spec.ast, x); }catch(e){ y = NaN; }
+    if(!Number.isFinite(y)) y = NaN;
+    else { finiteCount++; if(finiteVals.length < 4000) finiteVals.push(y); }
+    xs[i] = x; ys[i] = y;
+  }
+  if(finiteCount < 2) return { ok:false, error:`定义域 [${fmtTick(xmin,1)}, ${fmtTick(xmax,1)}] 内无有效函数值` };
+  finiteVals.sort((a,b)=>a-b);
+  const q = i => finiteVals[Math.min(finiteVals.length-1, Math.max(0, Math.round(i)))];
+  let lo = q((finiteVals.length-1)*0.02), hi = q((finiteVals.length-1)*0.98);
+  if(hi - lo < 1e-9){ hi = lo + 1; lo -= 1; }
+  const margin = (hi-lo)*0.12 + 1e-9;
+  lo -= margin; hi += margin;
+  let stepY = niceStep(hi-lo, Math.max(3, Math.round(H/52)));
+  lo = Math.floor(lo/stepY)*stepY; hi = Math.ceil(hi/stepY)*stepY;
+
+  const sx = (padX1-padX0)/(xmax-xmin);
+  let sy;
+  if(opts.equalUnits){
+    sy = sx;
+    const yc = (lo+hi)/2, yHalf = (padY1-padY0)/2/sy;
+    lo = yc - yHalf; hi = yc + yHalf;
+    stepY = niceStep(hi-lo, Math.max(3, Math.round(H/52)));
+  }else{
+    sy = (padY1-padY0)/(hi-lo);
+  }
+  const X = x => padX0 + (x-xmin)*sx;
+  const Y = y => padY1 - (y-lo)*sy;
+
+  /* 曲线路径（含间断处理：tan / 1/x 等） */
+  const range = hi - lo, clip = range*1.5;
+  let d = '', pen = false, prevPy = null;
+  for(let i = 0; i <= N; i++){
+    const y = ys[i];
+    if(!Number.isFinite(y) || y < lo-clip || y > hi+clip){ pen = false; prevPy = null; continue; }
+    const yc = Math.max(lo-clip, Math.min(hi+clip, y));
+    const px = X(xs[i]).toFixed(1), py = Y(yc).toFixed(1);
+    if(pen && prevPy !== null && Math.abs(py - prevPy) > H*1.4) pen = false; /* 跳变 → 断笔 */
+    d += (pen ? 'L' : 'M') + px + ' ' + py;
+    pen = true; prevPy = py;
+  }
+
+  /* 网格 / 轴 / 刻度 */
+  const stepX = niceStep(xmax-xmin, Math.max(3, Math.round(W/58)));
+  let gxml = '';
+  if(opts.showGrid){
+    for(let tx = Math.ceil(xmin/stepX)*stepX; tx <= xmax + 1e-9; tx += stepX)
+      gxml += `<line x1="${X(tx).toFixed(1)}" y1="${padY0}" x2="${X(tx).toFixed(1)}" y2="${padY1}" stroke="#e5e7eb" stroke-width="1"/>`;
+    for(let ty = Math.ceil(lo/stepY)*stepY; ty <= hi + 1e-9; ty += stepY)
+      gxml += `<line x1="${padX0}" y1="${Y(ty).toFixed(1)}" x2="${padX1}" y2="${Y(ty).toFixed(1)}" stroke="#e5e7eb" stroke-width="1"/>`;
+  }
+  let ticks = '';
+  if(opts.showTicks){
+    for(let tx = Math.ceil(xmin/stepX)*stepX; tx <= xmax + 1e-9; tx += stepX){
+      if(Math.abs(tx) > stepX/2) ticks += `<text x="${X(tx).toFixed(1)}" y="${(lo<=0&&hi>=0?Y(0):padY1)+11}" text-anchor="middle" ${labelF}>${fmtTick(tx,stepX)}</text>`;
+    }
+    for(let ty = Math.ceil(lo/stepY)*stepY; ty <= hi + 1e-9; ty += stepY){
+      if(Math.abs(ty) > stepY/2) ticks += `<text x="${(xmin<=0&&xmax>=0?X(0):padX0)-4}" y="${(Y(ty)+3).toFixed(1)}" text-anchor="end" ${labelF}>${fmtTick(ty,stepY)}</text>`;
+    }
+  }
+  let axes = '';
+  if(opts.showAxis){
+    const ax = (lo<=0&&hi>=0) ? Y(0) : null;          /* x 轴 y 坐标 */
+    const ay = (xmin<=0&&xmax>=0) ? X(0) : null;      /* y 轴 x 坐标 */
+    if(ax !== null) axes += `<line x1="${padX0}" y1="${ax.toFixed(1)}" x2="${padX1-4}" y2="${ax.toFixed(1)}" stroke="#9ca3af" stroke-width="1.2"/>` +
+      `<path d="M${padX1-4},${ax.toFixed(1)} l-6,-3 l0,6 Z" fill="#9ca3af"/>` +
+      `<text x="${padX1-8}" y="${ax-6<10?ax+12:ax-6}" text-anchor="end" font-style="italic" font-size="10" fill="#9ca3af" font-family="Arial">x</text>`;
+    if(ay !== null) axes += `<line x1="${ay.toFixed(1)}" y1="${padY1}" x2="${ay.toFixed(1)}" y2="${padY0+4}" stroke="#9ca3af" stroke-width="1.2"/>` +
+      `<path d="M${ay.toFixed(1)},${padY0+4} l-3,6 l6,0 Z" fill="#9ca3af"/>` +
+      `<text x="${(+ay+8).toFixed(1)}" y="${padY0+13}" font-style="italic" font-size="10" fill="#9ca3af" font-family="Arial">y</text>`;
+    if(ax !== null && ay !== null) axes += `<text x="${ay-5}" y="${+ax+11}" text-anchor="end" font-size="9" fill="#9ca3af" font-family="Arial">O</text>`;
+  }
+  return { ok:true, d, equalUnits:opts.equalUnits,
+    svg:`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
+      gxml + axes + ticks +
+      `<path d="${d}" fill="none" stroke="${opts.strokeColor}" stroke-width="${opts.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/></svg>` };
+}
+
+/* 展示用美化：^2 → ² 等 */
+function prettyEq(src){
+  return String(src).trim()
+    .replace(/\s+/g,'')
+    .replace(/\^2\b/g,'²').replace(/\^3\b/g,'³').replace(/\^4\b/g,'⁴')
+    .replace(/\^x\b/g,'ˣ').replace(/\*/g,'·').replace(/PI/gi,'π');
+}
+
+/* =====================================================================
+ * 3. 元素模型 & 渲染
+ * ===================================================================*/
+function makeElement(src, extra){
+  const base = {
+    id: 'mp' + (uid++), type: 'mathplot', src,
+    x: 260, y: 130, w: 460, h: 300,
+    status: 'ok',            /* ok | error */
+    error: '',
+    xmin: -10, xmax: 10, precision: 'mid',
+    showAxis: true, showTicks: true, showGrid: true, equalUnits: false,
+    strokeColor: state.defaults.strokeColor, strokeWidth: state.defaults.strokeWidth, opacity: 1,
+    showLabel: true,
+  };
+  try{
+    const spec = parseSpec(src);
+    base._spec = spec;
+    if(spec.kind !== 'fn'){ base.w = 340; base.h = 340; base.equalUnits = true; }
+  }catch(e){ base.status = 'error'; base.error = e.message || '无法识别的方程'; }
+  return Object.assign(base, extra || {});
+}
+function getSpec(el){
+  if(el.type !== 'mathplot') return null;
+  if(!el._spec || el._spec.src !== el.src){
+    try{ el._spec = parseSpec(el.src); el.status = 'ok'; el.error=''; }
+    catch(e){ el._spec = null; el.status = 'error'; el.error = e.message; }
+  }
+  return el._spec;
+}
+function elOpts(el){
+  return { xmin:el.xmin, xmax:el.xmax, precision:el.precision,
+    showAxis:el.showAxis, showTicks:el.showTicks, showGrid:el.showGrid,
+    equalUnits:el.equalUnits, strokeColor:el.strokeColor, strokeWidth:el.strokeWidth };
+}
+function renderElementHTML(el){
+  const sel = el.id === state.selectedId;
+  if(el.type === 'deco-path'){
+    return `<div class="deco path" style="left:${el.x}px;top:${el.y}px">${el.svg}</div>`;
+  }
+  if(el.type === 'deco-text'){
+    return `<div class="deco text" style="left:${el.x}px;top:${el.y}px;font-size:${el.fontSize}px;color:${el.color}">${esc(el.text)}</div>`;
+  }
+  const spec = el.status === 'error' ? null : getSpec(el);
+  let inner = '';
+  if(el._gen){
+    inner = `<div class="mp-gen"><div class="spinner"></div><div class="gt">正在解析方程并生成图形…</div>
+      <svg class="skeleton" viewBox="0 0 200 40"><path d="M4,32 C24,32 28,8 48,8 S72,32 92,32 116,8 136,8 160,32 180,32"/></svg></div>`;
+  }else if(el.status === 'error' || !spec){
+    inner = `<div class="mp-err" data-act="edit-err">
+      <div class="big">⚠️</div>
+      <div class="em">${esc(el.error || '无法识别的方程')}</div>
+      <div class="hint">方程：<span style="font-family:Georgia,serif;font-style:italic">${esc(prettyEq(el.src))}</span></div>
+      <div class="hint">点击此处重新编辑</div></div>`;
+  }else{
+    const p = buildPlot(spec, el.w, el.h, elOpts(el));
+    inner = p.ok ? p.svg
+      : `<div class="mp-err" data-act="edit-err"><div class="big">⚠️</div><div class="em">${esc(p.error)}</div><div class="hint">点击此处调整定义域或方程</div></div>`;
+  }
+  const handles = ['nw','n','ne','e','se','s','sw','w']
+    .map(h => `<div class="h" data-h="${h}" data-id="${el.id}"></div>`).join('');
+  return `<div class="mp ${sel?'selected':''}" data-id="${el.id}" style="left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;opacity:${el.opacity}">
+    <div class="mp-frame">${inner}</div>
+    ${el.showLabel && !el._gen ? `<div class="mp-chip">${esc(prettyEq(el.src))}</div>` : ''}
+    ${sel ? `<div class="mp-bbox">${handles}</div>` : ''}
+  </div>`;
+}
+function renderElements(){
+  layer.innerHTML = state.elements.map(renderElementHTML).join('');
+  $('#empty-hint').style.opacity = state.elements.length ? 0 : 1;
+}
+function renderAll(){
+  renderElements();
+  renderPanel();
+  updateChrome();
+}
+
+/* =====================================================================
+ * 4. 历史（撤销 / 重做，快照式）
+ * ===================================================================*/
+function snapshot(){
+  return JSON.stringify(state.elements.map(el => {
+    const c = {}; for(const k in el) if(!k.startsWith('_')) c[k] = el[k]; return c;
+  }));
+}
+function pushHistory(){
+  state.history = state.history.slice(0, state.hIdx+1);
+  state.history.push(snapshot());
+  if(state.history.length > 60) state.history.shift();
+  state.hIdx = state.history.length - 1;
+  markDirty(); updateChrome();
+}
+function restore(json){
+  state.elements = JSON.parse(json);
+  state.elements.forEach(getSpec);
+  if(state.selectedId && !state.elements.some(e => e.id === state.selectedId)) state.selectedId = null;
+  renderAll();
+}
+function undo(){
+  if(state.hIdx <= 0){ toast('没有可撤销的操作'); return; }
+  state.hIdx--; restore(state.history[state.hIdx]); toast('已撤销');
+}
+function redo(){
+  if(state.hIdx >= state.history.length-1){ toast('没有可重做的操作'); return; }
+  state.hIdx++; restore(state.history[state.hIdx]); toast('已重做');
+}
+function markDirty(){ state.dirty = true; }
+
+/* =====================================================================
+ * 5. 属性面板（三模式：默认工具属性 / 方程编辑 / MathPlot 参数）
+ * ===================================================================*/
+const TEMPLATES = [
+  {n:'一次函数', e:'y=2x+1'}, {n:'二次函数', e:'y=x²-2x-3'},
+  {n:'三次函数', e:'y=x³-2x'}, {n:'正弦', e:'y=sin(x)'},
+  {n:'正弦变换', e:'y=2sin(2x+π/3)'}, {n:'正切', e:'y=tan(x)'},
+  {n:'根式', e:'y=√x'}, {n:'反比例', e:'y=1/x'},
+  {n:'指数', e:'y=2ˣ'}, {n:'对数', e:'y=ln(x)'},
+  {n:'绝对值', e:'y=|x-1|'}, {n:'圆', e:'(x-1)²+(y-2)²=9'},
+  {n:'椭圆', e:'x²/9+y²/4=1'},
+];
+let lastPanelKey = '';
+
+function panelKey(){
+  const el = selectedMp();
+  if(state.tool === 'equation') return 'eq';
+  if(el) return 'mp:' + el.id + ':' + el.status + (el._gen?'g':'');
+  return 'default:' + state.tool;
+}
+function selectedMp(){
+  return state.elements.find(e => e.id === state.selectedId && e.type === 'mathplot');
+}
+
+function swatchesHTML(cur){
+  return `<div class="swatches">` + COLORS.map(c =>
+    `<button class="sw ${c===cur?'on':''}" data-c="${c}" style="background:${c}" title="${c}"></button>`).join('') +
+    `<input type="color" class="sw-custom" value="${cur}" data-c="__custom" title="自定义颜色">` + `</div>`;
+}
+
+function renderPanel(){
+  const key = panelKey();
+  const wide = key === 'eq' || key.startsWith('mp:');
+  panel.classList.toggle('wide', wide);
+  if(key === lastPanelKey && key.startsWith('mp:')){ updateMpPanelValues(); return; } /* 只更新值，不重建（保持控件焦点） */
+  lastPanelKey = key;
+
+  if(key === 'eq'){ renderEqPanel(); return; }
+  if(key.startsWith('mp:')){ renderMpPanel(); return; }
+  renderDefaultPanel();
+}
+
+/* ---- 模式 A：默认工具属性（复刻现有 PropertyPanel） ---- */
+function renderDefaultPanel(){
+  const d = state.defaults;
+  panel.innerHTML = `
+    <div>
+      <label class="pp-label">Stroke</label>
+      ${swatchesHTML(d.strokeColor)}
+    </div>
+    <div>
+      <label class="pp-label" id="pp-width-label">Width: ${d.strokeWidthPen}px</label>
+      <input type="range" min="1" max="50" value="${d.strokeWidthPen}" id="pp-width">
+    </div>
+    <div class="pp-sub">原型聚焦「方程出图」；其他工具样式沿用现有实现。</div>`;
+  panel.querySelectorAll('.sw,[data-c]').forEach(b => b.addEventListener('click', () => {
+    state.defaults.strokeColor = b.dataset.c === '__custom' ? b.value : b.dataset.c;
+    renderPanel();
+  }));
+  $('#pp-width').addEventListener('input', e => {
+    state.defaults.strokeWidthPen = +e.target.value;
+    $('#pp-width-label').textContent = `Width: ${e.target.value}px`;
+  });
+}
+
+/* ---- 模式 B：方程编辑器（Equation 工具激活时） ---- */
+function renderEqPanel(){
+  panel.innerHTML = `
+    <div class="pp-title"><span class="fx">ƒ</span>方程 Equation</div>
+    <div>
+      <input id="eq-input" placeholder="如 y=sin(x) 或 y=x²-2x-3" autocomplete="off" spellcheck="false" value="${esc(state.draft)}">
+      <div class="status-line status-wait" id="eq-status" style="margin-top:5px">等待输入…</div>
+    </div>
+    <div id="eq-preview"></div>
+    <div>
+      <span class="pp-label">插入符号</span>
+      <div class="sym-row">
+        <button class="sym-btn" data-sym="π">π</button><button class="sym-btn" data-sym="√(">√</button>
+        <button class="sym-btn" data-sym="²">²</button><button class="sym-btn" data-sym="³">³</button>
+        <button class="sym-btn" data-sym="^">^</button><button class="sym-btn" data-sym="|x|">|x|</button>
+      </div>
+    </div>
+    <div>
+      <span class="pp-label">模板 Templates</span>
+      <div class="tpl-grid">${TEMPLATES.map((t,i) =>
+        `<button class="tpl" data-tpl="${i}" title="${esc(t.e)}"><span class="n">${t.n}</span><span class="e">${esc(t.e)}</span></button>`).join('')}</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" id="eq-insert">插入图形 ⏎</button>
+      <button class="btn-ghost" id="eq-clear">清空</button>
+    </div>
+    <div class="pp-sub">确认后在画布生成数学图形元素（MathPlot）：自带坐标系，可移动 / 缩放 / 撤销重做。</div>`;
+
+  const input = $('#eq-input');
+  const upd = () => { state.draft = input.value; updateDraftStatus(); };
+  input.addEventListener('input', upd);
+  input.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); insertDraft(); }
+    if(e.key === 'Escape') input.blur();
+  });
+  panel.querySelectorAll('.sym-btn').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+  panel.querySelectorAll('.sym-btn').forEach(b => b.addEventListener('click', () => {
+    const s = b.dataset.sym;
+    if(s === '|x|') input.setRangeText('|x-1|', input.selectionStart, input.selectionEnd, 'end');
+    else input.setRangeText(s, input.selectionStart, input.selectionEnd, 'end');
+    upd(); input.focus();
+  }));
+  panel.querySelectorAll('.tpl').forEach(b => b.addEventListener('click', () => {
+    input.value = TEMPLATES[+b.dataset.tpl].e; upd(); input.focus();
+  }));
+  $('#eq-insert').addEventListener('click', insertDraft);
+  $('#eq-clear').addEventListener('click', () => { input.value = ''; upd(); input.focus(); });
+  updateDraftStatus();
+  input.focus();
+}
+function updateDraftStatus(){
+  const input = $('#eq-input'), st = $('#eq-status'), pv = $('#eq-preview');
+  if(!input) return;
+  const v = state.draft.trim();
+  input.classList.remove('err');
+  if(!v){
+    st.textContent = '等待输入…'; st.className = 'status-line status-wait';
+    pv.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#d1d5db">实时预览</div>`;
+    return;
+  }
+  try{
+    const spec = parseSpec(v);
+    const kindName = {fn:'显式函数 y=f(x)', circle:'圆（几何方程）', ellipse:'椭圆（几何方程）'}[spec.kind];
+    st.textContent = '✓ 已识别：' + kindName; st.className = 'status-line status-ok';
+    const p = buildPlot(spec, 240, 96, { xmin:-10, xmax:10, precision:'low',
+      showAxis:true, showTicks:false, showGrid:true, equalUnits:spec.kind!=='fn',
+      strokeColor:'#3B82F6', strokeWidth:2 });
+    pv.innerHTML = p.ok ? p.svg.replace(/<svg /,'<svg style="width:100%;height:100%" ')
+      : `<div style="height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#ef4444;padding:0 8px;text-align:center">${esc(p.error)}</div>`;
+  }catch(e){
+    st.textContent = '⚠ ' + e.message; st.className = 'status-line status-err';
+    input.classList.add('err');
+    pv.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fca5a5">无法预览</div>`;
+  }
+}
+
+/* ---- 模式 C：MathPlot 元素参数（选中时） ---- */
+const PRESET_DOMAINS = [
+  {n:'-2π~2π', a:-6.28, b:6.28}, {n:'-5~5', a:-5, b:5}, {n:'-10~10', a:-10, b:10},
+];
+function renderMpPanel(){
+  const el = selectedMp(); if(!el) return;
+  const spec = el.status === 'error' ? null : getSpec(el);
+  const isFn = spec && spec.kind === 'fn';
+  const kindName = !spec ? '解析失败' : {fn:'显式函数', circle:'圆 · 几何', ellipse:'椭圆 · 几何'}[spec.kind];
+
+  panel.innerHTML = `
+    <div class="pp-title"><span class="fx">ƒ</span>数学图形 <span class="badge" style="margin-left:auto">${kindName}</span></div>
+    ${el._gen ? `<div class="pp-sub" style="color:#2563eb">正在生成图形…</div>` : ''}
+    ${el.status === 'error' || !spec ? `
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px">
+        <div style="font-size:12px;color:#b91c1c;font-weight:600">⚠ 无法识别的方程</div>
+        <div style="font-size:11px;color:#9ca3af;margin:4px 0 6px">${esc(el.error)}</div>
+        <button class="btn-primary" data-act="edit-err" style="padding:5px 0">重新编辑方程</button>
+      </div>` : `
+      <div>
+        <label class="pp-label">方程</label>
+        <input id="mp-eq" value="${esc(el.src)}" autocomplete="off" spellcheck="false"
+          style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;font-family:Georgia,serif;font-size:14px;outline:none;user-select:text">
+      </div>
+      ${isFn ? `
+      <div>
+        <label class="pp-label">定义域 x ∈</label>
+        <div class="num-row">
+          <input type="number" id="mp-xmin" step="0.5" value="${+el.xmin.toFixed(2)}">
+          <span class="tilde">~</span>
+          <input type="number" id="mp-xmax" step="0.5" value="${+el.xmax.toFixed(2)}">
+        </div>
+        <div class="preset-row">${PRESET_DOMAINS.map((p,i) =>
+          `<button class="preset ${Math.abs(el.xmin-p.a)<.01&&Math.abs(el.xmax-p.b)<.01?'on':''}" data-pd="${i}">${p.n}</button>`).join('')}</div>
+      </div>
+      <div>
+        <label class="pp-label">采样精度</label>
+        <div class="seg">
+          <button data-pr="low" class="${el.precision==='low'?'on':''}">粗</button>
+          <button data-pr="mid" class="${el.precision==='mid'?'on':''}">中</button>
+          <button data-pr="high" class="${el.precision==='high'?'on':''}">细</button>
+        </div>
+      </div>` : `<div class="pp-sub">几何方程按参数化精确绘制，自动等比坐标（1:1）。</div>`}
+      <div>
+        <label class="pp-label">坐标系</label>
+        <div style="display:flex;flex-wrap:wrap;gap:5px 10px">
+          <label class="chk"><input type="checkbox" id="mp-axis" ${el.showAxis?'checked':''}>坐标轴</label>
+          <label class="chk"><input type="checkbox" id="mp-ticks" ${el.showTicks?'checked':''}>刻度</label>
+          <label class="chk"><input type="checkbox" id="mp-grid" ${el.showGrid?'checked':''}>网格</label>
+          ${isFn ? `<label class="chk"><input type="checkbox" id="mp-eq1" ${el.equalUnits?'checked':''}>等比 1:1</label>` : ''}
+          <label class="chk"><input type="checkbox" id="mp-label" ${el.showLabel?'checked':''}>方程标签</label>
+        </div>
+      </div>
+      <div>
+        <label class="pp-label">线条颜色</label>
+        ${swatchesHTML(el.strokeColor)}
+      </div>
+      <div>
+        <label class="pp-label" id="mp-width-label">线宽：${el.strokeWidth}px</label>
+        <input type="range" min="1" max="8" step="0.5" value="${el.strokeWidth}" id="mp-width">
+      </div>
+      <div>
+        <label class="pp-label" id="mp-opacity-label">不透明度：${Math.round(el.opacity*100)}%</label>
+        <input type="range" min="20" max="100" value="${Math.round(el.opacity*100)}" id="mp-opacity">
+      </div>`}
+    <div class="btn-row">
+      <button class="btn-ghost" data-act="dup" style="flex:1">复制</button>
+      <button class="danger-btn" data-act="del" style="width:auto;padding:6px 14px">删除</button>
+    </div>
+    <div class="pp-sub">修改参数实时重绘；移动 / 缩放 / 删除均可用 Ctrl+Z 撤销。</div>`;
+
+  wireMpPanel(el);
+}
+function wireMpPanel(el){
+  const rerender = () => { getSpec(el); renderElements(); };
+  const eq = $('#mp-eq');
+  if(eq){
+    eq.addEventListener('input', () => { el.src = eq.value; getSpec(el); rerender(); });
+    eq.addEventListener('change', () => { if(el.status !== 'error') pushHistory(); else renderPanel(); });
+  }
+  const bindNum = (id, prop) => {
+    const n = $(id); if(!n) return;
+    n.addEventListener('input', () => { el[prop] = parseFloat(n.value); if(Number.isFinite(el[prop])) rerender(); });
+    n.addEventListener('change', pushHistory);
+  };
+  bindNum('#mp-xmin','xmin'); bindNum('#mp-xmax','xmax');
+  panel.querySelectorAll('[data-pd]').forEach(b => b.addEventListener('click', () => {
+    const p = PRESET_DOMAINS[+b.dataset.pd]; el.xmin = p.a; el.xmax = p.b;
+    rerender(); pushHistory(); renderPanel();
+  }));
+  panel.querySelectorAll('[data-pr]').forEach(b => b.addEventListener('click', () => {
+    el.precision = b.dataset.pr; rerender(); pushHistory(); renderPanel();
+  }));
+  const bindChk = (id, prop) => {
+    const c = $(id); if(!c) return;
+    c.addEventListener('change', () => { el[prop] = c.checked; rerender(); pushHistory(); });
+  };
+  bindChk('#mp-axis','showAxis'); bindChk('#mp-ticks','showTicks'); bindChk('#mp-grid','showGrid');
+  bindChk('#mp-eq1','equalUnits'); bindChk('#mp-label','showLabel');
+  panel.querySelectorAll('.sw,[data-c]').forEach(b => b.addEventListener('click', () => {
+    el.strokeColor = b.dataset.c === '__custom' ? b.value : b.dataset.c;
+    renderElements(); renderPanel(); pushHistory();
+  }));
+  const w = $('#mp-width');
+  if(w){
+    w.addEventListener('input', () => { el.strokeWidth = +w.value;
+      $('#mp-width-label').textContent = `线宽：${w.value}px`; rerender(); });
+    w.addEventListener('change', pushHistory);
+  }
+  const op = $('#mp-opacity');
+  if(op){
+    op.addEventListener('input', () => { el.opacity = +op.value/100;
+      $('#mp-opacity-label').textContent = `不透明度：${op.value}%`; renderElements(); });
+    op.addEventListener('change', pushHistory);
+  }
+  panel.querySelectorAll('[data-act=dup]').forEach(b => b.addEventListener('click', () => duplicateSelected()));
+  panel.querySelectorAll('[data-act=del]').forEach(b => b.addEventListener('click', () => deleteSelected()));
+  panel.querySelectorAll('[data-act=edit-err]').forEach(b => b.addEventListener('click', () => editErrorElement(el)));
+}
+function updateMpPanelValues(){ /* 轻量同步（外部拖拽缩放后刷新布局相关值） */ }
+
+/* =====================================================================
+ * 6. 插入 / 编辑 / 删除
+ * ===================================================================*/
+function insertDraft(){
+  const src = state.draft.trim();
+  if(!src){ toast('请先输入方程，或点击模板选择'); return; }
+  insertEquation(src);
+}
+function insertEquation(src, opts){
+  const el = makeElement(src);
+  /* 若正在修正一个错误占位元素 → 原位替换（保留位置） */
+  const target = state.editTargetId && state.elements.find(e => e.id === state.editTargetId && e.type === 'mathplot');
+  if(target){
+    el.x = target.x; el.y = target.y;
+    state.elements = state.elements.filter(e => e.id !== target.id);
+    state.editTargetId = null;
+  }else{
+    /* 位置：画布中偏右，多个级联偏移 */
+    const vw = innerWidth, vh = innerHeight;
+    const k = state.elements.filter(e => e.type === 'mathplot').length % 5;
+    el.x = Math.max(90, (vw - el.w)/2 + 40 + k*26 - 60);
+    el.y = Math.max(96, (vh - el.h)/2 - 10 + k*22);
+  }
+
+  if(el.status === 'error'){
+    state.elements.push(el);
+    state.selectedId = el.id;
+    setTool('select');
+    pushHistory(); renderAll();
+    toast('无法识别的方程，已生成错误占位元素');
+    return el;
+  }
+  /* 出图中 → ok（约 0.6s，演示该状态；实际解析 <100ms） */
+  el._gen = true;
+  state.elements.push(el);
+  state.selectedId = el.id;
+  setTool('select');            /* 插入后自动切回选择工具，属性面板立即可调参数；按 F 继续输入下一个方程 */
+  pushHistory();
+  renderAll();
+  const settle = () => { el._gen = false; renderAll(); };
+  if(opts && opts.freezeGen){ /* 演示：冻结"出图中"状态 */ }
+  else setTimeout(settle, 620);
+  return el;
+}
+function editErrorElement(el){
+  state.draft = el.src;
+  state.editTargetId = el.id;   /* 修正插入时原位替换该错误元素 */
+  setTool('equation');
+  renderPanel();
+  const input = $('#eq-input');
+  if(input){ input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  toast('已载入原方程，修正后按 ⏎ 原位替换');
+}
+function deleteSelected(){
+  const i = state.elements.findIndex(e => e.id === state.selectedId);
+  if(i < 0) return;
+  state.elements.splice(i, 1);
+  state.selectedId = null;
+  pushHistory(); renderAll(); toast('已删除（Ctrl+Z 可撤销）');
+}
+function duplicateSelected(){
+  const el = selectedMp(); if(!el) return;
+  const c = JSON.parse(snapshotOf(el));
+  c.id = 'mp' + (uid++); c.x += 26; c.y += 26; c._gen = false;
+  state.elements.push(c); state.selectedId = c.id;
+  getSpec(c); pushHistory(); renderAll(); toast('已复制图形');
+}
+function snapshotOf(el){
+  const c = {}; for(const k in el) if(!k.startsWith('_')) c[k] = el[k];
+  return JSON.stringify(c);
+}
+
+/* =====================================================================
+ * 7. 画布交互：选择 / 拖拽 / 缩放控点
+ * ===================================================================*/
+function setTool(t){
+  state.tool = t;
+  if(t !== 'select') state.selectedId = null;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  renderPanel();
+  if(t !== 'equation' && t !== 'select') toast('原型聚焦方程出图：该工具沿用现有实现', 1600);
+}
+let drag = null;
+layer.addEventListener('pointerdown', e => {
+  const handle = e.target.closest('.h');
+  const mpBox = e.target.closest('.mp');
+  const errBox = e.target.closest('.mp-err');
+  if(errBox){
+    const id = mpBox && mpBox.dataset.id;
+    const el = state.elements.find(x => x.id === id);
+    if(el) editErrorElement(el);
+    return;
+  }
+  if(state.tool === 'equation'){ /* 方程工具下点画布 → 聚焦输入框 */
+    const input = $('#eq-input'); if(input) input.focus(); return;
+  }
+  if(state.tool !== 'select') return;
+  if(handle && mpBox){
+    const el = state.elements.find(x => x.id === mpBox.dataset.id);
+    drag = { mode:'resize', el, dir:handle.dataset.h,
+      sx:e.clientX, sy:e.clientY, ox:el.x, oy:el.y, ow:el.w, oh:el.h, moved:false };
+    e.preventDefault(); return;
+  }
+  if(mpBox){
+    const el = state.elements.find(x => x.id === mpBox.dataset.id);
+    state.selectedId = el.id; renderAll();
+    drag = { mode:'move', el, sx:e.clientX, sy:e.clientY, ox:el.x, oy:el.y, moved:false };
+    e.preventDefault(); return;
+  }
+  if(state.selectedId){ state.selectedId = null; renderAll(); }
+});
+window.addEventListener('pointermove', e => {
+  if(!drag) return;
+  const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+  if(Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+  const el = drag.el, box = layer.querySelector(`.mp[data-id="${el.id}"]`);
+  if(drag.mode === 'move'){
+    el.x = drag.ox + dx; el.y = drag.oy + dy;
+    if(box){ box.style.left = el.x + 'px'; box.style.top = el.y + 'px'; }
+  }else{
+    const d = drag.dir, MINW = 220, MINH = 160;
+    if(d.includes('e')) el.w = Math.max(MINW, drag.ow + dx);
+    if(d.includes('s')) el.h = Math.max(MINH, drag.oh + dy);
+    if(d.includes('w')){ const w = Math.max(MINW, drag.ow - dx); el.x = drag.ox + (drag.ow - w); el.w = w; }
+    if(d.includes('n')){ const h = Math.max(MINH, drag.oh - dy); el.y = drag.oy + (drag.oh - h); el.h = h; }
+    renderElements(); /* 缩放需重绘坐标系 */
+    const nb = layer.querySelector(`.mp[data-id="${el.id}"]`);
+    if(nb){ nb.classList.add('selected'); }
+    state.selectedId = el.id;
+  }
+});
+window.addEventListener('pointerup', () => {
+  if(drag && drag.moved) pushHistory();
+  drag = null;
+});
+
+/* =====================================================================
+ * 8. 顶栏 / 键盘
+ * ===================================================================*/
+function updateChrome(){
+  $('#btn-undo').disabled = state.hIdx <= 0;
+  $('#btn-redo').disabled = state.hIdx >= state.history.length - 1;
+  $('#dirty-dot').style.display = state.dirty ? '' : 'none';
+}
+$('#btn-undo').addEventListener('click', undo);
+$('#btn-redo').addEventListener('click', redo);
+$('#btn-export').addEventListener('click', e => { e.stopPropagation(); $('#export-menu').classList.toggle('open'); });
+document.addEventListener('click', () => $('#export-menu').classList.remove('open'));
+document.querySelectorAll('#export-menu button').forEach(b =>
+  b.addEventListener('click', () => toast('导出沿用现有实现（原型未改动该链路）')));
+function saveMsg(msg){ $('#save-msg').textContent = msg; setTimeout(() => $('#save-msg').textContent = '', 2000); }
+$('#btn-save').addEventListener('click', () => { state.dirty = false; updateChrome(); saveMsg('Saved to browser'); });
+$('#btn-save-srv').addEventListener('click', () => { state.dirty = false; updateChrome(); saveMsg('Saved to server'); });
+$('#btn-clear').addEventListener('click', () => { state.elements = []; state.selectedId = null; pushHistory(); renderAll(); toast('已清空画布'); });
+$('#btn-new').addEventListener('click', () => { state.elements = []; state.selectedId = null; pushHistory(); renderAll(); toast('新建白板（原型演示）'); });
+
+document.querySelectorAll('.tool-btn').forEach(b =>
+  b.addEventListener('click', () => setTool(b.dataset.tool)));
+
+const TOOL_KEYS = { v:'select', b:'pen', r:'rectangle', c:'circle', l:'line', a:'arrow', t:'text', e:'eraser', f:'equation' };
+document.addEventListener('keydown', e => {
+  const inField = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
+    e.preventDefault(); e.shiftKey ? redo() : undo(); return;
+  }
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y'){ e.preventDefault(); redo(); return; }
+  if(inField) return;
+  if(e.key === 'Delete' || e.key === 'Backspace'){ if(state.selectedId){ e.preventDefault(); deleteSelected(); } return; }
+  const t = TOOL_KEYS[e.key.toLowerCase()];
+  if(t && !e.ctrlKey && !e.metaKey){ setTool(t); if(t === 'equation'){ const i = $('#eq-input'); if(i) i.focus(); } }
+});
+
+/* =====================================================================
+ * 9. 评审演示场景
+ * ===================================================================*/
+function clearAll_(){
+  state.elements = []; state.selectedId = null; state.draft = ''; state.editTargetId = null;
+  state.history = []; state.hIdx = -1; state.dirty = false;
+  pushHistory();   /* 基线空快照：场景内的新增/修改均可撤销 */
+  state.dirty = false; updateChrome();
+}
+function decoPath(x, y, d, color, w){
+  return { type:'deco-path', x, y, svg:
+    `<svg width="260" height="90" viewBox="0 0 260 90"><path d="${d}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" opacity=".85"/></svg>` };
+}
+const SCENARIOS = {
+  empty(){
+    clearAll_(); setTool('select'); renderAll(); toast('① 空态：画布无元素，中央引导选择 ƒ 工具');
+  },
+  inputting(){
+    clearAll_();
+    state.draft = 'y=2sin(2x+π/3)';
+    setTool('equation'); renderAll();
+    const i = $('#eq-input'); if(i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    toast('② 输入中：实时校验 + 实时预览 + 模板/符号辅助');
+  },
+  generating(){
+    clearAll_();
+    const el = insertEquation('y=tan(x)', { freezeGen:true });
+    toast('③ 出图中：解析 → 采样 → 生成（实际 <100ms，此处延长演示）');
+  },
+  error(){
+    clearAll_();
+    const el = insertEquation('y=sin(x)+');
+    toast('④ 错误态：红色占位 + 原因提示，点击可重新编辑');
+  },
+  multi(){
+    clearAll_();
+    insertEquation('y=sin(x)', { })._gen = false;
+    const a = state.elements[0]; a.x = 300; a.y = 96; a.w = 430; a.h = 280; a.xmin = -6.28; a.xmax = 6.28; a.strokeColor = '#3B82F6'; a._gen = false;
+    insertEquation('y=x²-2x-3')._gen = false;
+    const b = state.elements[1]; b.x = 760; b.y = 118; b.w = 420; b.h = 260; b.xmin = -4; b.xmax = 6; b.strokeColor = '#F97316'; b._gen = false;
+    insertEquation('(x-1)²+(y-2)²=9')._gen = false;
+    const c = state.elements[2]; c.x = 330; c.y = 415; c.w = 300; c.h = 300; c.strokeColor = '#22C55E'; c._gen = false;
+    state.elements.push(decoPath(830, 500, 'M8,20 C40,4 52,40 84,26 S140,8 168,30', '#78716C', 2.5));
+    state.elements.push({ type:'deco-text', x: 1006, y: 512, fontSize: 18, color:'#374151', text:'对比：振幅 / 周期' });
+    state.selectedId = null;
+    setTool('select'); pushHistory(); renderAll();
+    toast('⑤ 多图形共存：曲线 / 几何 / 手写批注 / 文本同屏');
+  },
+  selected(){
+    SCENARIOS.multi();
+    const a = state.elements[0]; a.xmax = 6.28;
+    state.selectedId = a.id; setTool('select'); renderAll();
+    toast('⑥ 选中编辑：右侧面板实时调参（定义域 / 采样 / 坐标系 / 样式）');
+  },
+};
+document.querySelectorAll('.demo-btn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.demo-btn').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  SCENARIOS[b.dataset.s]();
+}));
+
+/* =====================================================================
+ * 10. 启动
+ * ===================================================================*/
+setTool('select');
+pushHistory();          /* 初始空快照 */
+renderAll();
+</script>
+</body>
+</html>
