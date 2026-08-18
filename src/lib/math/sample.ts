@@ -221,17 +221,40 @@ function samplePoint(params: DegeneratePointParams, aspect: number): SampleResul
 }
 
 /**
- * 抛物线参数化采样（ZOO-147 / D7）：(y−k)²=4p(x−h)（axis='x'）取参
- * y=k+t、x=h+t²/(4p)（axis='y' 对换）——单支连续曲线，t 对称采样。
- * 视窗原点居中、纳入顶点/焦点与一段张口（深度 max(4, 3|p|)），t 上限取
- * 「越出上下边」与「越出开口侧边」所需者的较大值（卡片裁剪）。
+ * 抛物线参数化采样（ZOO-147 / D7；ZOO-149 旋转形）：轴对齐 (y−k)²=4p(x−h)
+ * （axis='x'）取参 y=k+t、x=h+t²/(4p)（axis='y' 对换）——单支连续曲线，t 对称
+ * 采样；旋转形对称轴单位向量 e₁（角 rotation）、垂直 e₂，参数化
+ * P(t) = V + (t²/4p)·e₁ + t·e₂。视窗原点居中、纳入顶点/焦点与一段张口
+ * （深度 max(4, 3|p|)）；t 上限取「越出上下边」与「越出开口侧边」所需者的
+ * 较大值（旋转形按对角线放宽），卡片裁剪。
  */
 function sampleParabola(params: ParabolaParams, aspect: number): SampleResult {
   const { h, k, p, axis } = params;
+  const phi = params.rotation ?? 0;
   if (!(Math.abs(p) > 1e-12)) return { error: '该方程不表示抛物线' };
   const depth = Math.max(4, 3 * Math.abs(p)); // 沿开口轴的展示深度
   const spread = Math.sqrt(4 * Math.abs(p) * depth); // 该深度处的张口半宽
   const anchor = Math.abs(p) + 1.5; // 焦点可见余量
+  if (Math.abs(phi) > 1e-12) {
+    const e1x = Math.cos(phi);
+    const e1y = Math.sin(phi);
+    const e2x = -e1y;
+    const e2y = e1x;
+    // 卡片需容纳：顶点 + 开口深度（沿 e₁）+ 张口（沿 e₂），按 x/y 分量并列求和（保守）
+    const needX = Math.max(LINE_VIEW_BASE, Math.abs(h) + depth * Math.abs(e1x) + spread * Math.abs(e2x) + 1);
+    const needY = Math.max(6, Math.abs(k) + depth * Math.abs(e1y) + spread * Math.abs(e2y) + 1);
+    const { halfX, halfY } = aspectWindow(needX, needY, aspect);
+    const reach = 1.15 * (Math.hypot(halfX, halfY) + Math.abs(h) + Math.abs(k)); // 对角线越出半径
+    const tMax = Math.max(reach, Math.sqrt(4 * Math.abs(p) * reach));
+    const n = 200;
+    const polyline: Polyline = [];
+    for (let i = 0; i <= n; i++) {
+      const t = -tMax + (2 * tMax * i) / n;
+      const s = (t * t) / (4 * p);
+      polyline.push({ x: h + s * e1x + t * e2x, y: k + s * e1y + t * e2y });
+    }
+    return { polylines: [polyline], xMin: -halfX, xMax: halfX, yMin: -halfY, yMax: halfY };
+  }
   const needOpen = Math.max(LINE_VIEW_BASE, Math.abs(axis === 'x' ? h : k) + Math.max(depth, anchor));
   const needSide = Math.max(6, Math.abs(axis === 'x' ? k : h) + spread + 1);
   const { halfX, halfY } =
@@ -253,26 +276,39 @@ function sampleParabola(params: ParabolaParams, aspect: number): SampleResult {
 const HYPERBOLA_SEGMENTS = 140;
 
 /**
- * 双曲线参数化采样（ZOO-147 / D7）：axis='x' 两支 (h±a·cosh t, k+b·sinh t)
- * （axis='y' 对换）。视窗原点居中、纳入中心/顶点/焦点（R=max(a,b,c) 放余量）；
- * t 上限 arcosh 使 a·cosh t / b·sinh t 越出卡片（1.15–1.25 倍余量），卡片裁剪。
+ * 双曲线参数化采样（ZOO-147 / D7；ZOO-149 旋转 + 上/下臂修复）：轴对齐
+ * axis='x' 两支 (h±a·cosh t, k+b·sinh t)（axis='y' 对换）；旋转形实轴单位
+ * 向量 e₁（角 rotation）、虚轴 e₂ ⊥ e₁，顶点 ±a 沿 e₁。视窗原点居中、纳入
+ * 中心/顶点/焦点（R=max(a,b,c) 放余量）；t 对称取 ±tMax——**整支**双曲线
+ * 需 t∈(−∞,∞)（sinh 为奇函数，只取 t≥0 会丢两支的下半臂，ZOO-149 前的
+ * 既有缺陷）；tMax 使 a·cosh t、b·sinh t 越出卡片对角线（旋转形 e₁/e₂ 在
+ * x/y 两轴均有分量，统一按对角线放宽 2 倍余量），卡片裁剪贯穿边缘。
  */
 function sampleHyperbola(params: HyperbolaParams, aspect: number): SampleResult {
   const { h, k, a, b, axis } = params;
+  const phi = params.rotation ?? 0;
   if (!(a > 0) || !(b > 0)) return { error: '该方程不表示双曲线' };
   const c = Math.hypot(a, b);
   const r = Math.max(a, b, c);
   const { halfX, halfY } = aspectWindow(Math.max(LINE_VIEW_BASE, Math.abs(h) + 1.4 * r), Math.max(6, Math.abs(k) + 1.2 * r), aspect);
-  // cosh t ≥ mX 且 sinh t ≥ mY（arcosh 的参数），保证两支都穿出卡片
-  const m = Math.max((1.25 * (halfX + Math.abs(h))) / a, (1.15 * (halfY + Math.abs(k))) / b, 1.000001);
+  const rotated = Math.abs(phi) > 1e-12;
+  const e1x = rotated ? Math.cos(phi) : axis === 'x' ? 1 : 0;
+  const e1y = rotated ? Math.sin(phi) : axis === 'x' ? 0 : 1;
+  const e2x = -e1y;
+  const e2y = e1x;
+  // t 上限：越出卡片（轴对齐按轴向 1.15–1.25 倍；旋转按对角线 2 倍——cosh·a 与
+  // sinh·b 均需足以在对角方向越出，√(m²−1)≈m 的亏量由 2 倍余量覆盖）
+  const m = rotated
+    ? Math.max((2 * (Math.hypot(halfX, halfY) + Math.abs(h) + Math.abs(k))) / Math.min(a, b), 1.000001)
+    : Math.max((1.25 * (halfX + Math.abs(h))) / a, (1.15 * (halfY + Math.abs(k))) / b, 1.000001);
   const tMax = Math.log(m + Math.sqrt(m * m - 1)); // arcosh
   const branch = (sign: 1 | -1): Polyline => {
     const pl: Polyline = [];
     for (let i = 0; i <= HYPERBOLA_SEGMENTS; i++) {
-      const t = (tMax * i) / HYPERBOLA_SEGMENTS;
-      const ch = a * Math.cosh(t);
+      const t = -tMax + (2 * tMax * i) / HYPERBOLA_SEGMENTS;
+      const ch = sign * a * Math.cosh(t);
       const sh = b * Math.sinh(t);
-      pl.push(axis === 'x' ? { x: h + sign * ch, y: k + sh } : { x: h + sh, y: k + sign * ch });
+      pl.push(rotated ? { x: h + ch * e1x + sh * e2x, y: k + ch * e1y + sh * e2y } : axis === 'x' ? { x: h + ch, y: k + sh } : { x: h + sh, y: k + ch });
     }
     return pl;
   };
@@ -280,9 +316,9 @@ function sampleHyperbola(params: HyperbolaParams, aspect: number): SampleResult 
 }
 
 /** 几何方程参数化精确采样（直线两端点 / 退化直线对两线 / 退化单点小圆标记 /
- *  圆/椭圆 θ 0→2π 闭合折线 / 抛物线单支 / 双曲线两支）与适配视窗。
- *  aspect = 卡片高宽比（缺省 0.75 对齐默认卡片），视窗纵横比与其一致以保证
- *  等比渲染不失真（ZOO-147）。 */
+ *  圆/椭圆 θ 0→2π 闭合折线〔椭圆含旋转，ZOO-149〕 / 抛物线单支 / 双曲线两支）
+ *  与适配视窗。aspect = 卡片高宽比（缺省 0.75 对齐默认卡片），视窗纵横比与其
+ *  一致以保证等比渲染不失真（ZOO-147）。 */
 export function sampleGeometry(
   kind: 'line' | 'linePair' | 'point' | 'circle' | 'ellipse' | 'parabola' | 'hyperbola',
   params: LineParams | LinePairParams | DegeneratePointParams | CircleParams | EllipseParams | ParabolaParams | HyperbolaParams,
@@ -293,18 +329,27 @@ export function sampleGeometry(
   if (kind === 'point') return samplePoint(params as DegeneratePointParams, aspect);
   if (kind === 'parabola') return sampleParabola(params as ParabolaParams, aspect);
   if (kind === 'hyperbola') return sampleHyperbola(params as HyperbolaParams, aspect);
-  const rx = kind === 'circle' ? (params as CircleParams).r : (params as EllipseParams).rx;
-  const ry = kind === 'circle' ? (params as CircleParams).r : (params as EllipseParams).ry;
+  const isCircle = kind === 'circle';
+  const rx = isCircle ? (params as CircleParams).r : (params as EllipseParams).rx;
+  const ry = isCircle ? (params as CircleParams).r : (params as EllipseParams).ry;
+  const phi = isCircle ? 0 : (params as EllipseParams).rotation ?? 0;
   const { cx, cy } = params as CircleParams;
+  const cos = Math.cos(phi);
+  const sin = Math.sin(phi);
   const segments = 120;
   const polyline: Polyline = [];
   for (let i = 0; i <= segments; i++) {
     const t = (2 * Math.PI * i) / segments;
-    polyline.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
+    const ox = rx * Math.cos(t);
+    const oy = ry * Math.sin(t);
+    polyline.push({ x: cx + ox * cos - oy * sin, y: cy + ox * sin + oy * cos });
   }
   const padX = rx * 0.15 + 0.5;
   const padY = ry * 0.15 + 0.5;
-  const { halfX, halfY } = aspectWindow(rx + padX, ry + padY, aspect);
+  // 旋转椭圆包围盒：轴向端点旋转后的 x/y 投影极值（rotation=0 时退化为 rx/ry）
+  const needX = Math.hypot(rx * Math.abs(cos), ry * Math.abs(sin)) + padX;
+  const needY = Math.hypot(rx * Math.abs(sin), ry * Math.abs(cos)) + padY;
+  const { halfX, halfY } = aspectWindow(needX, needY, aspect);
   return {
     polylines: [polyline],
     xMin: cx - halfX,

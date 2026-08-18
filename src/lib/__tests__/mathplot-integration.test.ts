@@ -396,6 +396,61 @@ describe('渲染管线接入', () => {
     );
     expect(plotRenderWriteCount()).toBe(before);
   });
+
+  it('旋转圆锥曲线元素（ZOO-149）：xy=1 / 5x²−6xy+5y²=8 渲染管线 / 折线 / 缓存全链路', () => {
+    const rotH = makeElement({ id: 'mp-roth-1', equation: 'xy=1', kind: 'hyperbola', xAxis: { min: -8, max: 8 } });
+    const { ctx } = createMockCtx();
+    expect(() => renderElement(ctx, rotH, VP)).not.toThrow();
+    const rhRender = resolvePlotRender(
+      { equation: rotH.equation, kind: rotH.kind, xAxis: rotH.xAxis, equalRatio: rotH.equalRatio, sampleCount: rotH.sampleCount },
+      { width: rotH.width, height: rotH.height },
+      plotTokenFor(rotH.id),
+    );
+    expect(rhRender.error).toBeUndefined();
+    expect(rhRender.polylines).toHaveLength(2); // 两支（含旋转）
+    for (const pl of rhRender.polylines) {
+      for (const p of pl) expect(Math.abs(p.x * p.y - 1)).toBeLessThan(1e-9 * (Math.abs(p.x * p.y) + 1));
+    }
+
+    const rotE = makeElement({ id: 'mp-rote-1', equation: '5x²-6xy+5y²=8', kind: 'ellipse', xAxis: { min: -3, max: 3 } });
+    expect(() => renderElement(ctx, rotE, VP)).not.toThrow();
+    const reRender = resolvePlotRender(
+      { equation: rotE.equation, kind: rotE.kind, xAxis: rotE.xAxis, equalRatio: rotE.equalRatio, sampleCount: rotE.sampleCount },
+      { width: rotE.width, height: rotE.height },
+      plotTokenFor(rotE.id),
+    );
+    expect(reRender.error).toBeUndefined();
+    expect(reRender.polylines).toHaveLength(1); // 闭合椭圆
+    for (const p of reRender.polylines[0]) {
+      expect(Math.abs(5 * p.x * p.x - 6 * p.x * p.y + 5 * p.y * p.y - 8)).toBeLessThan(1e-9 * 20);
+    }
+    // 平移缩放不重采样承诺保持：同 sig 二次调用零写入
+    const before = plotRenderWriteCount();
+    resolvePlotRender(
+      { equation: rotE.equation, kind: rotE.kind, xAxis: rotE.xAxis, equalRatio: rotE.equalRatio, sampleCount: rotE.sampleCount },
+      { width: rotE.width, height: rotE.height },
+      plotTokenFor(rotE.id),
+    );
+    expect(plotRenderWriteCount()).toBe(before);
+
+    // SVG 导出：旋转椭圆走 clipPath 曲线 path（几何 kind 越出卡片由裁剪兜底）
+    const svg = exportToSvg([rotE]);
+    expect(svg).toContain('<path');
+    expect(svg).toContain('clip-path');
+  });
+
+  it('旋转形元素工厂（ZOO-149）：椭圆一般式载荷建元素、定义域取旋转包围盒', () => {
+    const payload: EquationDraftPayload = {
+      equation: '5x²-6xy+5y²=8',
+      outcome: { kind: 'ellipse', params: { cx: 0, cy: 0, rx: 1, ry: 2, rotation: -Math.PI / 4 } },
+    };
+    const el = createMathPlotElement(payload, { centerX: 0, centerY: 0 });
+    expect(el.kind).toBe('ellipse');
+    expect(el.error).toBeNull();
+    expect(el.equalRatio).toBe(true);
+    expect(el.xAxis.min).toBeLessThan(-1.58); // 旋转 AABB：hypot(2·cos45°, 1·sin45°) ≈ 1.581
+    expect(el.xAxis.max).toBeGreaterThan(1.58);
+  });
 });
 
 describe('前向兼容（旧版开新文档：未知类型静默忽略）', () => {

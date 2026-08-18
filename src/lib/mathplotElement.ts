@@ -28,10 +28,10 @@ function geometryFields(
     | { kind: 'line'; params: { a: number; b: number; c: number } }
     | { kind: 'linePair'; params: { lines: { a: number; b: number; c: number }[]; mode: 'intersecting' | 'parallel' | 'coincident' } }
     | { kind: 'point'; params: { x: number; y: number } }
-    | { kind: 'parabola'; params: { h: number; k: number; p: number; axis: 'x' | 'y' } }
-    | { kind: 'hyperbola'; params: { h: number; k: number; a: number; b: number; axis: 'x' | 'y' } }
+    | { kind: 'parabola'; params: { h: number; k: number; p: number; axis: 'x' | 'y'; rotation?: number } }
+    | { kind: 'hyperbola'; params: { h: number; k: number; a: number; b: number; axis: 'x' | 'y'; rotation?: number } }
     | { kind: 'circle'; params: { cx: number; cy: number; r: number } }
-    | { kind: 'ellipse'; params: { cx: number; cy: number; rx: number; ry: number } }
+    | { kind: 'ellipse'; params: { cx: number; cy: number; rx: number; ry: number; rotation?: number } }
 ): Pick<MathPlotElement, 'xAxis' | 'equalRatio'> {
   const bbox = sampleGeometry(outcome.kind, outcome.params);
   if ('error' in bbox) return { xAxis: { ...DEFAULT_MATHPLOT.xAxis }, equalRatio: true };

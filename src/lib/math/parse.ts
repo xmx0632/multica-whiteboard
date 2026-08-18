@@ -120,16 +120,18 @@ function mapSyntaxError(message: string): string {
   return '无法识别的表达式';
 }
 
-/** 隐式方程不支持文案（D7 引导式：非多项式隐式；空集 / 旋转 / 椭圆型另有专用文案）。 */
+/** 隐式方程不支持文案（D7 引导式：非多项式隐式；空集另有专用文案）。 */
 const UNSUPPORTED_IMPLICIT =
-  '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次与二元二次方程（抛物线 / 双曲线 / 退化两直线与单点，如 y²=4x、9x²−16y²=144、x²−y²=0）';
+  '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与一般形、二元一次、二元二次方程（抛物线 / 双曲线 / 含 xy 交叉项的旋转圆锥曲线 / 退化两直线与单点，如 y²=4x、xy=1、5x²−6xy+5y²=8、x²−y²=0）';
 
 /**
- * 隐式二元方程分类（D7，ZOO-146/147/148）：顶层 split `=` → F=lhs−rhs → 复用
- * 本文件安全管线（字符白名单 / AST 白名单含 y / compile LRU）→ conic.ts 数值探针。
- * 二元一次 → kind='line'（含竖线）；二次判别式 → 'parabola' / 'hyperbola'
- * （B=0 轴对齐含平移）；退化形 → 'linePair'（两直线）/ 'point'（单点）出图、
- * 空集友好报错；旋转项 / 椭圆型 / 非多项式 → 引导文案。
+ * 隐式二元方程分类（D7，ZOO-146/147/148/149）：顶层 split `=` → F=lhs−rhs →
+ * 复用本文件安全管线（字符白名单 / AST 白名单含 y / compile LRU）→ conic.ts
+ * 数值探针。二元一次 → kind='line'（含竖线）；二次判别式 → 'parabola' /
+ * 'hyperbola' / 'ellipse'（B=0 轴对齐含平移；椭圆型一般式 ZOO-149 直接出图）；
+ * 含 xy 交叉项 → 坐标旋转消交叉项后同族出图（含 rotation 参数，ZOO-149）；
+ * 退化形 → 'linePair'（两直线）/ 'point'（单点）出图、空集友好报错；
+ * 非多项式 → 引导文案。
  */
 function parseImplicit(src: string): ParseResult {
   const split = splitTopLevelEquals(src);
@@ -167,6 +169,7 @@ function parseImplicit(src: string): ParseResult {
     if (outcome.kind === 'point') return { kind: 'point', params: outcome.params };
     if (outcome.kind === 'parabola') return { kind: 'parabola', params: outcome.params };
     if (outcome.kind === 'hyperbola') return { kind: 'hyperbola', params: outcome.params };
+    if (outcome.kind === 'ellipse') return { kind: 'ellipse', params: outcome.params };
     if (outcome.kind === 'degenerate' || outcome.kind === 'unsupported') return err(outcome.message);
     return err(UNSUPPORTED_IMPLICIT);
   } catch {

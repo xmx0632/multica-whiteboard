@@ -22,10 +22,10 @@ const KIND_LABELS: Record<string, string> = {
   line: '直线（二元一次方程）',
   linePair: '两条直线（退化二次方程）',
   point: '单点（退化二次方程）',
-  parabola: '抛物线（二元二次方程）',
-  hyperbola: '双曲线（二元二次方程）',
+  parabola: '抛物线（二元二次方程，含 xy 交叉项旋转形）',
+  hyperbola: '双曲线（二元二次方程，含 xy 交叉项旋转形）',
   circle: '圆（几何方程）',
-  ellipse: '椭圆（几何方程）',
+  ellipse: '椭圆（几何标准形 / 二元二次方程）',
 };
 
 export interface EquationEditorProps {

@@ -167,6 +167,82 @@ describe('parseEquation 二元二次 → 抛物线 / 双曲线（ZOO-147 / D7）
   });
 });
 
+describe('parseEquation 含 xy 交叉项一般二次 → 旋转圆锥曲线（ZOO-149 / D7 续章三）', () => {
+  it('xy=1 → 旋转双曲线（a=b=√2、实轴 45°）；2xy=4 / xy*2=4 等价命中', () => {
+    const r = parseEquation('xy=1');
+    expect(r.kind).toBe('hyperbola');
+    if (r.kind === 'hyperbola') {
+      expect(r.params.a).toBeCloseTo(Math.SQRT2, 10);
+      expect(r.params.b).toBeCloseTo(Math.SQRT2, 10);
+      expect(r.params.rotation).toBeCloseTo(Math.PI / 4, 10);
+    }
+    const scaled = parseEquation('2xy=4'); // ⟂ xy=2：a=b=2
+    expect(scaled.kind).toBe('hyperbola');
+    if (scaled.kind === 'hyperbola') {
+      expect(scaled.params.a).toBeCloseTo(2, 10);
+      expect(scaled.params.rotation).toBeCloseTo(Math.PI / 4, 10);
+    }
+  });
+
+  it('5x²−6xy+5y²=8 → 旋转椭圆；Unicode 减号 / 变序 / ×(−1) 等价书写', () => {
+    for (const eq of ['5x²-6xy+5y²=8', '5x²−6xy+5y²=8', '8=5x²-6xy+5y²', '-5x²+6xy-5y²=-8', '5.0x²-6.0xy+5.0y²=8.0']) {
+      const r = parseEquation(eq);
+      expect(r.kind).toBe('ellipse');
+      if (r.kind !== 'ellipse') continue;
+      expect(r.params.cx).toBeCloseTo(0, 9);
+      expect(r.params.cy).toBeCloseTo(0, 9);
+      expect(Math.min(r.params.rx, r.params.ry)).toBeCloseTo(1, 9);
+      expect(Math.max(r.params.rx, r.params.ry)).toBeCloseTo(2, 9);
+      expect(Math.abs(r.params.rotation ?? 0)).toBeCloseTo(Math.PI / 4, 9);
+    }
+  });
+
+  it('(x−1)(y−2)=3 → 中心 (1,2) 旋转双曲线；(x+y)²=2(x−y)+4 → 旋转抛物线', () => {
+    const h = parseEquation('(x-1)(y-2)=3');
+    expect(h.kind).toBe('hyperbola');
+    if (h.kind === 'hyperbola') {
+      expect(h.params.h).toBeCloseTo(1, 9);
+      expect(h.params.k).toBeCloseTo(2, 9);
+    }
+    const p = parseEquation('(x+y)²=2(x-y)+4');
+    expect(p.kind).toBe('parabola');
+    if (p.kind === 'parabola') {
+      expect(p.params.h).toBeCloseTo(-1, 8);
+      expect(p.params.k).toBeCloseTo(1, 8);
+      expect(p.params.p).toBeCloseTo(Math.SQRT2 / 4, 8);
+      expect(p.params.rotation).toBeCloseTo(-Math.PI / 4, 10);
+    }
+  });
+
+  it('椭圆型一般式（B=0）直接出图：9x²+16y²=144 → rx=4、ry=3（无旋转）', () => {
+    const r = parseEquation('9x²+16y²=144');
+    expect(r.kind).toBe('ellipse');
+    if (r.kind === 'ellipse') {
+      expect(r.params.cx).toBeCloseTo(0, 12);
+      expect(r.params.cy).toBeCloseTo(0, 12);
+      expect(r.params.rx).toBeCloseTo(4, 12);
+      expect(r.params.ry).toBeCloseTo(3, 12);
+      expect(r.params.rotation).toBeUndefined();
+    }
+    // 平移形：(x−1)²/4+(y+2)²/9=1 展开为 9x²+4y²−18x+16y−11=0
+    const moved = parseEquation('9x²+4y²-18x+16y-11=0');
+    expect(moved.kind).toBe('ellipse');
+    if (moved.kind === 'ellipse') {
+      expect(moved.params.cx).toBeCloseTo(1, 9);
+      expect(moved.params.cy).toBeCloseTo(-2, 9);
+      expect(moved.params.rx).toBeCloseTo(2, 9);
+      expect(moved.params.ry).toBeCloseTo(3, 9);
+    }
+  });
+
+  it('旋转退化出图：xy=0 相交对 / (x+y)²=2 平行对 / x²+2xy+2y²=0 单点', () => {
+    expect(parseEquation('xy=0').kind).toBe('linePair');
+    expect(parseEquation('(x+y)²=2').kind).toBe('linePair');
+    expect(parseEquation('x²+2xy+2y²=0').kind).toBe('point');
+    expect(parseEquation('(x+y)²+2=0').kind).toBe('error');
+  });
+});
+
 describe('parseEquation 求值正确性（mathjs number 构建）', () => {
   it('多项式与隐式乘法', () => {
     expect(asExplicit('y=x^2')(3)).toBe(9);
@@ -236,14 +312,14 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
 
   it('隐式方程：非多项式仍明确拒绝（不白屏）', () => {
     const msg =
-      '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形、二元一次与二元二次方程（抛物线 / 双曲线 / 退化两直线与单点，如 y²=4x、9x²−16y²=144、x²−y²=0）';
+      '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与一般形、二元一次、二元二次方程（抛物线 / 双曲线 / 含 xy 交叉项的旋转圆锥曲线 / 退化两直线与单点，如 y²=4x、xy=1、5x²−6xy+5y²=8、x²−y²=0）';
     expect(errorMessage('sin(x)=y')).toBe(msg); // 非多项式隐式
     expect(errorMessage('x³+y=1')).toBe(msg); // 三次
   });
 
-  it('隐式方程：xy 旋转项 / 椭圆型一般式的引导文案', () => {
-    expect(errorMessage('x*y=1')).toBe('该方程含 xy 交叉项（旋转圆锥曲线），暂不支持出图'); // ZOO-149
-    expect(errorMessage('2x²+3y²=12')).toBe('该方程为椭圆型二次方程：请改用椭圆标准形（如 x²/9+y²/4=1）后再输入');
+  it('隐式方程：xy 旋转项 / 椭圆型一般式直接出图（ZOO-149）', () => {
+    expect(parseEquation('x*y=1').kind).toBe('hyperbola'); // 旋转双曲线
+    expect(parseEquation('2x²+3y²=12').kind).toBe('ellipse'); // 椭圆型一般式
   });
 
   it('退化二次方程出图：两直线 / 单点（ZOO-148）', () => {

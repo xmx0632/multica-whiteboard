@@ -11,6 +11,7 @@
  */
 import { COLORS } from '@/lib/types';
 import {
+  ellipseTeachingInfo,
   formatCoef,
   formatGeneralForm,
   hyperbolaTeachingInfo,
@@ -19,7 +20,14 @@ import {
   parabolaTeachingInfo,
   pointTeachingInfo,
 } from '@/lib/math/conic';
-import type { DegeneratePointParams, HyperbolaParams, LineParams, LinePairParams, ParabolaParams } from '@/lib/math/types';
+import type {
+  DegeneratePointParams,
+  EllipseParams,
+  HyperbolaParams,
+  LineParams,
+  LinePairParams,
+  ParabolaParams,
+} from '@/lib/math/types';
 
 export interface MathPlotParamsValue {
   equation: string;
@@ -36,6 +44,8 @@ export interface MathPlotParamsValue {
   parabolaParams?: ParabolaParams;
   /** kind === 'hyperbola' 时的探针参数（中心/半轴/实轴方向，ZOO-147 教学参数） */
   hyperbolaParams?: HyperbolaParams;
+  /** kind === 'ellipse' 时的参数（中心/半轴/旋转角，ZOO-149 教学参数） */
+  ellipseParams?: EllipseParams;
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -96,6 +106,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   const degeneratePoint = value.kind === 'point' && value.pointParams ? pointTeachingInfo(value.pointParams) : null;
   const parabola = value.kind === 'parabola' && value.parabolaParams ? parabolaTeachingInfo(value.parabolaParams) : null;
   const hyperbola = value.kind === 'hyperbola' && value.hyperbolaParams ? hyperbolaTeachingInfo(value.hyperbolaParams) : null;
+  const ellipse = value.kind === 'ellipse' && value.ellipseParams ? ellipseTeachingInfo(value.ellipseParams) : null;
 
   const patch = (p: Partial<MathPlotParamsValue>, commit = false) => {
     onChange(p);
@@ -255,6 +266,11 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               <div className="text-[11px] text-gray-500 leading-relaxed">
                 准线 {parabola.directrix} · 开口{parabola.opening}
               </div>
+              {parabola.rotation && (
+                <div className="text-[11px] text-gray-500 leading-relaxed">
+                  旋转角 θ = {parabola.rotation}（标准形在旋转坐标系 X&apos;Y&apos; 中）
+                </div>
+              )}
             </div>
           )}
 
@@ -269,12 +285,31 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               <div className="text-[11px] text-gray-500 leading-relaxed">
                 准线 {hyperbola.directrices} · 离心率 e = {formatCoef(Number(hyperbola.eccentricity))}
               </div>
+              {hyperbola.rotation && (
+                <div className="text-[11px] text-gray-500 leading-relaxed">
+                  旋转角 θ = {hyperbola.rotation}（X&apos; 为实轴方向，标准形在旋转坐标系 X&apos;Y&apos; 中）
+                </div>
+              )}
             </div>
           )}
 
-          {(value.kind === 'circle' || value.kind === 'ellipse') && (
+          {ellipse ? (
+            <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-2 flex flex-col gap-1">
+              <div className="font-serif text-[13px] text-gray-800">{ellipse.standardForm}</div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">
+                中心 {ellipse.center} · {ellipse.axes}
+              </div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">焦点 {ellipse.foci}</div>
+              <div className="text-[11px] text-gray-500 leading-relaxed">离心率 e = {formatCoef(Number(ellipse.eccentricity))}</div>
+              {ellipse.rotation && (
+                <div className="text-[11px] text-gray-500 leading-relaxed">
+                  旋转角 θ = {ellipse.rotation}（X&apos; 为 rx 轴方向，标准形在旋转坐标系 X&apos;Y&apos; 中）
+                </div>
+              )}
+            </div>
+          ) : value.kind === 'circle' ? (
             <div className="text-[11px] text-gray-400 leading-relaxed">几何方程按参数化精确绘制，自动等比坐标（1:1）。</div>
-          )}
+          ) : null}
 
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">坐标系</label>

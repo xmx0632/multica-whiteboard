@@ -450,6 +450,125 @@ describe('sampleGeometry linePair / point（退化形采样，ZOO-148 / D7）', 
   });
 });
 
+describe('sampleGeometry 旋转形采样（ZOO-149 / D7 续章三）', () => {
+  type SampleResultShape = ReturnType<typeof sampleGeometry>;
+  /** 相对残差：|F(p)| / max(1, scale(p))，防远处点绝对误差虚高。 */
+  const relResidual = (r: SampleResultShape, F: (x: number, y: number) => number, scale: (x: number, y: number) => number) => {
+    if ('error' in r) return Infinity;
+    let worst = 0;
+    for (const pl of r.polylines) {
+      for (const p of pl) worst = Math.max(worst, Math.abs(F(p.x, p.y)) / Math.max(1, scale(p.x, p.y)));
+    }
+    return worst;
+  };
+
+  it('旋转椭圆（cx=1,cy=−1,rx=2,ry=1,45°）：点在曲线上、AABB 视窗、等比一致', () => {
+    const r = sampleGeometry('ellipse', { cx: 1, cy: -1, rx: 2, ry: 1, rotation: Math.PI / 4 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    // 隐式判定：((X'−c)·u/2)² + ((X'−c)·v/1)² = 1，u=(cos45,sin45)、v=(−sin45,cos45)
+    const s = Math.SQRT1_2;
+    const F = (x: number, y: number) => {
+      const dx = x - 1;
+      const dy = y + 1;
+      const u = (s * dx + s * dy) / 2;
+      const v = (-s * dx + s * dy) / 1;
+      return u * u + v * v - 1;
+    };
+    expect(relResidual(r, F, (x, y) => x * x + y * y)).toBeLessThan(1e-9);
+    // AABB：ex = hypot(2·cos45, 1·sin45) = √2.5，ey 同（对称）
+    const ex = Math.hypot(2 * s, s);
+    expect(r.xMin!).toBeLessThanOrEqual(1 - ex + 1e-9);
+    expect(r.xMax!).toBeGreaterThanOrEqual(1 + ex - 1e-9);
+    expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!)).toBeCloseTo(0.75, 9);
+  });
+
+  it('旋转双曲线 xy=1：整支覆盖两臂（两条渐近方向都越出卡片）、点满足 xy=1', () => {
+    const r = sampleGeometry('hyperbola', { h: 0, k: 0, a: Math.SQRT2, b: Math.SQRT2, axis: 'x', rotation: Math.PI / 4 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(2);
+    expect(relResidual(r, (x, y) => x * y - 1, (x, y) => Math.abs(x * y) + 1)).toBeLessThan(1e-9);
+    // 右支恒 y>0（渐近线为坐标轴）：两臂分别沿 x、y 渐近方向越出卡片（ZOO-149
+    // 前只采样 t≥0，右支缺少沿 x 渐近方向的那一臂）
+    for (const pl of r.polylines) {
+      const xs = pl.map((p) => p.x);
+      const ys = pl.map((p) => p.y);
+      const exitsRightUp = Math.max(...xs) > r.xMax! && Math.max(...ys) > r.yMax!;
+      const exitsLeftDown = Math.min(...xs) < r.xMin! && Math.min(...ys) < r.yMin!;
+      expect(exitsRightUp || exitsLeftDown).toBe(true);
+    }
+    const all = [...r.polylines[0], ...r.polylines[1]];
+    expect(Math.max(...all.map((p) => p.x))).toBeGreaterThan(r.xMax!);
+    expect(Math.min(...all.map((p) => p.x))).toBeLessThan(r.xMin!);
+    expect(Math.max(...all.map((p) => p.y))).toBeGreaterThan(r.yMax!);
+    expect(Math.min(...all.map((p) => p.y))).toBeLessThan(r.yMin!);
+  });
+
+  it('轴对齐双曲线整支回归（ZOO-149 修复）：9x²−16y²=144 每支含上下两臂', () => {
+    const r = sampleGeometry('hyperbola', { h: 0, k: 0, a: 4, b: 3, axis: 'x' });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    for (const pl of r.polylines) {
+      const ys = pl.map((p) => p.y);
+      expect(Math.min(...ys)).toBeLessThan(-1);
+      expect(Math.max(...ys)).toBeGreaterThan(1);
+    }
+  });
+
+  it('旋转抛物线 (x+y)²=2(x−y)+4：点满足方程、顶点纳入视窗', () => {
+    const r = sampleGeometry('parabola', { h: -1, k: 1, p: Math.SQRT2 / 4, axis: 'x', rotation: -Math.PI / 4 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(relResidual(r, (x, y) => (x + y) * (x + y) - 2 * (x - y) - 4, (x, y) => (x + y) * (x + y))).toBeLessThan(1e-9);
+    expect(r.xMin!).toBeLessThanOrEqual(-1);
+    expect(r.yMax!).toBeGreaterThanOrEqual(1);
+    expect((r.yMax! - r.yMin!) / (r.xMax! - r.xMin!)).toBeCloseTo(0.75, 9);
+  });
+
+  it('旋转直线对 (x+y)²=2：两折线各自在直线上、共享视窗', () => {
+    const r = sampleGeometry('linePair', {
+      lines: [
+        { a: 1, b: 1, c: -Math.SQRT2 },
+        { a: 1, b: 1, c: Math.SQRT2 },
+      ],
+      mode: 'parallel',
+    });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(2);
+    // 两线各自满足 |x+y| = √2（沿线方向参数化采样，斜线不贴轴）
+    for (const pl of r.polylines) {
+      for (const p of pl) {
+        expect(Math.abs(Math.abs(p.x + p.y) - Math.SQRT2)).toBeLessThan(1e-9 * Math.SQRT2);
+      }
+    }
+  });
+
+  it('旋转参数非法防御：p=0 / a=0 报错不崩溃', () => {
+    expect(sampleGeometry('parabola', { h: 0, k: 0, p: 0, axis: 'x', rotation: Math.PI / 4 })).toEqual({ error: '该方程不表示抛物线' });
+    expect(sampleGeometry('hyperbola', { h: 0, k: 0, a: 0, b: 3, axis: 'x', rotation: Math.PI / 4 })).toEqual({ error: '该方程不表示双曲线' });
+  });
+
+  it('sampleEquation 全链路：xy=1 / 5x²−6xy+5y²=8 解析→旋转几何折线', () => {
+    const h = sampleEquation(parseEquation('xy=1'), { xMin: -10, xMax: 10, aspect: 0.75 });
+    expect('error' in h).toBe(false);
+    if (!('error' in h)) {
+      expect(h.polylines).toHaveLength(2);
+      expect(h.xMin!).toBeLessThan(0);
+      expect(h.xMax!).toBeGreaterThan(0);
+    }
+    const e = sampleEquation(parseEquation('5x²-6xy+5y²=8'), { xMin: -10, xMax: 10, aspect: 0.75 });
+    expect('error' in e).toBe(false);
+    if (!('error' in e)) {
+      expect(e.polylines).toHaveLength(1); // 闭合椭圆
+      const pl = e.polylines[0];
+      expect(pl[0].x).toBeCloseTo(pl[pl.length - 1].x, 9);
+      expect(pl[0].y).toBeCloseTo(pl[pl.length - 1].y, 9);
+    }
+  });
+});
+
 describe('createPreviewPolylines（编辑器预览注入点）', () => {
   it('显式函数：默认视窗 x∈[-10,10]，返回 y 自适应视窗', () => {
     const p = createPreviewPolylines('y=sin(x)', { kind: 'explicit' });

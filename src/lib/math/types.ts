@@ -21,6 +21,8 @@ export interface LineParams {
 /**
  * 抛物线探针参数（ZOO-147 / D7）：axis='x' 即 (y−k)²=4p(x−h)（沿 x 轴开口），
  * axis='y' 即 (x−h)²=4p(y−k)。p 带符号，符号即开口方向，覆盖平移 + 四方向。
+ * ZOO-149 增 rotation：开口对称轴相对 x 轴的旋转角（弧度，标准形 X' 轴方向），
+ * 含 xy 交叉项的旋转抛物线用它；缺省 = 轴对齐（既有元素零迁移）。
  */
 export interface ParabolaParams {
   /** 顶点 */
@@ -28,13 +30,17 @@ export interface ParabolaParams {
   k: number;
   /** 焦参数（顶点到焦点的带符号距离） */
   p: number;
-  /** 开口轴向：'x' 左右开 / 'y' 上下开 */
+  /** 开口轴向：'x' 左右开 / 'y' 上下开（旋转形取对称轴最近的方向） */
   axis: 'x' | 'y';
+  /** 开口对称轴旋转角（弧度）；缺省 = 轴对齐 */
+  rotation?: number;
 }
 
 /**
  * 双曲线探针参数（ZOO-147 / D7）：axis='x' 即 (x−h)²/a²−(y−k)²/b²=1，
  * axis='y' 即 (y−k)²/a²−(x−h)²/b²=1（a 恒为实半轴），含平移。
+ * ZOO-149 增 rotation：实半轴 a 所在轴（标准形 X' 轴）相对 x 轴的旋转角
+ * （弧度），含 xy 交叉项的旋转双曲线用它；缺省 = 轴对齐。
  */
 export interface HyperbolaParams {
   /** 中心 */
@@ -46,6 +52,8 @@ export interface HyperbolaParams {
   b: number;
   /** 实轴方向 */
   axis: 'x' | 'y';
+  /** 实轴旋转角（弧度）；缺省 = 轴对齐 */
+  rotation?: number;
 }
 
 /**
@@ -72,11 +80,18 @@ export interface CircleParams {
   r: number;
 }
 
+/**
+ * 椭圆参数：标准形（detectGeometry 快路径）与一般形 / 旋转形（ZOO-149 隐式
+ * 分类器）共用。rotation 为 rx 所在轴（标准形 X' 轴）相对 x 轴的旋转角
+ * （弧度）；缺省 = 轴对齐（既有元素零迁移）。
+ */
 export interface EllipseParams {
   cx: number;
   cy: number;
   rx: number;
   ry: number;
+  /** rx 轴旋转角（弧度）；缺省 = 轴对齐 */
+  rotation?: number;
 }
 
 /** 4a 结构校验结果（validateEquation 的返回）。错误文案沿用交互原型五类。 */

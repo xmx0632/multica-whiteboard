@@ -135,9 +135,9 @@ export default function PropertyPanel() {
   if (selectedEl && selectedEl.type === 'mathPlot') {
     const el = selectedEl;
 
-    // 几何方程教学参数（D7 / ZOO-147）：元素只存方程原文，面板展示前经 validateEquation 重解析取系数
+    // 几何方程教学参数（D7 / ZOO-147/149）：元素只存方程原文，面板展示前经 validateEquation 重解析取系数
     const revalidated =
-      el.kind === 'line' || el.kind === 'linePair' || el.kind === 'point' || el.kind === 'parabola' || el.kind === 'hyperbola'
+      el.kind === 'line' || el.kind === 'linePair' || el.kind === 'point' || el.kind === 'parabola' || el.kind === 'hyperbola' || el.kind === 'ellipse'
         ? validateEquation(el.equation)
         : null;
     const value: MathPlotParamsValue = {
@@ -149,6 +149,7 @@ export default function PropertyPanel() {
       pointParams: revalidated?.kind === 'point' ? revalidated.params : undefined,
       parabolaParams: revalidated?.kind === 'parabola' ? revalidated.params : undefined,
       hyperbolaParams: revalidated?.kind === 'hyperbola' ? revalidated.params : undefined,
+      ellipseParams: revalidated?.kind === 'ellipse' ? revalidated.params : undefined,
       xAxis: el.xAxis,
       sampleCount: el.sampleCount,
       equalRatio: el.equalRatio,
@@ -162,7 +163,7 @@ export default function PropertyPanel() {
 
     const handleParamsChange = (patch: Partial<MathPlotParamsValue>) => {
       if (!gestureStartRef.current) gestureStartRef.current = el;
-      // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams 为面板派生字段（元素不落盘），剥除后落元素
+      // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams / ellipseParams 为面板派生字段（元素不落盘），剥除后落元素
       const rest: Partial<MathPlotParamsValue> = { ...patch };
       const errorMessage = rest.errorMessage;
       delete rest.errorMessage;
@@ -171,6 +172,7 @@ export default function PropertyPanel() {
       delete rest.pointParams;
       delete rest.parabolaParams;
       delete rest.hyperbolaParams;
+      delete rest.ellipseParams;
       updateElementTransient(el.id, { ...rest, ...(errorMessage !== undefined ? { error: errorMessage } : {}) } as Partial<WhiteboardElement>);
     };
 
