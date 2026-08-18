@@ -49,6 +49,15 @@ export interface MathViewport {
   yMax: number;
 }
 
+/** 预览数据（ZOO-134 采样管线产出）：折线 + 可选视窗提示（缺省由渲染方自适应）。 */
+export interface PreviewData {
+  polylines: Polyline[];
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+}
+
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
  *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。 */
 export interface EquationDraftPayload {

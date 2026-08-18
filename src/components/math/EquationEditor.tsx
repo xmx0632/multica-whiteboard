@@ -5,16 +5,17 @@
  *
  * ZOO-133（4a）交付形态：独立组件，暂不接入工具栏 / store（技术方案 §10 PR4；
  * 工具栏入口、三态面板路由与 addElement 落点在 ZOO-136/4d 集成）。
- * - 输入即校验：每键调用 validateEquation（4b 后切换 mathjs parse，消费结构不变）；
+ * - 输入即校验：每键调用 validateEquation（ZOO-134 起为 mathjs 安全解析的薄适配）；
  * - 回车 / 「插入图形」确认 → onConfirm(EquationDraftPayload)，error 态同样允许确认
  *   （4d 据此生成错误占位元素，交互原型决策 4）；
- * - 预览数据通过 createPreviewPolylines 注入 —— 4b/4c 采样管线的接入点。
+ * - 预览采样默认走 ZOO-134 管线（createPreviewPolylines），可注入替换。
  */
 import { useMemo, useRef, useState } from 'react';
 import MiniPreview from './MiniPreview';
 import { EQUATION_TEMPLATES, SYMBOL_BUTTONS } from '@/lib/math/templates';
 import { validateEquation } from '@/lib/math/validate';
-import type { EquationDraftPayload, Polyline, StructuralOutcome } from '@/lib/math/types';
+import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
+import type { EquationDraftPayload, PreviewData, StructuralOutcome } from '@/lib/math/types';
 
 const KIND_LABELS: Record<string, string> = {
   explicit: '显式函数 y=f(x)',
@@ -27,11 +28,15 @@ export interface EquationEditorProps {
   initialEquation?: string;
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
-  /** 预览采样注入点：返回 null 则预览仅显示坐标系（4b/4c 接入前）。 */
-  createPreviewPolylines?: (equation: string, outcome: StructuralOutcome) => Polyline[] | null;
+  /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。 */
+  createPreviewPolylines?: (equation: string, outcome: StructuralOutcome) => PreviewData | null;
 }
 
-export default function EquationEditor({ initialEquation = '', onConfirm, createPreviewPolylines }: EquationEditorProps) {
+export default function EquationEditor({
+  initialEquation = '',
+  onConfirm,
+  createPreviewPolylines = samplePreviewPolylines,
+}: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +45,7 @@ export default function EquationEditor({ initialEquation = '', onConfirm, create
   const isError = trimmed.length > 0 && outcome.kind === 'error';
   const isValid = trimmed.length > 0 && !isError;
 
-  const polylines = useMemo(() => {
+  const preview = useMemo(() => {
     if (!isValid || !createPreviewPolylines) return null;
     return createPreviewPolylines(trimmed, outcome);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,7 +121,11 @@ export default function EquationEditor({ initialEquation = '', onConfirm, create
       <MiniPreview
         status={!trimmed ? 'wait' : isError ? 'error' : 'ok'}
         errorMessage={outcome.kind === 'error' ? outcome.message : undefined}
-        polylines={polylines}
+        polylines={preview?.polylines ?? null}
+        xMin={preview?.xMin}
+        xMax={preview?.xMax}
+        yMin={preview?.yMin}
+        yMax={preview?.yMax}
       />
 
       <div>

@@ -20,6 +20,9 @@ export interface MiniPreviewProps {
   /** x 数学视窗，默认 [-10, 10]；y 视窗按折线数据自适应 */
   xMin?: number;
   xMax?: number;
+  /** y 数学视窗（采样管线给出的稳健视窗）；缺省时按折线数据自适应 */
+  yMin?: number;
+  yMax?: number;
   strokeColor?: string;
   strokeWidth?: number;
 }
@@ -69,6 +72,8 @@ export default function MiniPreview({
   polylines,
   xMin = -10,
   xMax = 10,
+  yMin,
+  yMax,
   strokeColor = '#3B82F6',
   strokeWidth = 2,
 }: MiniPreviewProps) {
@@ -120,7 +125,8 @@ export default function MiniPreview({
     }
 
     // 已识别：轻网格 + 坐标轴（+ 折线，如已接入采样）
-    const yWin = fitY(polylines || [], ((xMax - xMin) * H) / W);
+    const yWin =
+      yMin !== undefined && yMax !== undefined && yMax > yMin ? { min: yMin, max: yMax } : fitY(polylines || [], ((xMax - xMin) * H) / W);
     const toPxX = (mx: number) => ((mx - xMin) / (xMax - xMin)) * W;
     const toPxY = (my: number) => H - ((my - yWin.min) / (yWin.max - yWin.min)) * H;
 
@@ -192,7 +198,7 @@ export default function MiniPreview({
       }
       ctx.stroke();
     }
-  }, [status, errorMessage, polylines, xMin, xMax, strokeColor, strokeWidth]);
+  }, [status, errorMessage, polylines, xMin, xMax, yMin, yMax, strokeColor, strokeWidth]);
 
   return (
     <canvas
