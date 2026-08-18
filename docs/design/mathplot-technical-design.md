@@ -108,6 +108,7 @@ viewport 变化 → render() 全量重绘 → drawMathPlot:
 | D4 | 数据模型 | `MathPlotElement` 增量进联合类型，运行时态全走旁路缓存 | 独立元素子系统 / 双 store |
 | D5 | 调参历史 | 复用快照 Operation + "静默直改 + 提交一条" 模式 | 新增 Operation 类型（PM 约束禁止） |
 | D6 | 死代码 | `src/app/` 5 个重复组件整体删除，独立 chore PR 先行 | 保留共存 |
+| D7 | 隐式二元方程 | **数值探针系数提取**（`conic.ts` 纯函数分类器）＋ kind=`line` 参数化采样；二次分类骨架预留 ZOO-147/148 | 扩展标准形正则、marching squares 通用隐式 |
 
 ---
 
@@ -148,6 +149,28 @@ viewport 变化 → render() 全量重绘 → drawMathPlot:
 PM 约束"无需新增历史类型"。方案：store 增一个**不入栈的** `updateElementTransient(id, updates)`（直改 elements + `isDirty:true`，供滑杆拖动实时预览），提交时用现有 `pushOperations` 压一条 update 快照。与 Canvas.tsx 移动拖拽的既有模式完全同构，历史语义与其他元素一致（一次拖动 = 一次撤销）。
 
 ### D6 死代码清理（见 §9）
+
+### D7 隐式二元方程：数值探针分类路线（ADR，ZOO-146）
+
+**背景**：用户直接输入二元方程（`3x+2y=6`）即出图，无需先手工化成 `y=f(x)`。可行性研究（ZOO-145 附件）三路线对比后拍板。
+
+**路线对比**
+
+| 路线 | 输入覆盖 | 教学可解释性 | 结论 |
+|---|---|---|---|
+| 标准形正则扩展 | 只认标准形写法，等价变形（`9x²−16y²=144`、变序、括号）全部 miss——既有椭圆正则已暴露此脆弱性 | 强 | 否决为主路线；circle/ellipse 正则保留为快路径 |
+| **数值探针 + 分类（采纳）** | 一切二元一次/二次多项式方程，等价书写全覆盖 | 强（分类器统一产出 kind + 参数供面板展示） | **主路线** |
+| marching squares 通用隐式 | 一切 F(x,y)=0（含非多项式） | 无（无参数可讲） | P3 可选兜底，暂不做 |
+
+**探针机制（研究报告 §2.1 实测验证）**：mathjs 不能 parse 裸等式，顶层 `=` 手工 split 构造 `F(x,y)=lhs−rhs`，走既有安全管线（字符白名单 → AST 白名单〔符号集增 `y`〕→ compile LRU，scope=`{x,y}`）后**三次求值精确恢复系数**：`a=F(1,0)−F(0,0)`、`b=F(0,1)−F(0,0)`、`c=−F(0,0)`；校验点 (2,3)/(−2,−3) 按各项量级取相对容差（负象限点负责拆穿 |x| 型伪装，1e-6/1e+6 级系数鲁棒）；非有限值直接判非线性。零新依赖，每方程仅 4–5 次求值（µs 级）。
+
+**分层**：`conic.ts` 为纯函数层（split / 探针 / 线性校验 / 分类 / 教学参数格式化），**不 import mathjs**——安全求值器由 `parse.ts` 隐式分支注入，可脱离 mathjs 独立单测，且避免 parse↔conic 循环依赖。二次分类（9 点探针 + 不变量判型）在 `classifyImplicit` 的 `nonlinear` 出口处接入（ZOO-147/148）。
+
+**line 的定义域语义（研究报告 §2.3 方案 A）**：直线无自然定义域，按几何 kind 处理——`kind='line'` 走参数化采样（方向向量 `(b,−a)`，两端各越出视窗对角），面板自动隐藏定义域/采样档（与圆/椭圆一致，UI 零新语义）；视窗取**原点居中方形**（半宽纳入离原点最近点与两轴截距，基准 ±8 + 15% 边距），保证坐标轴上下文与截距可见；竖线 `x=c/a` 同一参数化自然覆盖。
+
+**交互与模型落点**：`MathPlotElement.kind` 增 `'line'`（字符串联合，旧文档前向兼容语义不变）；属性面板展示教学参数（一般式 / 斜率 / 截距，或竖线 `x=k`）——系数由 `validateEquation` 重解析取得（元素只存方程原文，不落盘派生字段）；模板 +1（`3x+2y=6`）；缓存 / SVG 导出 / hitTest / 撤销重做**零结构改动**（sig 已含 kind+equation，「平移缩放不重采样」承诺保持）。
+
+**normalize 配套**：`KNOWN_IDS` 增 `'y'`（字母-字母连写如 `xy`/`yx` 拆分为 `x*y`；数字-字母邻接 `2y` 由 mathjs 原生隐式乘法处理、无需拆分）。显式路径的裸 `y` 识别边界同步放宽（数字邻接也算自由变量），仅影响错误文案路由、不改变任何合法解析。
 
 ---
 
@@ -287,7 +310,10 @@ mathjs 原生支持隐式乘法（`2x`、`2sin(2x+π/3)`、`2πx`）与常量 `p
  ├─ 双侧均含 x,y → AST 模式匹配（§7.3）
  │    ├─ (x-a)²+(y-b)²=r² → circle{cx,cy,r}
  │    └─ x²/A+y²/B=1      → ellipse{cx,cy,rx,ry}
- │    └─ 其余             → error("暂不支持隐式方程（除圆/椭圆）")   // 原型文案
+ │    └─ 其余 → 隐式分类分支（D7，conic.ts 数值探针）
+ │         ├─ 线性探针+校验通过 → line{a,b,c}（含竖线 b=0）
+ │         ├─ a=b=0 常数等式   → error(恒成立/不成立 文案)
+ │         └─ 非线性           → error("暂不支持该隐式方程…（如 3x+2y=6）")  // ZOO-147 扩展位
  └─ parse/compile 抛错 → error(映射后的人话原因)
 ```
 
@@ -298,6 +324,7 @@ mathjs 原生支持隐式乘法（`2x`、`2sin(2x+π/3)`、`2πx`）与常量 `p
 ```ts
 type ParseResult =
   | { kind: 'explicit'; fn: (x:number)=>number }        // compile 缓存
+  | { kind: 'line'; params: {a,b,c} }                    // D7（ZOO-146）
   | { kind: 'circle' | 'ellipse'; params: {...} }        // P1
   | { kind: 'error'; message: string };
 ```
@@ -313,6 +340,7 @@ type ParseResult =
 | 文件 | 改动 | issue |
 |---|---|---|
 | `src/lib/types.ts` | `MathPlotElement` + 联合类型 + `schemaVersion?` 占位 + 方程默认常量（导出 `DEFAULT_MATHPLOT`） | ZOO-136 |
+| `src/lib/math/conic.ts` | 隐式二元方程分类器（纯函数：split / 线性探针 / 分类 / 教学参数格式化，D7） | ZOO-146 |
 | `src/lib/store.ts` | `ToolType` 加 `'equation'`；`updateElementTransient()`；（`setTool` 清选中的既有语义保持） | ZOO-136 |
 | `src/lib/math/*` | 新模块（§2.1） | ZOO-134/135 |
 | `src/lib/renderer.ts` | `drawMathPlot` + `case 'mathPlot'`；`getElementBounds` 返回 `{x,y,width,height}`（外框即 bbox，hitTest 零改动命中）；`renderSelection` 控点参数化（§11 D-1） | ZOO-135/136 |

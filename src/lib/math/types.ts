@@ -9,7 +9,14 @@
  */
 import type { Point } from '../types';
 
-export type EquationKind = 'explicit' | 'circle' | 'ellipse' | 'error';
+export type EquationKind = 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
+
+/** 二元一次方程一般式 ax+by=c 的探针系数（ZOO-146 / D7，含 b=0 竖线）。 */
+export interface LineParams {
+  a: number;
+  b: number;
+  c: number;
+}
 
 export interface CircleParams {
   cx: number;
@@ -27,6 +34,7 @@ export interface EllipseParams {
 /** 4a 结构校验结果（validateEquation 的返回）。错误文案沿用交互原型五类。 */
 export type StructuralOutcome =
   | { kind: 'explicit' }
+  | { kind: 'line'; params: LineParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'error'; message: string };
@@ -34,6 +42,7 @@ export type StructuralOutcome =
 /** 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数。 */
 export type ParseResult =
   | { kind: 'explicit'; fn: (x: number) => number }
+  | { kind: 'line'; params: LineParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'error'; message: string };

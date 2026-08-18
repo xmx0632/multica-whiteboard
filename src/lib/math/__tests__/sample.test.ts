@@ -153,6 +153,65 @@ describe('sampleGeometry（圆/椭圆参数化精确路径）', () => {
   });
 });
 
+describe('sampleGeometry line（二元一次参数化，ZOO-146 / D7）', () => {
+  const onLine = (p: { x: number; y: number }, a: number, b: number, c: number) =>
+    Math.abs(a * p.x + b * p.y - c) < 1e-9 * Math.max(1, Math.abs(c));
+
+  it('一般式：两端点在直线上，视窗为原点居中方形且覆盖两端点', () => {
+    const r = sampleGeometry('line', { a: 3, b: 2, c: 6 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(1);
+    expect(r.polylines[0]).toHaveLength(2); // 直线精确：两端点即折线
+    for (const p of r.polylines[0]) expect(onLine(p, 3, 2, 6)).toBe(true);
+    // 采样线段总长 ≥ 视窗对角线（任意方向均覆盖整个卡片，绘制层按矩形裁剪）
+    const [e1, e2] = r.polylines[0];
+    expect(Math.hypot(e2.x - e1.x, e2.y - e1.y)).toBeGreaterThanOrEqual(Math.SQRT2 * (r.xMax! - r.xMin!) - 1e-9);
+    // 原点居中方形：坐标轴上下文可见（教学）
+    expect(r.xMin).toBeCloseTo(-r.xMax!, 9);
+    expect(r.yMin).toBeCloseTo(-r.yMax!, 9);
+    expect(r.xMax! - r.xMin!).toBeCloseTo(r.yMax! - r.yMin!, 9);
+  });
+
+  it('竖线 x=3：视窗半宽纳入截距，两端点跨越视窗', () => {
+    const r = sampleGeometry('line', { a: 1, b: 0, c: 3 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    for (const p of r.polylines[0]) expect(onLine(p, 1, 0, 3)).toBe(true);
+    expect(r.xMax!).toBeGreaterThanOrEqual(3);
+    expect(r.xMin!).toBeLessThanOrEqual(-3);
+    expect(Math.abs(r.polylines[0][0].y)).toBeGreaterThan(r.yMax!); // 越出视窗（卡片裁剪）
+  });
+
+  it('水平线 / 过原点线 / 远离原点的竖线（截距纳入视窗）', () => {
+    const h = sampleGeometry('line', { a: 0, b: 2, c: 4 });
+    expect('error' in h).toBe(false);
+    if (!('error' in h)) expect(h.yMax!).toBeGreaterThanOrEqual(2);
+
+    const diag = sampleGeometry('line', { a: 1, b: -1, c: 0 });
+    expect('error' in diag).toBe(false);
+
+    const far = sampleGeometry('line', { a: 1, b: 0, c: 100 });
+    expect('error' in far).toBe(false);
+    if (!('error' in far)) {
+      expect(far.xMax!).toBeGreaterThanOrEqual(100); // 截距可见
+      expect(far.xMin!).toBeLessThanOrEqual(-100); // 原点居中（y 轴上下文）
+    }
+  });
+
+  it('a=b=0 防御：返回错误不崩溃', () => {
+    expect(sampleGeometry('line', { a: 0, b: 0, c: 1 })).toEqual({ error: '该方程不表示直线' });
+  });
+
+  it('sampleEquation 分发：3x+2y=6 → line 折线', () => {
+    const r = sampleEquation(parseEquation('3x+2y=6'), { xMin: -10, xMax: 10 });
+    expect('error' in r).toBe(false);
+    if ('error' in r) return;
+    expect(r.polylines).toHaveLength(1);
+    for (const p of r.polylines[0]) expect(onLine(p, 3, 2, 6)).toBe(true);
+  });
+});
+
 describe('sampleEquation 统一分发（4c 渲染管线入口）', () => {
   it('error 结果透传', () => {
     const r = sampleEquation(parseEquation('y=foo(x)'), { xMin: -10, xMax: 10 });
@@ -185,6 +244,13 @@ describe('createPreviewPolylines（编辑器预览注入点）', () => {
     expect(p).not.toBeNull();
     expect(p!.xMin).toBeLessThan(-2);
     expect(p!.xMax).toBeGreaterThan(4);
+  });
+
+  it('直线（二元一次）：预览走 line 参数化分支', () => {
+    const p = createPreviewPolylines('3x+2y=6', { kind: 'line', params: { a: 3, b: 2, c: 6 } });
+    expect(p).not.toBeNull();
+    expect(p!.polylines).toHaveLength(1);
+    expect(p!.xMax!).toBeGreaterThan(0);
   });
 
   it('error / 解析失败 → null（预览退回空坐标系）', () => {

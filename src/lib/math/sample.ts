@@ -7,7 +7,7 @@
  * 陡峭单调曲线（如大定义域 x³）不会误杀（风险 R3 缓解）。
  */
 import { parseEquation } from './parse';
-import type { CircleParams, EllipseParams, MathViewport, ParseResult, Polyline, PreviewData, StructuralOutcome } from './types';
+import type { CircleParams, EllipseParams, LineParams, MathViewport, ParseResult, Polyline, PreviewData, StructuralOutcome } from './types';
 
 /** 采样数硬上限（PRD §8 / PM 硬约束，UI 不暴露超限入口，sample 内 clamp）。 */
 export const MAX_SAMPLE_COUNT = 2000;
@@ -110,14 +110,45 @@ export function sampleExplicit(
   return { polylines, yMin, yMax, xMin, xMax };
 }
 
-/** 几何方程参数化精确采样（圆/椭圆，θ 0→2π 闭合折线）与适配视窗。 */
+/** 直线视窗基准半径（数学单位）：原点居中方形视窗的最小半宽，量级对齐显式默认域 ±10。 */
+const LINE_VIEW_BASE = 8;
+
+/**
+ * 直线参数化采样（D7 方案 A / 研究报告 §2.3）：直线无自然定义域，
+ * 视窗取原点居中的方形（保证坐标轴上下文可见），半宽纳入离原点最近点
+ * P₀ 与两轴截距；采样折线沿方向向量 (b,−a) 越出视窗对角（两端各 2×半宽），
+ * 绘制层按卡片矩形天然裁剪——平移缩放不重采样承诺不受影响。
+ */
+function sampleLine(params: LineParams): SampleResult {
+  const { a, b, c } = params;
+  if (a === 0 && b === 0) return { error: '该方程不表示直线' };
+  const denom = a * a + b * b;
+  const p0x = (a * c) / denom; // 直线上离原点最近的点（视窗锚点之一）
+  const p0y = (b * c) / denom;
+  const xIntercept = a !== 0 && Number.isFinite(c / a) ? Math.abs(c / a) : 0;
+  const yIntercept = b !== 0 && Number.isFinite(c / b) ? Math.abs(c / b) : 0;
+  const base = Math.max(LINE_VIEW_BASE, Math.abs(p0x), Math.abs(p0y), xIntercept, yIntercept);
+  const half = base + base * 0.15 + 0.5; // 与圆/椭圆同款 15% + 0.5 内边距
+  const norm = Math.sqrt(denom);
+  const r = half * 2; // 采样半径：必越出方形视窗对角线，卡片裁剪后两端不缺角
+  const dx = b / norm;
+  const dy = -a / norm;
+  const polyline: Polyline = [
+    { x: p0x - r * dx, y: p0y - r * dy },
+    { x: p0x + r * dx, y: p0y + r * dy },
+  ];
+  return { polylines: [polyline], xMin: -half, xMax: half, yMin: -half, yMax: half };
+}
+
+/** 几何方程参数化精确采样（直线两端点 / 圆/椭圆 θ 0→2π 闭合折线）与适配视窗。 */
 export function sampleGeometry(
-  kind: 'circle' | 'ellipse',
-  params: CircleParams | EllipseParams,
+  kind: 'line' | 'circle' | 'ellipse',
+  params: LineParams | CircleParams | EllipseParams,
 ): SampleResult {
+  if (kind === 'line') return sampleLine(params as LineParams);
   const rx = kind === 'circle' ? (params as CircleParams).r : (params as EllipseParams).rx;
   const ry = kind === 'circle' ? (params as CircleParams).r : (params as EllipseParams).ry;
-  const { cx, cy } = params;
+  const { cx, cy } = params as CircleParams;
   const segments = 120;
   const polyline: Polyline = [];
   for (let i = 0; i <= segments; i++) {

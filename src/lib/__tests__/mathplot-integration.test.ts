@@ -137,6 +137,19 @@ describe('元素工厂（创建落点与分类）', () => {
     expect(el.error).toBe('无法识别的符号 “#”');
   });
 
+  it('二元一次方程（ZOO-146 / D7）：kind=line、equalRatio 强制、定义域取采样视窗', () => {
+    const line: EquationDraftPayload = {
+      equation: '3x+2y=6',
+      outcome: { kind: 'line', params: { a: 3, b: 2, c: 6 } },
+    };
+    const el = createMathPlotElement(line, { centerX: 0, centerY: 0 });
+    expect(el.kind).toBe('line');
+    expect(el.error).toBeNull();
+    expect(el.equalRatio).toBe(true);
+    expect(el.xAxis.min).toBeLessThan(0); // 原点居中方形视窗（含坐标轴上下文）
+    expect(el.xAxis.max).toBeGreaterThan(2); // x 截距可见
+  });
+
   it('原位替换补丁：只动数学字段，样式 / 位置由调用方保留', () => {
     const patch = mathPlotFieldsFromPayload({ equation: 'y=cos(x)', outcome: { kind: 'explicit' } });
     expect(patch).toEqual({ equation: 'y=cos(x)', kind: 'explicit', error: null });
@@ -206,6 +219,38 @@ describe('渲染管线接入', () => {
     // 样式不在签名中：改颜色 / 线宽同样命中
     resolvePlotRender(spec, frame, plotTokenFor(el.id));
     expect(plotRenderWriteCount()).toBe(before + 1);
+  });
+
+  it('line 元素（D7）：渲染管线 / 缓存 / 视窗全链路', () => {
+    const el = makeElement({
+      id: 'mp-line-1',
+      equation: '3x+2y=6',
+      kind: 'line',
+      xAxis: { min: -9.7, max: 9.7 },
+    });
+    const { ctx, calls } = createMockCtx();
+    expect(() => renderElement(ctx, el, VP)).not.toThrow();
+    expect(calls.find((c) => c.op === 'translate')).toBeDefined();
+
+    const render = resolvePlotRender(
+      { equation: el.equation, kind: el.kind, xAxis: el.xAxis, equalRatio: el.equalRatio, sampleCount: el.sampleCount },
+      { width: el.width, height: el.height },
+      plotTokenFor(el.id),
+    );
+    expect(render.error).toBeUndefined();
+    expect(render.polylines).toHaveLength(1);
+    expect(render.polylines[0]).toHaveLength(2);
+    for (const p of render.polylines[0]) {
+      expect(Math.abs(3 * p.x + 2 * p.y - 6)).toBeLessThan(1e-6);
+    }
+    // 平移缩放不重采样：同 sig 二次调用零写入
+    const before = plotRenderWriteCount();
+    resolvePlotRender(
+      { equation: el.equation, kind: el.kind, xAxis: el.xAxis, equalRatio: el.equalRatio, sampleCount: el.sampleCount },
+      { width: el.width, height: el.height },
+      plotTokenFor(el.id),
+    );
+    expect(plotRenderWriteCount()).toBe(before);
   });
 });
 
@@ -296,6 +341,13 @@ describe('导出（PNG 复用 renderElement / SVG 增量 case）', () => {
     expect(svg).toContain('stroke-dasharray="6,4"');
     expect(svg).toContain('无法识别的符号');
     expect(svg).not.toContain('<path d="M'); // 无曲线
+  });
+
+  it('SVG：line 元素出曲线 path + 方程标签（D7 增量 case）', () => {
+    const svg = exportToSvg([makeElement({ equation: '3x+2y=6', kind: 'line', xAxis: { min: -9.7, max: 9.7 } })]);
+    expect(svg).toContain('<path d="M');
+    expect(svg).toContain('3x+2y=6');
+    expect(svg).not.toContain('undefined');
   });
 
   it('SVG：显隐开关受控（关网格 / 轴 / 标签）', () => {

@@ -72,4 +72,11 @@ describe('normalizeEquation 字母连写隐式乘法（拆已知标识符，未�
     expect(normalizeEquation('y=2sin(2x+π/3)')).toBe('y=2sin(2x+pi/3)');
     expect(normalizeEquation('y=abs(x-1)')).toBe('y=abs(x-1)');
   });
+
+  it('y 进入切分表（ZOO-146 / D7：字母连写含 y 可拆）', () => {
+    // 数字-字母邻接（2y）由 mathjs 原生隐式乘法处理，不进切分；字母-字母（xy/yx）必须拆
+    expect(normalizeEquation('2y')).toBe('2y');
+    expect(normalizeEquation('3xy+2y=6')).toBe('3x*y+2y=6');
+    expect(normalizeEquation('yx')).toBe('y*x');
+  });
 });

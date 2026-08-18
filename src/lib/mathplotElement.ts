@@ -3,7 +3,7 @@
  *
  * 由方程编辑器的确认载荷（EquationDraftPayload）生成 / 原位更新
  * MathPlotElement：错误态同样建元素（交互原型决策 4，可移动 / 删除 / 撤销）；
- * 几何方程（圆 / 椭圆）强制 equalRatio，定义域取采样包围盒（等比卡片取纵横比）。
+ * 几何方程（直线 / 圆 / 椭圆）强制 equalRatio，定义域取采样包围盒（等比卡片取纵横比）。
  */
 import { v4 as uuidv4 } from 'uuid';
 import { sampleGeometry } from './math/sample';
@@ -24,7 +24,10 @@ export interface MathPlotPlacement {
 
 /** 几何方程附加字段：定义域取采样包围盒（等比卡片由外框纵横比保形）。 */
 function geometryFields(
-  outcome: { kind: 'circle'; params: { cx: number; cy: number; r: number } } | { kind: 'ellipse'; params: { cx: number; cy: number; rx: number; ry: number } }
+  outcome:
+    | { kind: 'line'; params: { a: number; b: number; c: number } }
+    | { kind: 'circle'; params: { cx: number; cy: number; r: number } }
+    | { kind: 'ellipse'; params: { cx: number; cy: number; rx: number; ry: number } }
 ): Pick<MathPlotElement, 'xAxis' | 'equalRatio'> {
   const bbox = sampleGeometry(outcome.kind, outcome.params);
   if ('error' in bbox) return { xAxis: { ...DEFAULT_MATHPLOT.xAxis }, equalRatio: true };
@@ -47,7 +50,7 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPl
     kind: outcome.kind,
     error: outcome.kind === 'error' ? outcome.message : null,
   };
-  if (outcome.kind === 'circle' || outcome.kind === 'ellipse') {
+  if (outcome.kind === 'line' || outcome.kind === 'circle' || outcome.kind === 'ellipse') {
     return { ...base, ...geometryFields(outcome) };
   }
   return base;

@@ -21,8 +21,9 @@ const SUPERSCRIPTS: Record<string, string> = {
   'ˣ': '^x',
 };
 
-/** 白名单标识符（贪心切分，长名在前；asin 在 sin 前、exp 在 e 前）。ln 在切分时译为 log。 */
-const KNOWN_IDS = ['asin', 'acos', 'atan', 'sqrt', 'abs', 'sin', 'cos', 'tan', 'exp', 'log', 'ln', 'pi', 'e', 'x'];
+/** 白名单标识符（贪心切分，长名在前；asin 在 sin 前、exp 在 e 前）。ln 在切分时译为 log。
+ *  y 供二元方程隐式分类（ZOO-146 / D7）：无已知标识符以 y 开头，切分无冲突。 */
+const KNOWN_IDS = ['asin', 'acos', 'atan', 'sqrt', 'abs', 'sin', 'cos', 'tan', 'exp', 'log', 'ln', 'pi', 'e', 'x', 'y'];
 
 /** √(…) → sqrt(…)：括号配平扫描（支持嵌套括号，如 √(sin(x)+1)）。 */
 function convertSqrtParen(s: string): string {

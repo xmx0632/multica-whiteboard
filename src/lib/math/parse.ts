@@ -5,6 +5,9 @@
  * 流程：normalize → 圆/椭圆标准形识别 → 剥离 y= / f(x)= 前缀 → 字符白名单 →
  * mathjs parse → AST 节点白名单 → compile（LRU 缓存）→ { kind, fn }。
  *
+ * ZOO-146（D7）：显式路径之外新增隐式二元方程分类分支（parseImplicit）——
+ * 二元一次方程（含竖线）经数值探针提取系数 → kind='line'。
+ *
  * 分类与错误文案逐条对齐交互原型五类（无法识别的符号 / 括号未闭合 /
  * 表达式不完整 / 定义域内无有效值〔采样期报〕/ 暂不支持隐式方程），
  * 与 4a 结构校验（validate.ts）的既有文案保持一致。
@@ -12,6 +15,7 @@
 import { parse } from 'mathjs/number';
 import type { MathNode } from 'mathjs/number';
 import { normalizeEquation } from './normalize';
+import { buildImplicitExpression, classifyImplicit, splitTopLevelEquals, type BinaryFn } from './conic';
 import { compileCached } from './cache';
 import type { CircleParams, EllipseParams, ParseResult } from './types';
 
@@ -46,8 +50,10 @@ function detectGeometry(src: string): ParseResult | null {
   return null;
 }
 
-/** AST 符号白名单：变量与常量（scope 只含 x）。 */
+/** AST 符号白名单：显式函数路径（scope 只含 x）。 */
 const ALLOWED_SYMBOLS = new Set(['x', 'pi', 'e']);
+/** 隐式二元方程路径（D7）：F(x,y) 两端自由变量 x / y。 */
+const IMPLICIT_SYMBOLS = new Set(['x', 'y', 'pi', 'e']);
 /** AST 函数白名单（原型 §6 函数族）。 */
 const ALLOWED_FUNCTIONS = new Set(['sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'exp', 'asin', 'acos', 'atan']);
 /** 各函数允许的参数个数（log 支持带底 two-arg）。 */
@@ -64,26 +70,26 @@ for (const name of ALLOWED_FUNCTIONS) {
  * Assignment / Accessor / Conditional / Block 等一律拒绝。
  * 返回 null 表示通过，否则为用户可读错误文案。
  */
-function checkNode(node: MathNode): string | null {
+function checkNode(node: MathNode, symbols: Set<string> = ALLOWED_SYMBOLS): string | null {
   switch (node.type) {
     case 'ConstantNode':
       return null;
     case 'ParenthesisNode': {
       const content = (node as unknown as { content?: MathNode }).content;
-      return content ? checkNode(content) : '无法识别的表达式';
+      return content ? checkNode(content, symbols) : '无法识别的表达式';
     }
     case 'OperatorNode': {
       const args = (node as unknown as { args?: MathNode[] }).args ?? [];
       if (args.length === 0) return '无法识别的表达式';
       for (const arg of args) {
-        const problem = checkNode(arg);
+        const problem = checkNode(arg, symbols);
         if (problem) return problem;
       }
       return null;
     }
     case 'SymbolNode': {
       const name = (node as unknown as { name?: string }).name ?? '';
-      return ALLOWED_SYMBOLS.has(name) ? null : `无法识别的符号 “${name}”`;
+      return symbols.has(name) ? null : `无法识别的符号 “${name}”`;
     }
     case 'FunctionNode': {
       const fn = (node as unknown as { fn?: { name?: string } }).fn;
@@ -93,7 +99,7 @@ function checkNode(node: MathNode): string | null {
       const args = (node as unknown as { args?: MathNode[] }).args ?? [];
       if (args.length < min || args.length > max) return '无法识别的表达式';
       for (const arg of args) {
-        const problem = checkNode(arg);
+        const problem = checkNode(arg, symbols);
         if (problem) return problem;
       }
       return null;
@@ -112,11 +118,58 @@ function mapSyntaxError(message: string): string {
   return '无法识别的表达式';
 }
 
+/** 隐式方程不支持文案（D7 引导式：非线性的二次曲线出图属 ZOO-147/148）。 */
+const UNSUPPORTED_IMPLICIT = '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与二元一次方程（如 3x+2y=6）';
+
+/**
+ * 隐式二元方程分类（D7，ZOO-146）：顶层 split `=` → F=lhs−rhs → 复用本文件
+ * 安全管线（字符白名单 / AST 白名单含 y / compile LRU）→ conic.ts 数值探针。
+ * 二元一次 → kind='line'（含竖线）；常数等式友好报错；非线性 → 引导文案。
+ */
+function parseImplicit(src: string): ParseResult {
+  const split = splitTopLevelEquals(src);
+  if (!split) return err(src.includes('=') ? '方程只能包含一个等号' : '方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
+  const expr = buildImplicitExpression(split.lhs, split.rhs);
+
+  // 字符白名单（与显式路径同款， '#' 等必须在 parse 前拦截）
+  const badChar = expr.match(/[^a-z0-9+\-*/^().,]/);
+  if (badChar) return err(`无法识别的字符 “${badChar[0]}”`);
+
+  let node: MathNode;
+  try {
+    node = parse(expr);
+  } catch (e) {
+    return err(mapSyntaxError(e instanceof Error ? e.message : String(e)));
+  }
+
+  const problem = checkNode(node, IMPLICIT_SYMBOLS);
+  if (problem) return err(problem);
+
+  try {
+    const compiled = compileCached(expr, node);
+    // F(x,y)：scope 只含 x/y；异常与非 number 结果一律 NaN（探针按非线性处理）
+    const fn: BinaryFn = (x, y) => {
+      try {
+        const v = compiled.evaluate({ x, y });
+        return typeof v === 'number' ? v : NaN;
+      } catch {
+        return NaN;
+      }
+    };
+    const outcome = classifyImplicit(fn);
+    if (outcome.kind === 'line') return { kind: 'line', params: outcome.params };
+    if (outcome.kind === 'degenerate') return err(outcome.message);
+    return err(UNSUPPORTED_IMPLICIT);
+  } catch {
+    return err('无法识别的表达式');
+  }
+}
+
 /**
  * 方程解析入口（编辑器每键调用 / 确认出图共用）。
  *
- * 分类：explicit（含求值函数）/ circle / ellipse / error。
- * 安全：AST 白名单 + scope 只注入 x，无 eval，无属性访问。
+ * 分类：explicit（含求值函数）/ line（二元一次，D7）/ circle / ellipse / error。
+ * 安全：AST 白名单 + scope 只注入 x（显式）或 x/y（隐式），无 eval，无属性访问。
  */
 export function parseEquation(raw: string): ParseResult {
   const src = normalizeEquation(raw);
@@ -132,9 +185,13 @@ export function parseEquation(raw: string): ParseResult {
   const body = src.replace(/^y=/, '').replace(/^f\(x\)=/, '');
   if (!body) return err('方程缺少右侧表达式');
 
-  // 剩余 '=' 或裸 y：既非 y=f(x) 前缀、也未命中几何标准形 → 隐式方程
-  if (body.includes('=')) return err('暂不支持该隐式方程：请使用 y=f(x) 形式（圆/椭圆除外）');
-  if (/(^|[^a-z0-9])y([^a-z0-9]|$)/.test(body)) return err('暂不支持该隐式方程：请使用 y=f(x) 形式（圆/椭圆除外）');
+  // 剩余 '=' 或裸 y：既非 y=f(x) 前缀、也未命中几何标准形 → 隐式方程分类（D7）
+  if (body.includes('=')) return parseImplicit(src);
+  if (/(^|[^a-z])y([^a-z]|$)/.test(body)) {
+    // 等号被剥前缀后右侧仍含自由 y（如 y=x+y ⟺ x=0）→ 按隐式方程整体分类；
+    // 无等号的裸 y（如 "2y"，数字邻接按 mathjs 原生隐式乘法保留）不是方程，单独引导
+    return src.includes('=') ? parseImplicit(src) : err('方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
+  }
 
   // 字符白名单（mathjs 会把 '#' 等解析为 undefined 常量，必须前置拦截）
   const badChar = body.match(/[^a-z0-9+\-*/^().,]/);

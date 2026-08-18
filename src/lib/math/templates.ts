@@ -1,6 +1,6 @@
 /**
  * 方程模板与插入符号（交互原型基线 1:1 平移）。
- * 13 个模板覆盖 PRD §5.2 P0/P1 方程族；6 个符号按钮在光标处插入对应文本。
+ * 14 个模板覆盖 PRD §5.2 P0/P1 方程族（含二元一次 → 直线，D7）；6 个符号按钮在光标处插入对应文本。
  */
 
 export interface EquationTemplate {
@@ -12,6 +12,7 @@ export interface EquationTemplate {
 
 export const EQUATION_TEMPLATES: EquationTemplate[] = [
   { name: '一次函数', equation: 'y=2x+1' },
+  { name: '二元一次', equation: '3x+2y=6' },
   { name: '二次函数', equation: 'y=x²-2x-3' },
   { name: '三次函数', equation: 'y=x³-2x' },
   { name: '正弦', equation: 'y=sin(x)' },

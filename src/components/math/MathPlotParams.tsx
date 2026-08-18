@@ -10,12 +10,16 @@
  * onChange + onCommit。错误态走「重新编辑方程」回调（原位替换，原型决策）。
  */
 import { COLORS } from '@/lib/types';
+import { formatCoef, formatGeneralForm, lineTeachingInfo } from '@/lib/math/conic';
+import type { LineParams } from '@/lib/math/types';
 
 export interface MathPlotParamsValue {
   equation: string;
-  kind: 'explicit' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   errorMessage?: string;
+  /** kind === 'line' 时的一般式系数（调用方经 validateEquation 重解析填充，D7 教学参数） */
+  lineParams?: LineParams;
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -45,6 +49,7 @@ export interface MathPlotParamsProps {
 
 const KIND_BADGES: Record<MathPlotParamsValue['kind'], { label: string; cls: string }> = {
   explicit: { label: '显式函数', cls: 'bg-blue-50 text-blue-600' },
+  line: { label: '直线 · 几何', cls: 'bg-blue-50 text-blue-600' },
   circle: { label: '圆 · 几何', cls: 'bg-blue-50 text-blue-600' },
   ellipse: { label: '椭圆 · 几何', cls: 'bg-blue-50 text-blue-600' },
   error: { label: '解析失败', cls: 'bg-red-50 text-red-600' },
@@ -64,9 +69,9 @@ const SAMPLE_STEPS: { label: string; count: 160 | 320 | 640 }[] = [
 
 export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit }: MathPlotParamsProps) {
   const isFn = value.kind === 'explicit';
-  const isGeo = value.kind === 'circle' || value.kind === 'ellipse';
   const isError = value.kind === 'error';
   const badge = KIND_BADGES[value.kind];
+  const line = value.kind === 'line' && value.lineParams ? lineTeachingInfo(value.lineParams) : null;
 
   const patch = (p: Partial<MathPlotParamsValue>, commit = false) => {
     onChange(p);
@@ -178,7 +183,28 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             </>
           )}
 
-          {isGeo && <div className="text-[11px] text-gray-400 leading-relaxed">几何方程按参数化精确绘制，自动等比坐标（1:1）。</div>}
+          {value.kind === 'line' && value.lineParams && (
+            <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-2 flex flex-col gap-1">
+              <div className="font-serif text-[13px] text-gray-800">{formatGeneralForm(value.lineParams)}</div>
+              {line ? (
+                line.verticalX !== null ? (
+                  <div className="text-[11px] text-gray-500 leading-relaxed">
+                    竖直直线：斜率不存在，x 轴截距 = {formatCoef(line.verticalX)}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-gray-500 leading-relaxed">
+                    斜率 k = {formatCoef(line.slope ?? 0)}
+                    {line.yIntercept !== null && <> · y 轴截距 = {formatCoef(line.yIntercept)}</>}
+                    {line.xIntercept !== null && <> · x 轴截距 = {formatCoef(line.xIntercept)}</>}
+                  </div>
+                )
+              ) : null}
+            </div>
+          )}
+
+          {(value.kind === 'circle' || value.kind === 'ellipse') && (
+            <div className="text-[11px] text-gray-400 leading-relaxed">几何方程按参数化精确绘制，自动等比坐标（1:1）。</div>
+          )}
 
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">坐标系</label>

@@ -51,7 +51,7 @@ export interface PlotStyle {
 /** 解析输入契约（4d 的 MathPlotElement 数学字段的子集）。 */
 export interface PlotSpec {
   equation: string;
-  kind: 'explicit' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'circle' | 'ellipse' | 'error';
   errorMessage?: string;
   /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定） */
   xAxis: { min: number; max: number };

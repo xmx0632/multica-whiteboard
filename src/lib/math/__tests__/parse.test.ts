@@ -14,8 +14,8 @@ const errorMessage = (raw: string) => {
   return r.message;
 };
 
-describe('parseEquation 分类：13 模板 + PRD 方程族', () => {
-  it('全部 13 个模板可解析', () => {
+describe('parseEquation 分类：14 模板 + PRD 方程族', () => {
+  it('全部 14 个模板可解析', () => {
     for (const t of EQUATION_TEMPLATES) {
       const r = parseEquation(t.equation);
       expect(r.kind, `模板「${t.name}」${t.equation}`).not.toBe('error');
@@ -58,6 +58,57 @@ describe('parseEquation 分类：13 模板 + PRD 方程族', () => {
   it('圆半径/椭圆参数非正 → 明确报错', () => {
     expect(parseEquation('x²+y²=0')).toEqual({ kind: 'error', message: '圆的半径必须为正' });
     expect(parseEquation('x²/0+y²/4=1')).toEqual({ kind: 'error', message: '椭圆参数必须为正' });
+  });
+});
+
+describe('parseEquation 二元一次方程 → 直线（ZOO-146 / D7）', () => {
+  const asLine = (raw: string) => {
+    const r = parseEquation(raw);
+    if (r.kind !== 'line') throw new Error(`期望 line，得到 ${r.kind}: ${JSON.stringify(r)}`);
+    return r.params;
+  };
+  const expectLine = (raw: string, a: number, b: number, c: number) => {
+    const p = asLine(raw);
+    expect(Math.abs(p.a - a), `${raw} a`).toBeLessThan(1e-9);
+    expect(Math.abs(p.b - b), `${raw} b`).toBeLessThan(1e-9);
+    expect(Math.abs(p.c - c), `${raw} c`).toBeLessThan(1e-9);
+  };
+
+  it('标准一般式与等价书写全覆盖（探针提取系数）', () => {
+    expectLine('3x+2y=6', 3, 2, 6);
+    expectLine('x/2-y=1', 0.5, -1, 1); // 分数系数
+    expectLine('2y=x+4', -1, 2, 4); // 变序（y 侧在左）
+    expectLine('6=3x+2y', -3, -2, -6); // 常数侧在左（F=6−(3x+2y)，与 3x+2y=6 同一直线）
+    expectLine('2(x+y)=3x-4', -1, 2, -4); // 括号展开
+    expectLine('x+y=1', 1, 1, 1);
+    expectLine('x=y', 1, -1, 0);
+    expectLine('y=x+y', -1, 0, 0); // y=x+y ⟺ x=0
+  });
+
+  it('竖线 x=k（b=0）与水平线（a=0）', () => {
+    expectLine('x=3', 1, 0, 3);
+    expectLine('2x=6', 2, 0, 6); // 无 y 项
+    expectLine('2y=4', 0, 2, 4); // 无 x 项：水平线 y=2
+  });
+
+  it('系数数量级鲁棒（风险 R1：1e-6 / 1e+6 不误判）', () => {
+    expectLine('0.000001x+y=1', 1e-6, 1, 1);
+    expectLine('1000000x+2000000y=3000000', 1e6, 2e6, 3e6);
+  });
+
+  it('Unicode 原文（·× 隐式乘法）同样命中', () => {
+    expectLine('2·y=x+4', -1, 2, 4);
+    expectLine('3×x+2y=6', 3, 2, 6);
+  });
+
+  it('validateEquation 消费契约：line 携带 params（面板教学参数来源）', () => {
+    expect(validateEquation('3x+2y=6')).toEqual({ kind: 'line', params: { a: 3, b: 2, c: 6 } });
+  });
+
+  it('隐式路径安全性：注入载荷在 AST / 字符白名单即失败', () => {
+    expect(parseEquation('y.constructor=x').kind).toBe('error'); // AccessorNode
+    expect(parseEquation('x#1=2').kind).toBe('error'); // 字符白名单前置拦截
+    expect(parseEquation('f(x)=x+y').kind).toBe('error'); // f 非白名单函数
   });
 });
 
@@ -128,13 +179,20 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
     expect(errorMessage('y=2.5.3')).toBe('数字格式有误');
   });
 
-  it('隐式方程：仅支持圆/椭圆标准形（其余明确拒绝，不白屏）', () => {
-    const msg = '暂不支持该隐式方程：请使用 y=f(x) 形式（圆/椭圆除外）';
-    expect(errorMessage('x+y=1')).toBe(msg);
-    expect(errorMessage('y=x+y')).toBe(msg);
-    expect(errorMessage('x²-y²=1')).toBe(msg); // 双曲线（P2）
-    expect(errorMessage('x²=2y')).toBe(msg); // 抛物线（P2）
-    expect(errorMessage('a=2')).toBe(msg);
+  it('隐式方程：二元一次之外仍明确拒绝（不白屏）', () => {
+    const msg = '暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与二元一次方程（如 3x+2y=6）';
+    expect(errorMessage('x²-y²=1')).toBe(msg); // 双曲线（ZOO-147）
+    expect(errorMessage('x²=2y')).toBe(msg); // 抛物线（ZOO-147）
+    expect(errorMessage('sin(x)=y')).toBe(msg); // 非多项式隐式
+    expect(errorMessage('x*y=1')).toBe(msg); // xy 交叉项（ZOO-148 之后的 P2）
+  });
+
+  it('隐式方程：常数等式 / 等号异常的友好文案', () => {
+    expect(errorMessage('x-x=0')).toBe('该等式恒成立（化简后为 0=0），不表示任何曲线');
+    expect(errorMessage('0=1')).toBe('该等式恒不成立（化简后左右两侧不相等），无图像');
+    expect(errorMessage('x==3')).toBe('方程只能包含一个等号');
+    expect(errorMessage('2y')).toBe('方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
+    expect(errorMessage('a=2')).toBe('无法识别的符号 “a”'); // 非白名单符号走 AST 拦截
   });
 });
 
