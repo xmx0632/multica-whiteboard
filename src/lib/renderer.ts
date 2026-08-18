@@ -191,8 +191,35 @@ export function renderElement(ctx: CanvasRenderingContext2D, el: WhiteboardEleme
   }
 }
 
-export function renderElements(ctx: CanvasRenderingContext2D, elements: WhiteboardElement[], viewport: Viewport) {
+/**
+ * 视口 culling（技术方案 §6.4 性能预算配套，收益全元素类型）：
+ * 元素世界包围盒与可视区（屏幕矩形经 viewport 反变换）无交集则跳过绘制。
+ * 包围盒不可得（空 path / 未知类型）时不剔除，保守绘制。
+ */
+export function elementIntersectsView(
+  el: WhiteboardElement,
+  viewport: Viewport,
+  viewWidth: number,
+  viewHeight: number
+): boolean {
+  const bbox = getElementBounds(el);
+  if (!bbox) return true;
+  const { offsetX, offsetY, scale } = viewport;
+  const sx = bbox.x * scale + offsetX;
+  const sy = bbox.y * scale + offsetY;
+  const sw = bbox.width * scale;
+  const sh = bbox.height * scale;
+  return sx + sw >= 0 && sx <= viewWidth && sy + sh >= 0 && sy <= viewHeight;
+}
+
+export function renderElements(
+  ctx: CanvasRenderingContext2D,
+  elements: WhiteboardElement[],
+  viewport: Viewport,
+  viewSize?: { width: number; height: number }
+) {
   for (const el of elements) {
+    if (viewSize && !elementIntersectsView(el, viewport, viewSize.width, viewSize.height)) continue;
     renderElement(ctx, el, viewport);
   }
 }

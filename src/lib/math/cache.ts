@@ -1,11 +1,14 @@
 /**
- * 运行时态缓存（技术方案 §6.3）—— 编译缓存：Map LRU，容量 100。
+ * 运行时态缓存（技术方案 §6.3）。
  *
- * 仅缓存 mathjs compile 产物（键 = 归一化表达式串）；采样折线 / Path2D 的
- * WeakMap 元素级缓存随 ZOO-135（渲染）扩展到本模块。
- * 编译一次 ~1ms，同一方程逐键校验 / 重复采样均命中缓存。
+ * - 编译缓存：Map LRU，容量 100（键 = 归一化表达式串）。
+ *   编译一次 ~1ms，同一方程逐键校验 / 重复采样均命中缓存。
+ * - 渲染缓存（ZOO-135）：WeakMap<元素对象, {sig, polylines, view, path2d}>，
+ *   键为元素对象引用 —— store 不可变更新换引用，旧条目失联自动回收；
+ *   同引用 + 同 sig（平移/缩放/改颜色线宽/轴显隐）直接命中，不重采样。
  */
 import type { EvalFunction, MathNode } from 'mathjs/number';
+import type { MathViewport, Polyline } from './types';
 
 const COMPILE_CACHE_MAX = 100;
 
@@ -49,4 +52,44 @@ export function compiledCacheSize(): number {
 /** 仅供测试：清空缓存。 */
 export function clearCompiledCache(): void {
   compiledCache.clear();
+}
+
+/**
+ * —— 渲染缓存（技术方案 §6.3 折线/Path2D 层，ZOO-135）——
+ *
+ * sig 由调用方（plot.ts resolvePlotRender）拼装：equation / kind / 视窗 /
+ * 采样档 / 元素尺寸。颜色线宽透明度、轴网显隐**不在 sig 中** —— 改样式只
+ * 需对既有 Path2D 重新 stroke；视口平移缩放更不进入 sig（60fps 保证）。
+ */
+export interface PlotRenderEntry {
+  sig: string;
+  polylines: Polyline[];
+  view: MathViewport;
+  error?: string;
+  /** 元素局部 px 的矢量路径；Node/单测环境无 Path2D 时为 null（绘制走折线回退） */
+  path2d: Path2D | null;
+}
+
+const plotCache = new WeakMap<object, PlotRenderEntry>();
+let plotCacheWrites = 0;
+
+/** 渲染签名（键序由调用方固定，保证同输入同签名）。 */
+export function plotSignature(parts: Record<string, unknown>): string {
+  return JSON.stringify(parts);
+}
+
+/** 按元素对象引用取渲染缓存；未命中或签名不符由调用方重建。 */
+export function getPlotRender(key: object): PlotRenderEntry | undefined {
+  return plotCache.get(key);
+}
+
+/** 写入渲染缓存（覆盖同引用旧条目；写入即计数，供测试差分观测）。 */
+export function setPlotRender(key: object, entry: PlotRenderEntry): void {
+  plotCacheWrites++;
+  plotCache.set(key, entry);
+}
+
+/** 仅供测试：累计写入（set）次数 —— 差分观测「命中不写 / 签名变才重建」。 */
+export function plotRenderWriteCount(): number {
+  return plotCacheWrites;
 }

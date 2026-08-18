@@ -17,6 +17,9 @@ export default function Canvas() {
   const dragElementStartRef = useRef<Point>({ x: 0, y: 0 });
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const panOffsetStartRef = useRef<Point>({ x: 0, y: 0 });
+  // pan 的 rAF 合并（技术方案 §6.4）：mousemove 只记最新位移，每帧至多一次 setViewport
+  const panRafRef = useRef<number | null>(null);
+  const panPendingRef = useRef<Point | null>(null);
 
   const {
     elements, selectedId, activeTool, strokeColor, strokeWidth, fillColor, fontSize,
@@ -35,7 +38,8 @@ export default function Canvas() {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, rect.width, rect.height);
     renderGrid(ctx, rect.width, rect.height, viewport);
-    renderElements(ctx, elements, viewport);
+    // 传入可视尺寸启用视口 culling（§6.4，视口外元素跳过绘制）
+    renderElements(ctx, elements, viewport, { width: rect.width, height: rect.height });
     if (tempElementRef.current) {
       renderElements(ctx, [tempElementRef.current], viewport);
     }
@@ -145,14 +149,31 @@ export default function Canvas() {
     }
   }, [activeTool, elements, strokeColor, strokeWidth, fillColor, fontSize, spaceDown, viewport, getCanvasPoint, setSelected, addElement]);
 
+  // pan 帧回调：只读 ref，无需依赖数组
+  const applyPanFromRaf = useCallback(() => {
+    panRafRef.current = null;
+    const d = panPendingRef.current;
+    if (!d) return;
+    panPendingRef.current = null;
+    setViewport({
+      offsetX: panOffsetStartRef.current.x + d.x,
+      offsetY: panOffsetStartRef.current.y + d.y,
+    });
+  }, [setViewport]);
+
+  // 卸载时取消未决 rAF
+  useEffect(() => {
+    return () => {
+      if (panRafRef.current !== null) cancelAnimationFrame(panRafRef.current);
+    };
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isPanningRef.current) {
-      const dx = e.clientX - panStartRef.current.x;
-      const dy = e.clientY - panStartRef.current.y;
-      setViewport({
-        offsetX: panOffsetStartRef.current.x + dx,
-        offsetY: panOffsetStartRef.current.y + dy,
-      });
+      panPendingRef.current = { x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y };
+      if (panRafRef.current === null) {
+        panRafRef.current = requestAnimationFrame(applyPanFromRaf);
+      }
       return;
     }
 
@@ -197,11 +218,24 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getCanvasPoint, render, setViewport]);
+  }, [activeTool, selectedId, viewport, getCanvasPoint, render, applyPanFromRaf]);
 
   const handleMouseUp = useCallback(() => {
     if (isPanningRef.current) {
       isPanningRef.current = false;
+      // 结束 pan：取消未决帧并同步落定最终位移（避免停留在倒数第二帧位置）
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+      const d = panPendingRef.current;
+      panPendingRef.current = null;
+      if (d) {
+        setViewport({
+          offsetX: panOffsetStartRef.current.x + d.x,
+          offsetY: panOffsetStartRef.current.y + d.y,
+        });
+      }
       return;
     }
     if (!isDrawingRef.current) return;
@@ -227,7 +261,7 @@ export default function Canvas() {
         }
       }
     }
-  }, [activeTool, selectedId, addElement]);
+  }, [activeTool, selectedId, addElement, setViewport]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();

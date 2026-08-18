@@ -3,11 +3,12 @@
 /**
  * 方程编辑器实时小预览（240×96，交互原型基线）。
  *
- * 纯渲染组件：只消费采样折线（数学坐标），与主画布共用同一套数据
- * （技术方案 D3「采样与渲染目标解耦」）。折线由外部注入 —— 4b/4c 采样管线
- * 接入后传入；当前未接入时显示空坐标系，错误时显示原因文案。
+ * 纯渲染组件：只消费采样折线（数学坐标）。图核心（网格/十字轴/曲线）自
+ * ZOO-135 起委托 plot.ts drawGraphCore —— 与主画布 MathPlot 卡片同一套绘制
+ * 函数（技术方案 D3「预览即真实渲染结果」），仅网格密度参数不同（8px vs 45px）。
  */
 import { useEffect, useRef } from 'react';
+import { drawGraphCore, MIN_GRID_PX } from '@/lib/math/plot';
 import type { Polyline } from '@/lib/math/types';
 
 export interface MiniPreviewProps {
@@ -29,19 +30,6 @@ export interface MiniPreviewProps {
 
 const W = 240;
 const H = 96;
-const GRID_COLOR = '#e5e7eb';
-const AXIS_COLOR = '#9ca3af';
-const MIN_GRID_PX = 8;
-
-/** “好看刻度”步长（原型 niceStep 平移）：range/target 后取 1/2/2.5/5×10^k。 */
-function niceStep(range: number, target: number): number {
-  const raw = range / target;
-  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
-  for (const m of [1, 2, 2.5, 5, 10]) {
-    if (raw <= m * pow + 1e-12) return m * pow;
-  }
-  return 10 * pow;
-}
 
 /** 由折线数据推导 y 视窗：有限值 min/max + 8% 留白；退化（水平线）扩 ±1。 */
 function fitY(polylines: Polyline[], fallbackSpan: number): { min: number; max: number } {
@@ -124,80 +112,21 @@ export default function MiniPreview({
       return;
     }
 
-    // 已识别：轻网格 + 坐标轴（+ 折线，如已接入采样）
+    // 已识别：图核心（轻网格 + 十字轴 + 采样折线），与主画布共用 drawGraphCore
     const yWin =
       yMin !== undefined && yMax !== undefined && yMax > yMin ? { min: yMin, max: yMax } : fitY(polylines || [], ((xMax - xMin) * H) / W);
-    const toPxX = (mx: number) => ((mx - xMin) / (xMax - xMin)) * W;
-    const toPxY = (my: number) => H - ((my - yWin.min) / (yWin.max - yWin.min)) * H;
-
-    const stepX = niceStep(xMax - xMin, W / MIN_GRID_PX);
-    if ((stepX / (xMax - xMin)) * W >= MIN_GRID_PX) {
-      ctx.strokeStyle = GRID_COLOR;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let v = Math.ceil(xMin / stepX) * stepX; v <= xMax + 1e-9; v += stepX) {
-        const px = Math.round(toPxX(v)) + 0.5;
-        ctx.moveTo(px, 0);
-        ctx.lineTo(px, H);
-      }
-      ctx.stroke();
-    }
-    const stepY = niceStep(yWin.max - yWin.min, H / MIN_GRID_PX);
-    if ((stepY / (yWin.max - yWin.min)) * H >= MIN_GRID_PX) {
-      ctx.strokeStyle = GRID_COLOR;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let v = Math.ceil(yWin.min / stepY) * stepY; v <= yWin.max + 1e-9; v += stepY) {
-        const py = Math.round(toPxY(v)) + 0.5;
-        ctx.moveTo(0, py);
-        ctx.lineTo(W, py);
-      }
-      ctx.stroke();
-    }
-
-    // 过原点的十字轴（视窗内时）
-    ctx.strokeStyle = AXIS_COLOR;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    if (xMin <= 0 && xMax >= 0) {
-      const px = Math.round(toPxX(0)) + 0.5;
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, H);
-    }
-    if (yWin.min <= 0 && yWin.max >= 0) {
-      const py = Math.round(toPxY(0)) + 0.5;
-      ctx.moveTo(0, py);
-      ctx.lineTo(W, py);
-    }
-    ctx.stroke();
-
-    // 曲线（采样折线，折线间断笔）
-    if (polylines && polylines.length > 0) {
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = strokeWidth;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      for (const pl of polylines) {
-        let drawing = false;
-        for (const p of pl) {
-          if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
-            drawing = false;
-            continue;
-          }
-          const px = toPxX(p.x);
-          const py = toPxY(p.y);
-          if (!Number.isFinite(px) || !Number.isFinite(py) || Math.abs(py) > 1e6) {
-            drawing = false;
-            continue;
-          }
-          if (drawing) ctx.lineTo(px, py);
-          else ctx.moveTo(px, py);
-          drawing = true;
-        }
-      }
-      ctx.stroke();
-    }
+    drawGraphCore(ctx, {
+      width: W,
+      height: H,
+      view: { xMin, xMax, yMin: yWin.min, yMax: yWin.max },
+      polylines: polylines || [],
+      path2d: null,
+      style: { strokeColor, strokeWidth, opacity: 1 },
+      showGrid: true,
+      showAxis: true,
+      tickLabels: false,
+      gridTargetPx: MIN_GRID_PX,
+    });
   }, [status, errorMessage, polylines, xMin, xMax, yMin, yMax, strokeColor, strokeWidth]);
 
   return (
