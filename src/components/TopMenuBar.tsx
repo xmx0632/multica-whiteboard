@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { exportToImage, exportToSvg, downloadBlob, downloadText } from '@/lib/export';
 import { saveToLocal, saveToServer } from '@/lib/persistence';
+import { useAutosaveStore } from '@/lib/autosave';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import ZoomControl from './ZoomControl';
@@ -16,6 +17,14 @@ export default function TopMenuBar() {
   const [showExport, setShowExport] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  // 自动保存状态（ZOO-170）：常驻「✓ 已自动保存 HH:MM」+ 恢复/冲突一次性提示
+  const { lastSavedAt, notice, setNotice } = useAutosaveStore();
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), notice.kind === 'conflict' ? 6000 : 3000);
+    return () => clearTimeout(t);
+  }, [notice, setNotice]);
 
   // 手机竖屏（ZOO-152 追加）：菜单默认收起为一枚钮，点击弹出完整面板
   const phonePortrait = usePhonePortrait();
@@ -125,6 +134,15 @@ export default function TopMenuBar() {
       <ZoomControl />
 
       {message && <span className="text-xs text-green-600 px-1">{message}</span>}
+      {notice ? (
+        <span className={`text-xs px-1 ${notice.kind === 'conflict' ? 'text-amber-600' : 'text-blue-600'}`}>
+          {notice.text}
+        </span>
+      ) : lastSavedAt ? (
+        <span className="text-xs text-gray-400 px-1" title="内容已自动保存到本地，刷新/崩溃可恢复">
+          ✓ 已自动保存 {new Date(lastSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      ) : null}
       {isDirty && <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />}
     </>
   );

@@ -1,9 +1,8 @@
-import { WhiteboardDocument, WhiteboardElement, Viewport } from './types';
+import { WhiteboardDocument } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_PREFIX = 'whiteboard_';
 const DOC_LIST_KEY = 'whiteboard_documents';
-const AUTOSAVE_KEY = 'whiteboard_autosave';
 
 // ========== localStorage persistence ==========
 
@@ -110,26 +109,7 @@ export function listLocalDocuments(): DocMeta[] {
   return getDocList().sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export function autoSave(elements: WhiteboardElement[], viewport: Viewport, documentId: string, documentTitle: string): void {
-  if (typeof window === 'undefined') return;
-  const data = { elements, viewport, documentId, documentTitle, updatedAt: Date.now() };
-  localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(data));
-}
-
-export function loadAutoSave(): { elements: WhiteboardElement[]; viewport: Viewport; documentId: string; documentTitle: string } | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function clearAutoSave(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(AUTOSAVE_KEY);
-}
+// —— 自动保存（IndexedDB 快照 + 恢复）见 autosave.ts / useAutosave.ts（ZOO-170）——
 
 // ========== Server-side persistence (API routes) ==========
 

@@ -9,10 +9,13 @@ import HistoryPanel from '@/components/HistoryPanel';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import ImmersiveToggle from '@/components/ImmersiveToggle';
 import { useShortcuts } from '@/lib/useShortcuts';
+import { useAutosave } from '@/lib/useAutosave';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
 
 export default function Home() {
   useShortcuts();
+  // 自动保存 + 刷新/崩溃恢复（ZOO-170）：挂在页面级，一次挂载全局生效
+  useAutosave();
 
   // 手机竖屏沉浸模式（ZOO-156）：隐藏全部浮层（whiteboard-chrome），画布铺满
   const [immersive, setImmersive] = useState(false);
