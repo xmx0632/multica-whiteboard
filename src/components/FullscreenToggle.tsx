@@ -23,7 +23,7 @@ export default function FullscreenToggle() {
       type="button"
       onClick={onToggle}
       aria-label={label}
-      className={`fullscreen-toggle touch-target absolute top-3 right-3 z-20 px-3 py-1.5 text-xs rounded-xl shadow-lg border flex items-center gap-1 backdrop-blur-sm transition-colors ${
+      className={`fullscreen-toggle whiteboard-chrome touch-target absolute top-3 right-3 z-20 px-3 py-1.5 text-xs rounded-xl shadow-lg border flex items-center gap-1 backdrop-blur-sm transition-colors ${
         mode === 'exit'
           ? 'bg-gray-900/85 text-white border-gray-700 active:bg-gray-900'
           : 'bg-white/90 text-gray-600 border-gray-200 hover:bg-gray-50 active:bg-gray-100'

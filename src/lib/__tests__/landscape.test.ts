@@ -76,16 +76,27 @@ describe('nextPanelFold（属性面板折叠状态机）', () => {
     expect(nextPanelFold('unfolded', { type: 'panel-state', panel: 'tool' })).toBe('unfolded');
   });
 
-  it('进入手机横屏默认收起，离开恢复常驻展开', () => {
-    expect(nextPanelFold('unfolded', { type: 'phone-landscape', active: true })).toBe('folded');
-    expect(nextPanelFold('folded', { type: 'phone-landscape', active: false })).toBe('unfolded');
+  it('进入手机紧凑布局（横屏 / 竖屏）默认收起，离开恢复常驻展开', () => {
+    expect(nextPanelFold('unfolded', { type: 'phone-compact', active: true })).toBe('folded');
+    expect(nextPanelFold('folded', { type: 'phone-compact', active: false })).toBe('unfolded');
+  });
+
+  it('重入紧凑布局按「进入」语义收起；组件接线仅 compact 变化时派发（横竖互转不打扰当前态）', () => {
+    let s: PanelFold = 'unfolded';
+    s = nextPanelFold(s, { type: 'phone-compact', active: true }); // 进横屏：收起
+    s = nextPanelFold(s, { type: 'toggle' }); // chip 展开
+    // 若再次派发进入事件（接线层横竖互转不会派发：compactLayout 真值不变）：按进入语义收起
+    s = nextPanelFold(s, { type: 'phone-compact', active: true });
+    expect(s).toBe('folded');
+    s = nextPanelFold(s, { type: 'phone-compact', active: false }); // 离开紧凑布局（回桌面）
+    expect(s).toBe('unfolded');
   });
 
   it('典型序列：进横屏（收起）→ 展开 → 画布绘制（收起）→ chip 再展开', () => {
     const states: PanelFold[] = [];
     let s: PanelFold = 'unfolded';
     const steps: Parameters<typeof nextPanelFold>[1][] = [
-      { type: 'phone-landscape', active: true },
+      { type: 'phone-compact', active: true },
       { type: 'toggle' },
       { type: 'canvas-interact', panel: 'tool' },
       { type: 'toggle' },
@@ -99,7 +110,7 @@ describe('nextPanelFold（属性面板折叠状态机）', () => {
 
   it('典型序列：横屏下选中 mathPlot（触点收起 + 态切换展开并发）→ 仍展开', () => {
     let s: PanelFold = 'unfolded';
-    s = nextPanelFold(s, { type: 'phone-landscape', active: true });
+    s = nextPanelFold(s, { type: 'phone-compact', active: true });
     // 选中元素的 pointerdown 先收起，随后面板态切入 mathplot 自动展开
     s = nextPanelFold(s, { type: 'canvas-interact', panel: 'tool' });
     s = nextPanelFold(s, { type: 'panel-state', panel: 'mathplot' });

@@ -67,7 +67,7 @@ export default function HistoryPanel() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="touch-target absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 z-10"
+        className="whiteboard-chrome touch-target absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 z-10"
       >
         ☰ History
       </button>

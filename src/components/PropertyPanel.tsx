@@ -15,6 +15,7 @@ import { validateEquation } from '@/lib/math/validate';
 import { mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
 import { usePhoneLandscape } from '@/lib/usePhoneLandscape';
+import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import EquationEditor from './math/EquationEditor';
 import MathPlotParams, { type MathPlotParamsValue } from './math/MathPlotParams';
 
@@ -38,8 +39,10 @@ export default function PropertyPanel() {
       ? elements.find((e) => e.id === editingId) ?? null
       : null;
 
-  // —— ZOO-152 手机横屏：面板可折叠（默认收起为 chip，方程 / 参数面板出现时自动展开）——
+  // —— ZOO-152/156 手机紧凑布局（横屏 / 竖屏）：面板可折叠（默认收起为 chip，方程 / 参数面板出现时自动展开）——
   const phoneLandscape = usePhoneLandscape();
+  const phonePortrait = usePhonePortrait();
+  const compactLayout = phoneLandscape || phonePortrait;
   const [fold, dispatchFold] = useReducer(nextPanelFold, 'unfolded');
   const panelState: PanelState =
     activeTool === 'equation' || editingEl
@@ -48,10 +51,10 @@ export default function PropertyPanel() {
         ? 'mathplot'
         : 'tool';
 
-  // 旋转进入 / 离开手机横屏：默认收起 / 恢复常驻
+  // 旋转进入 / 离开手机紧凑布局（横竖互转均默认收起，回桌面恢复常驻）
   useEffect(() => {
-    dispatchFold({ type: 'phone-landscape', active: phoneLandscape });
-  }, [phoneLandscape]);
+    dispatchFold({ type: 'phone-compact', active: compactLayout });
+  }, [compactLayout]);
 
   // 面板态切换：方程 / 参数面板出现时自动展开（ƒ 工具点开必须见到编辑器）
   const prevPanelStateRef = useRef(panelState);
@@ -69,22 +72,24 @@ export default function PropertyPanel() {
     return () => window.removeEventListener(CANVAS_INTERACT_EVENT, onCanvasInteract);
   }, []);
 
-  const folded = phoneLandscape && fold === 'folded';
+  const folded = compactLayout && fold === 'folded';
 
   /**
-   * 折叠包装（ZOO-152）：仅手机横屏收起时隐藏面板本体、只渲染底部 chip
-   * （tool 态显示当前触笔色，方程 / 参数态显示对应图标）；桌面 / 竖屏原样透传。
+   * 折叠包装（ZOO-152 横屏 / ZOO-156 竖屏）：仅手机紧凑布局收起时隐藏面板本体、只渲染 chip
+   * （tool 态显示当前触笔色，方程 / 参数态显示对应图标）；桌面原样透传。
+   * chip / 收起钮位置经 panel-chip / panel-collapse 钩子类由媒体查询分形态摆放
+   * （横屏右下、竖屏右缘中部）；whiteboard-chrome 供沉浸模式整体隐藏。
    */
   const renderFoldable = (panel: React.ReactNode) => (
     <>
-      <div className={folded ? 'hidden' : undefined}>{panel}</div>
-      {/* 展开态收起钮（贴面板左下角）：方程 / 参数面板不吃「画布触点即收」，需显式收起出口 */}
-      {!folded && phoneLandscape && (
+      <div className={`whiteboard-chrome ${folded ? 'hidden' : ''}`}>{panel}</div>
+      {/* 展开态收起钮（贴面板）：方程 / 参数面板不吃「画布触点即收」，需显式收起出口 */}
+      {!folded && compactLayout && (
         <button
           type="button"
           aria-label="收起面板"
           onClick={() => dispatchFold({ type: 'toggle' })}
-          className="touch-target absolute right-[264px] bottom-[68px] w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 text-gray-500 flex items-center justify-center active:bg-gray-100 z-10"
+          className="panel-collapse whiteboard-chrome touch-target absolute right-[264px] bottom-[68px] w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 text-gray-500 flex items-center justify-center active:bg-gray-100 z-10"
         >
           ⌄
         </button>
@@ -94,7 +99,7 @@ export default function PropertyPanel() {
           type="button"
           aria-label={panelState === 'tool' ? '展开触笔颜色面板' : panelState === 'equation' ? '展开方程面板' : '展开参数面板'}
           onClick={() => dispatchFold({ type: 'toggle' })}
-          className="touch-target absolute right-3 bottom-3 z-20 w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 flex items-center justify-center active:bg-gray-100"
+          className="panel-chip whiteboard-chrome touch-target absolute right-3 bottom-3 z-20 w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 flex items-center justify-center active:bg-gray-100"
         >
           {panelState === 'tool' ? (
             <span className="w-6 h-6 rounded-full border-2 border-gray-300" style={{ backgroundColor: strokeColor }} />

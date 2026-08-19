@@ -19,7 +19,7 @@ export default function LeftToolbar() {
   const { activeTool, setTool } = useStore();
 
   return (
-    <div className="touch-toolbar absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-1.5 z-10">
+    <div className="whiteboard-chrome touch-toolbar absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-1.5 z-10">
       {tools.map(({ tool, label, shortcut, icon, divider }) => (
         <div key={tool} className="flex flex-col gap-1">
           {divider && <div className="toolbar-divider h-px bg-gray-200 mx-1 my-0.5" />}

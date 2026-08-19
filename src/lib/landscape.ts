@@ -3,8 +3,8 @@
  *
  * 判定与面板折叠状态机以纯函数沉淀在此（单测覆盖），组件只做接线：
  * - isPhoneLandscape：粗指针 + 横向 + 矮视口 → 手机横屏（平板横屏 / 桌面 / 竖屏均排除）；
- * - nextPanelFold：右侧属性面板（触笔颜色 / 方程 / 参数）的收起-展开状态机，
- *   仅手机横屏渲染折叠 UI，桌面与竖屏零变化。
+ * - nextPanelFold：属性面板（触笔颜色 / 方程 / 参数）的收起-展开状态机，
+ *   ZOO-156 起横竖屏共用（phone-compact 事件），仅手机紧凑布局渲染折叠 UI，桌面零变化。
  */
 
 /** 手机横屏的高度上限（px）：iPhone Pro Max 横屏 430 / Android 主流 ≤ 420，平板 ≥ 680 */
@@ -45,8 +45,8 @@ export type PanelFoldEvent =
   | { type: 'canvas-interact'; panel: PanelState }
   /** 面板态切换：进入方程 / 参数面板自动展开（ƒ 工具点开必须见到编辑器） */
   | { type: 'panel-state'; panel: PanelState }
-  /** 手机横屏进入 / 离开：进入默认收起，离开恢复常驻展开 */
-  | { type: 'phone-landscape'; active: boolean };
+  /** 手机紧凑布局（横屏 ZOO-152 / 竖屏 ZOO-156）进入 / 离开：进入默认收起，离开恢复常驻展开 */
+  | { type: 'phone-compact'; active: boolean };
 
 export function nextPanelFold(prev: PanelFold, event: PanelFoldEvent): PanelFold {
   switch (event.type) {
@@ -56,7 +56,7 @@ export function nextPanelFold(prev: PanelFold, event: PanelFoldEvent): PanelFold
       return event.panel === 'tool' ? 'folded' : prev;
     case 'panel-state':
       return event.panel === 'tool' ? prev : 'unfolded';
-    case 'phone-landscape':
+    case 'phone-compact':
       return event.active ? 'folded' : 'unfolded';
   }
 }

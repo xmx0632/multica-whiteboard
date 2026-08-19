@@ -128,3 +128,52 @@ body {
     bottom: 0.75rem;
   }
 }
+
+/* —— ZOO-156 手机竖屏适配（粗指针 + 纵向 + 窄视口 ≤500px；桌面 / 横屏零变化）——
+ * 宽度上限与 src/lib/portrait.ts 的 PHONE_PORTRAIT_MAX_WIDTH 同源（500px）：
+ * 覆盖 iPhone Pro Max 竖屏（430），排除平板竖屏（≥ 680）。
+ * 竖屏主要矛盾是横向空间：工具栏收到底部 3×3（只占 152px 宽），
+ * 属性面板改全宽底部抽屉（默认收起为右缘中部 chip）。 */
+@media (pointer: coarse) and (orientation: portrait) and (max-width: 500px) {
+  /* 工具栏：左侧竖排双列 → 底部左侧 3×3 网格（9 工具整格，单工具 44px 触控目标） */
+  .touch-toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    top: auto;
+    bottom: 0.75rem;
+    translate: none;
+  }
+  /* 属性面板（触笔颜色 / 方程 / 参数三态同钩子）：右侧中部 → 全宽底部抽屉，
+   * 底部抬升 10.75rem 让位 3×3 工具栏（9.5rem）+ 间距；超高整体内滚 */
+  .touch-side-panel {
+    top: auto;
+    bottom: 10.75rem;
+    translate: none;
+    left: 0.75rem;
+    width: auto;
+    max-height: calc(100dvh - 15rem);
+    overflow-y: auto;
+  }
+  /* EquationEditor 中段内滚区：滚动改由抽屉整体承担（同横屏） */
+  .touch-scroll {
+    max-height: none;
+  }
+  /* 折叠 chip：横屏右下角 → 竖屏右缘中部（拇指可达，避开底部工具栏 / 全屏钮） */
+  .panel-chip {
+    top: 50%;
+    bottom: auto;
+    translate: 0 -50%;
+  }
+  /* 展开态收起钮：横屏贴面板左下 → 竖屏 chip 同位（右缘中部，收 / 展同点） */
+  .panel-collapse {
+    top: 50%;
+    bottom: auto;
+    right: 0.75rem;
+    translate: 0 -50%;
+  }
+  /* 沉浸模式（页面根挂 immersive-mode）：隐藏全部浮层，画布铺满；
+     唤回钮由 ImmersiveToggle 渲染。规则限定在竖屏媒体查询内，横屏 / 桌面永不受影响 */
+  .immersive-mode .whiteboard-chrome {
+    display: none;
+  }
+}
