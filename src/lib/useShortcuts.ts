@@ -16,6 +16,17 @@ export function useShortcuts() {
         return;
       }
 
+      // 折线顶点编辑态（ZOO-168）：Esc 退出（形状保留）；Delete/Backspace 删选中
+      // 中间顶点——未选中顶点时不动作（防编辑中途误删整元素，删元素先 Esc）
+      const st = useStore.getState();
+      if (e.key === 'Escape') {
+        if (st.polylineEditId) {
+          e.preventDefault();
+          st.endPolylineEdit();
+        }
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -33,6 +44,10 @@ export function useShortcuts() {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
+        if (st.polylineEditId) {
+          st.deletePolylineVertex();
+          return;
+        }
         deleteSelected();
         return;
       }

@@ -15,6 +15,7 @@ import {
 import type { EquationDraftPayload } from './math/types';
 import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor } from './stroke';
 import { measureTextElement } from './textElement';
+import { isPolyline, removeVertexPatch } from './polyline';
 
 interface WhiteboardState {
   // Document
@@ -62,6 +63,16 @@ interface WhiteboardState {
   // Actions - Selection
   setSelected: (id: string | null) => void;
 
+  // 折线顶点编辑态（ZOO-168）：双击 line/arrow 中段进入；点空白 / Esc / 切工具退出
+  polylineEditId: string | null;
+  /** 编辑态中选中的顶点下标（Delete 删除目标）；null = 未选中顶点 */
+  polylineVertexIndex: number | null;
+  beginPolylineEdit: (id: string) => void;
+  endPolylineEdit: () => void;
+  selectPolylineVertex: (index: number | null) => void;
+  /** 删除编辑态选中的中间顶点（单条可撤销快照；≤2 顶点退化直线并退出编辑态） */
+  deletePolylineVertex: () => void;
+
   // Actions - Tool
   setTool: (tool: ToolType) => void;
   setStrokeColor: (color: string) => void;
@@ -102,6 +113,14 @@ interface WhiteboardState {
   markSaved: () => void;
 }
 
+/** 撤销 / 重做后编辑态是否失效：编辑中的元素已不存在或不再是折线形态（ZOO-168） */
+function polylineEditStale(polylineEditId: string | null, elements: WhiteboardElement[]): boolean {
+  if (!polylineEditId) return false;
+  const el = elements.find((e) => e.id === polylineEditId);
+  if (!el || (el.type !== 'line' && el.type !== 'arrow')) return true;
+  return !isPolyline(el);
+}
+
 export const useStore = create<WhiteboardState>((set, get) => ({
   // Document defaults
   documentId: uuidv4(),
@@ -110,6 +129,10 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   // Elements
   elements: [],
   selectedId: null,
+
+  // 折线顶点编辑态（ZOO-168）
+  polylineEditId: null,
+  polylineVertexIndex: null,
 
   // Tool defaults
   activeTool: 'pen',
@@ -174,6 +197,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set((s) => ({
       elements: s.elements.filter((e) => e.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
+      polylineEditId: s.polylineEditId === id ? null : s.polylineEditId,
+      polylineVertexIndex: s.polylineEditId === id ? null : s.polylineVertexIndex,
       undoStack: [...s.undoStack.slice(-99), ops],
       redoStack: [],
       isDirty: true,
@@ -192,6 +217,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set((s) => ({
       elements: [],
       selectedId: null,
+      polylineEditId: null,
+      polylineVertexIndex: null,
       undoStack: [...s.undoStack.slice(-99), ops],
       redoStack: [],
       isDirty: true,
@@ -199,10 +226,37 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   },
 
   // Selection
-  setSelected: (id) => set({ selectedId: id }),
+  // 选中变化退出折线编辑态（选中别的元素 / 取消选中即退出，ZOO-168 验收 4）
+  setSelected: (id) =>
+    set((s) =>
+      id === s.polylineEditId
+        ? { selectedId: id }
+        : { selectedId: id, polylineEditId: null, polylineVertexIndex: null }
+    ),
+
+  // 折线顶点编辑态（ZOO-168）
+  beginPolylineEdit: (id) => set({ polylineEditId: id, polylineVertexIndex: null }),
+  endPolylineEdit: () => set({ polylineEditId: null, polylineVertexIndex: null }),
+  selectPolylineVertex: (index) => set({ polylineVertexIndex: index }),
+
+  deletePolylineVertex: () => {
+    const { polylineEditId, polylineVertexIndex, elements, updateElement } = get();
+    if (!polylineEditId || polylineVertexIndex == null) return;
+    const el = elements.find((e) => e.id === polylineEditId);
+    if (!el || (el.type !== 'line' && el.type !== 'arrow')) return;
+    const patch = removeVertexPatch(el, polylineVertexIndex);
+    if (!patch) return; // 端点 / 下标越界不可删
+    updateElement(el.id, patch);
+    // 删除后 ≤2 顶点：元素退化为普通直线，退出编辑态；否则仅清顶点选中
+    if (isPolyline(Object.assign({}, el, patch))) {
+      set({ polylineVertexIndex: null });
+    } else {
+      set({ polylineEditId: null, polylineVertexIndex: null });
+    }
+  },
 
   // Tool
-  setTool: (tool) => set({ activeTool: tool, selectedId: null }),
+  setTool: (tool) => set({ activeTool: tool, selectedId: null, polylineEditId: null, polylineVertexIndex: null }),
   setStrokeColor: (color) => set({ strokeColor: color }),
   setStrokeWidth: (width) => set({ strokeWidth: width }),
   // 线型与色板点选同语义（ZOO-165）：离散选择即时落元素，单条快照可撤销
@@ -292,7 +346,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   },
 
   undo: () => {
-    const { undoStack, redoStack, elements } = get();
+    const { undoStack, redoStack, elements, polylineEditId } = get();
     if (undoStack.length === 0) return;
     const ops = undoStack[undoStack.length - 1];
     const newElements = [...elements];
@@ -309,16 +363,20 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       }
     }
 
+    // 折线编辑态守卫（ZOO-168）：撤销把编辑中的元素退回直线 / 撤没 → 退出编辑态
+    const editCleared = polylineEditStale(polylineEditId, newElements);
+
     set({
       elements: newElements,
       undoStack: undoStack.slice(0, -1),
       redoStack: [...redoStack, ops],
+      ...(editCleared ? { polylineEditId: null, polylineVertexIndex: null } : {}),
       isDirty: true,
     });
   },
 
   redo: () => {
-    const { undoStack, redoStack, elements } = get();
+    const { undoStack, redoStack, elements, polylineEditId } = get();
     if (redoStack.length === 0) return;
     const ops = redoStack[redoStack.length - 1];
     const newElements = [...elements];
@@ -335,10 +393,13 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       }
     }
 
+    const editCleared = polylineEditStale(polylineEditId, newElements);
+
     set({
       elements: newElements,
       undoStack: [...undoStack, ops],
       redoStack: redoStack.slice(0, -1),
+      ...(editCleared ? { polylineEditId: null, polylineVertexIndex: null } : {}),
       isDirty: true,
     });
   },
@@ -351,6 +412,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       elements: doc.elements,
       viewport: doc.viewport,
       selectedId: null,
+      polylineEditId: null,
+      polylineVertexIndex: null,
       undoStack: [],
       redoStack: [],
       isDirty: false,
@@ -365,6 +428,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       elements: [],
       viewport: { offsetX: 0, offsetY: 0, scale: 1 },
       selectedId: null,
+      polylineEditId: null,
+      polylineVertexIndex: null,
       undoStack: [],
       redoStack: [],
       isDirty: false,

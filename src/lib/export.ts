@@ -4,6 +4,7 @@ import { resolvePlotRender, stepForAxis, formatTickLabel, MIN_GRID_PX, MIN_TICK_
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
+import { lineVertices, isPolyline } from './polyline';
 
 export interface ExportOptions {
   format: 'png' | 'jpg' | 'svg';
@@ -65,16 +66,27 @@ function elementToSvg(el: WhiteboardElement): string {
       return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
     }
     case 'line':
-      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} stroke-linecap="round"${opacity}/>`;
+      return isPolyline(el)
+        ? `<polyline points="${lineVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`
+        : `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} stroke-linecap="round"${opacity}/>`;
     case 'arrow': {
+      // 折线形态（ZOO-168）：主体 polyline，箭头跟随最后一段方向（PNG/缩略图走
+      // renderElement 同语义）；两点直线保持既有 <line> 输出
+      const pts = lineVertices(el);
+      const n = pts.length;
       const headLen = Math.max(10, el.strokeWidth * 4);
-      const angle = Math.atan2(el.y2 - el.y, el.x2 - el.x);
-      const ax1 = el.x2 - headLen * Math.cos(angle - Math.PI / 6);
-      const ay1 = el.y2 - headLen * Math.sin(angle - Math.PI / 6);
-      const ax2 = el.x2 - headLen * Math.cos(angle + Math.PI / 6);
-      const ay2 = el.y2 - headLen * Math.sin(angle + Math.PI / 6);
-      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} stroke-linecap="round"${opacity}/>` +
-        `<polygon points="${el.x2},${el.y2} ${ax1},${ay1} ${ax2},${ay2}" fill="${el.strokeColor}"${opacity}/>`;
+      const angle = Math.atan2(pts[n - 1].y - pts[n - 2].y, pts[n - 1].x - pts[n - 2].x);
+      const x2 = pts[n - 1].x;
+      const y2 = pts[n - 1].y;
+      const ax1 = x2 - headLen * Math.cos(angle - Math.PI / 6);
+      const ay1 = y2 - headLen * Math.sin(angle - Math.PI / 6);
+      const ax2 = x2 - headLen * Math.cos(angle + Math.PI / 6);
+      const ay2 = y2 - headLen * Math.sin(angle + Math.PI / 6);
+      const body = isPolyline(el)
+        ? `<polyline points="${pts.map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`
+        : `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} stroke-linecap="round"${opacity}/>`;
+      return body +
+        `<polygon points="${x2},${y2} ${ax1},${ay1} ${ax2},${ay2}" fill="${el.strokeColor}"${opacity}/>`;
     }
     case 'text': {
       const lines = el.content.split('\n');
