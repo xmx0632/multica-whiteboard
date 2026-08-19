@@ -2,7 +2,8 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, translateElement } from '@/lib/renderer';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement } from '@/lib/renderer';
+import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
@@ -46,8 +47,9 @@ export default function Canvas() {
   const panRafRef = useRef<number | null>(null);
   const panPendingRef = useRef<Point | null>(null);
   // mathPlot 8 控点缩放（§11 D-1）：startEl 为手势前快照，抬指压一条 update 快照
-  // text 4 角控点等比缩放（ZOO-159）同走此通道：fontSize 随外框比例联动
-  const resizeRef = useRef<{ handle: MathPlotHandle; startEl: MathPlotElement | TextElement; startWorld: Point } | null>(null);
+  // text 4 角等比缩放（ZOO-159）同走此通道；图形元素（ZOO-160）扩展分派：
+  // rect/circle 角控点改外框、line/arrow 端点手柄、path 角控点整体等比缩放点集
+  const resizeRef = useRef<{ handle: ResizeHandleId; startEl: WhiteboardElement; startWorld: Point } | null>(null);
 
   // —— 内联文本输入（ZOO-159）——
   /** 当前草稿镜像（提交 / 取消以 ref 为准，state 只驱动渲染——blur 与卸载竞态下幂等） */
@@ -363,11 +365,15 @@ export default function Canvas() {
     isDrawingRef.current = true;
 
     if (activeTool === 'select') {
-      // 控点缩放优先于元素命中（D-1：mathPlot 8 控点画在包围盒外沿；
-      // ZOO-159：text 4 角控点等比缩放字号，同优先级）
+      // 控点缩放优先于元素命中（D-1：mathPlot 8 控点画在包围盒外沿；ZOO-159 text、
+      // ZOO-160 rect/circle/path 角控点与 line/arrow 端点手柄，同优先级）。
+      // 触摸命中外扩至 44px 等效（8px 方块 + 18px 边距）；鼠标 / 触控笔维持 2px 基线
       const sel = elements.find((el) => el.id === selectedId);
-      if (sel && (sel.type === 'mathPlot' || sel.type === 'text')) {
-        const handle = hitTestSelectionHandle(sel, local, viewport);
+      if (sel) {
+        const handle = hitTestSelectionHandle(
+          sel, local, viewport,
+          e.pointerType === 'touch' ? { margin: 18 } : undefined
+        );
         if (handle) {
           resizeRef.current = { handle, startEl: { ...sel }, startWorld: point };
           isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在抬指时用陈旧起点压脏快照
@@ -531,21 +537,41 @@ export default function Canvas() {
       return;
     }
 
-    // mathPlot 控点缩放拖拽（静默直改，抬指统一压快照 —— 与移动拖拽同构）；
-    // text 角控点走等比字号缩放几何（ZOO-159）
+    // 控点缩放拖拽（静默直改，抬指统一压快照 —— 与移动拖拽同构）：
+    // mathPlot（§11 D-1）/ text（ZOO-159）/ 图形元素（ZOO-160）按类型分派
     const rs = resizeRef.current;
     if (rs) {
       const point = getCanvasPoint(e);
       const start = rs.startEl;
-      const next =
-        start.type === 'text'
-          ? textResizePatch(rs.handle as 'nw' | 'ne' | 'sw' | 'se', start, point)
-          : applyResize({ ...rs, startEl: start }, point);
-      useStore.setState({
-        elements: useStore.getState().elements.map((el) =>
-          el.id === rs.startEl.id ? { ...el, ...next } : el
-        ),
-      });
+      const { scale } = useStore.getState().viewport;
+      const minSize = Math.max(SHAPE_MIN_SIZE, 16 / scale); // 屏幕侧 16px 下限
+      let next: Record<string, unknown> | null = null;
+      switch (start.type) {
+        case 'text':
+          next = textResizePatch(rs.handle as 'nw' | 'ne' | 'sw' | 'se', start, point);
+          break;
+        case 'mathPlot':
+          next = applyResize({ handle: rs.handle as MathPlotHandle, startEl: start, startWorld: rs.startWorld }, point);
+          break;
+        case 'rectangle':
+        case 'circle':
+          next = boxResizePatch(rs.handle as CornerHandle, start, point, { shift: e.shiftKey, minSize });
+          break;
+        case 'line':
+        case 'arrow':
+          next = endpointResizePatch(rs.handle as 'p1' | 'p2', start, point);
+          break;
+        case 'path':
+          next = pathResizePatch(rs.handle as CornerHandle, start, point, { minSize });
+          break;
+      }
+      if (next) {
+        useStore.setState({
+          elements: useStore.getState().elements.map((el) =>
+            el.id === rs.startEl.id ? { ...el, ...next } : el
+          ),
+        });
+      }
       return;
     }
 
@@ -636,28 +662,18 @@ export default function Canvas() {
       }
       return;
     }
-    // mathPlot 缩放提交：一次拖拽 = 一条可撤销快照（D5 同构）；text 含 fontSize 判变（ZOO-159）
+    // 缩放提交：一次拖拽 = 一条可撤销快照（D5 同构）；判变泛化到全类型
+    // （ZOO-160：path 逐点比值，text fontSize / mathPlot 外框语义均被覆盖）
     const rs = resizeRef.current;
     if (rs) {
       resizeRef.current = null;
-      const cur = useStore.getState().elements.find(
-        (el): el is MathPlotElement | TextElement =>
-          el.id === rs.startEl.id && (el.type === 'mathPlot' || el.type === 'text')
-      );
-      if (cur) {
-        const fontChanged =
-          cur.type === 'text' && rs.startEl.type === 'text' && cur.fontSize !== rs.startEl.fontSize;
-        const moved =
-          cur.x !== rs.startEl.x || cur.y !== rs.startEl.y ||
-          cur.width !== rs.startEl.width || cur.height !== rs.startEl.height ||
-          fontChanged;
-        if (moved) {
-          pushOperations([{
-            type: 'update', elementId: rs.startEl.id,
-            before: rs.startEl,
-            after: { ...cur },
-          }]);
-        }
+      const cur = useStore.getState().elements.find((el) => el.id === rs.startEl.id);
+      if (cur && elementResizeChanged(cur, rs.startEl)) {
+        pushOperations([{
+          type: 'update', elementId: rs.startEl.id,
+          before: rs.startEl,
+          after: { ...cur },
+        }]);
       }
       return;
     }
