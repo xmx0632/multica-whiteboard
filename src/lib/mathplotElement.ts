@@ -7,6 +7,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { sampleGeometry } from './math/sample';
+import { validateEquation } from './math/validate';
 import type { EquationDraftPayload } from './math/types';
 import { DEFAULT_MATHPLOT, MathPlotElement } from './types';
 
@@ -66,6 +67,25 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPl
     return { ...base, ...geometryFields(outcome) };
   }
   return base;
+}
+
+/** 面板方程提交收敛结果（ZOO-155）：合法方程产出数学字段补丁；非法方程 fields 为 null 并携带原因。 */
+export interface EquationCommitResult {
+  fields: MathPlotPatch | null;
+  /** fields === null 时的用户可读原因 */
+  error?: string;
+}
+
+/**
+ * 面板方程提交收敛（ZOO-155）：重新校验并回写分类 / 错误信息 / 几何定义域。
+ * 非法方程返回 fields=null —— 调用方须回滚元素到手势前快照（保持原曲线），
+ * 不得把 error 态写入既有元素（属性面板编辑路径，区别于编辑器建卡的错误占位流）。
+ */
+export function convergeEquationCommit(equation: string): EquationCommitResult {
+  const outcome = validateEquation(equation);
+  const trimmed = equation.trim();
+  if (outcome.kind === 'error') return { fields: null, error: outcome.message };
+  return { fields: mathPlotFieldsFromPayload({ equation: trimmed || equation, outcome }) };
 }
 
 /** 方程载荷 → 新元素（外框中心落点；默认 480×360，超出可视区时按比例收缩）。 */

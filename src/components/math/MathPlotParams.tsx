@@ -71,6 +71,8 @@ export interface MathPlotParamsProps {
   onDelete?: () => void;
   /** 错误态「重新编辑方程」（载入编辑器原位替换） */
   onRequestEdit?: () => void;
+  /** 方程提交非法时的提示（ZOO-155：元素保持原值，仅提示不改错误占位） */
+  equationError?: string | null;
 }
 
 const KIND_BADGES: Record<MathPlotParamsValue['kind'], { label: string; cls: string }> = {
@@ -97,7 +99,7 @@ const SAMPLE_STEPS: { label: string; count: 160 | 320 | 640 }[] = [
   { label: '细', count: 640 },
 ];
 
-export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit }: MathPlotParamsProps) {
+export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit, equationError }: MathPlotParamsProps) {
   const isFn = value.kind === 'explicit';
   const isError = value.kind === 'error';
   const badge = KIND_BADGES[value.kind];
@@ -140,12 +142,25 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             <input
               value={value.equation}
               onChange={(e) => patch({ equation: e.target.value })}
+              onKeyDown={(e) => {
+                // ZOO-155：回车即时提交（随后 blur 再触发一次 onCommit，幂等无害）
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onCommit?.();
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
               onBlur={onCommit}
               autoComplete="off"
               spellCheck={false}
-              className="touch-target w-full px-2 py-1.5 border border-gray-300 rounded-lg font-serif text-sm text-gray-900 outline-none bg-white select-text focus:border-blue-500"
+              className={`touch-target w-full px-2 py-1.5 border rounded-lg font-serif text-sm text-gray-900 outline-none bg-white select-text ${equationError ? 'border-red-400 focus:border-red-400' : 'border-gray-300 focus:border-blue-500'}`}
               aria-label="方程"
             />
+            {equationError && (
+              <div className="text-[11px] text-red-500 mt-1 leading-relaxed break-all" role="alert">
+                ⚠ {equationError}（已保持原方程，请修正后再提交）
+              </div>
+            )}
           </div>
 
           {isFn && (

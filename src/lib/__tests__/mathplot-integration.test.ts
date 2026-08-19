@@ -14,6 +14,7 @@ import {
   WhiteboardElement,
 } from '../types';
 import {
+  convergeEquationCommit,
   createMathPlotElement,
   mathPlotFieldsFromPayload,
 } from '../mathplotElement';
@@ -554,5 +555,117 @@ describe('导出（PNG 复用 renderElement / SVG 增量 case）', () => {
     expect(svg).not.toMatch(/<line[^>]*#e5e7eb/); // 无网格线（卡片边框同色不受影响）
     expect(svg).not.toMatch(/<line[^>]*#9ca3af/); // 无轴线
     expect(svg).not.toContain('font-family="serif"'); // 无方程 chip 文本
+  });
+});
+
+describe('方程编辑 → 元素更新 → 重采样（ZOO-155）', () => {
+  const frame = { width: 480, height: 360 };
+
+  it('方程变更换签名触发重采样：sin → cos 采样点随新方程更新', () => {
+    const el = makeElement({ id: 'mp-zoo155-recos' });
+    useStore.getState().addElement(el);
+    const specOf = (e: MathPlotElement) => ({
+      equation: e.equation, kind: e.kind, xAxis: e.xAxis,
+      equalRatio: e.equalRatio, sampleCount: e.sampleCount,
+    });
+    const token = plotTokenFor(el.id);
+    const r1 = resolvePlotRender(specOf(el), frame, token);
+    expect(r1.error).toBeUndefined();
+    const sinMid = r1.polylines[0][Math.floor(r1.polylines[0].length / 2)];
+    expect(sinMid.y).toBeCloseTo(Math.sin(sinMid.x), 5);
+
+    // store 直改方程（属性面板 onChange 路径）→ 同 id 渲染按新方程重采样
+    useStore.getState().updateElementTransient(el.id, { equation: 'y=cos(x)' } as Partial<WhiteboardElement>);
+    const updated = useStore.getState().elements.find((e) => e.id === el.id) as MathPlotElement;
+    const r2 = resolvePlotRender(specOf(updated), frame, plotTokenFor(el.id));
+    expect(r2.error).toBeUndefined();
+    const cosMid = r2.polylines[0][Math.floor(r2.polylines[0].length / 2)];
+    expect(cosMid.y).toBeCloseTo(Math.cos(cosMid.x), 5);
+    expect(cosMid.y).not.toBeCloseTo(sinMid.y, 5); // 曲线确实变了
+  });
+
+  it('样式变更零重采样（§6.3 不回归）：方程不变仅改颜色仍命中缓存', () => {
+    const el = makeElement({ id: 'mp-zoo155-style' });
+    const token = plotTokenFor(el.id);
+    const spec = {
+      equation: el.equation, kind: el.kind, xAxis: el.xAxis,
+      equalRatio: el.equalRatio, sampleCount: el.sampleCount,
+    };
+    resolvePlotRender(spec, frame, token);
+    const before = plotRenderWriteCount();
+    resolvePlotRender(spec, frame, token); // 方程与数学输入不变 → 命中
+    expect(plotRenderWriteCount()).toBe(before);
+  });
+
+  it('convergeEquationCommit：合法显式方程产出数学字段补丁', () => {
+    const r = convergeEquationCommit('  y=cos(x)  ');
+    expect(r.error).toBeUndefined();
+    expect(r.fields).toEqual({
+      equation: 'y=cos(x)',
+      kind: 'explicit',
+      error: null,
+    });
+  });
+
+  it('convergeEquationCommit：几何方程（圆）同步推导定义域与等比', () => {
+    const r = convergeEquationCommit('x^2+y^2=9');
+    expect(r.fields?.kind).toBe('circle');
+    expect(r.fields?.equalRatio).toBe(true);
+    expect(r.fields?.xAxis).toBeDefined();
+    expect(r.fields?.xAxis!.max).toBeGreaterThanOrEqual(3);
+  });
+
+  it('convergeEquationCommit：非法方程 fields 为 null 并携带原因（不落错误占位）', () => {
+    const r = convergeEquationCommit('y=');
+    expect(r.fields).toBeNull();
+    expect(r.error).toBeTruthy();
+    const r2 = convergeEquationCommit('y=#');
+    expect(r2.fields).toBeNull();
+    expect(r2.error).toBeTruthy();
+  });
+
+  it('非法提交回滚语义：元素数学字段恢复快照后仍按原方程出图（保持原值）', () => {
+    const el = makeElement({ id: 'mp-zoo155-revert' });
+    useStore.getState().addElement(el);
+    const before: MathPlotElement = { ...el, xAxis: { ...el.xAxis } };
+    // 手势中直改为非法半截方程（属性面板 onChange 逐键路径）
+    useStore.getState().updateElementTransient(el.id, { equation: 'y=' } as Partial<WhiteboardElement>);
+    // 提交非法 → PropertyPanel 回滚数学字段到快照
+    useStore.getState().updateElementTransient(el.id, {
+      equation: before.equation, kind: before.kind, error: before.error,
+      xAxis: { ...before.xAxis }, equalRatio: before.equalRatio,
+    } as Partial<WhiteboardElement>);
+    const restored = useStore.getState().elements.find((e) => e.id === el.id) as MathPlotElement;
+    expect(restored.equation).toBe('y=sin(x)');
+    expect(restored.kind).toBe('explicit');
+    // 渲染按恢复后的方程出 sin 曲线（非错误占位）
+    const r = resolvePlotRender(
+      { equation: restored.equation, kind: restored.kind, xAxis: restored.xAxis, equalRatio: restored.equalRatio, sampleCount: restored.sampleCount },
+      frame,
+      plotTokenFor(el.id),
+    );
+    expect(r.error).toBeUndefined();
+    const mid = r.polylines[0][Math.floor(r.polylines[0].length / 2)];
+    expect(mid.y).toBeCloseTo(Math.sin(mid.x), 5);
+  });
+
+  it('合法提交收敛：显式 → 圆补丁换 kind / 定义域 / 等比（converge 产物可直接落元素）', () => {
+    const el = makeElement({ id: 'mp-zoo155-tocircle' });
+    useStore.getState().addElement(el);
+    const fields = convergeEquationCommit('x^2+y^2=9').fields!;
+    useStore.getState().updateElementTransient(el.id, fields as Partial<WhiteboardElement>);
+    const updated = useStore.getState().elements.find((e) => e.id === el.id) as MathPlotElement;
+    expect(updated.kind).toBe('circle');
+    expect(updated.equalRatio).toBe(true);
+    const r = resolvePlotRender(
+      { equation: updated.equation, kind: updated.kind, xAxis: updated.xAxis, equalRatio: updated.equalRatio, sampleCount: updated.sampleCount },
+      frame,
+      plotTokenFor(el.id),
+    );
+    expect(r.error).toBeUndefined();
+    // 圆：闭合折线，半径 3
+    const pl = r.polylines[0];
+    const far = Math.max(...pl.map((p) => Math.hypot(p.x, p.y)));
+    expect(far).toBeCloseTo(3, 3);
   });
 });

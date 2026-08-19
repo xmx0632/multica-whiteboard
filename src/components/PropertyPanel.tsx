@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
 import { COLORS, MathPlotElement, WhiteboardElement } from '@/lib/types';
 import { validateEquation } from '@/lib/math/validate';
-import { mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
+import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
 import { usePhoneLandscape } from '@/lib/usePhoneLandscape';
 import EquationEditor from './math/EquationEditor';
@@ -30,8 +30,15 @@ export default function PropertyPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   // D5 两段式：手势（滑杆拖动 / 文本输入）开始前的元素快照，onCommit 时压一条快照
   const gestureStartRef = useRef<MathPlotElement | null>(null);
+  // ZOO-155：方程提交非法的瞬时提示（元素保持原值，不落元素、不入历史）
+  const [equationError, setEquationError] = useState<string | null>(null);
 
   const selectedEl = elements.find((e) => e.id === selectedId) ?? null;
+
+  // 切换选中元素：方程提交提示随上一元素失效，清空防串显
+  useEffect(() => {
+    setEquationError(null);
+  }, [selectedId]);
   // 原位替换态只在「仍选中该元素」时有效：点选别处 / 取消选中即自然退出
   const editingEl =
     editingId != null && editingId === selectedId
@@ -163,6 +170,7 @@ export default function PropertyPanel() {
 
     const handleParamsChange = (patch: Partial<MathPlotParamsValue>) => {
       if (!gestureStartRef.current) gestureStartRef.current = el;
+      if (patch.equation !== undefined) setEquationError(null);
       // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams / ellipseParams 为面板派生字段（元素不落盘），剥除后落元素
       const rest: Partial<MathPlotParamsValue> = { ...patch };
       const errorMessage = rest.errorMessage;
@@ -182,21 +190,36 @@ export default function PropertyPanel() {
       const cur = useStore.getState().elements.find((e) => e.id === el.id) as MathPlotElement | undefined;
       if (!cur) return;
       // 方程文本收敛：重新校验分类与错误信息（几何方程同步推导定义域）
-      const outcome = validateEquation(cur.equation);
-      const fields = mathPlotFieldsFromPayload({ equation: cur.equation.trim(), outcome });
+      const converged = convergeEquationCommit(cur.equation);
+      if (!converged.fields) {
+        // ZOO-155：非法方程不落错误占位 —— 元素回滚到手势前快照（曲线保持原样），面板提示原因
+        setEquationError(converged.error ?? '无法识别的方程');
+        if (before) {
+          updateElementTransient(el.id, {
+            equation: before.equation,
+            kind: before.kind,
+            error: before.error,
+            xAxis: { ...before.xAxis },
+            equalRatio: before.equalRatio,
+          } as Partial<WhiteboardElement>);
+        }
+        return;
+      }
+      setEquationError(null);
+      const fields = converged.fields;
       const after: MathPlotElement = {
         ...cur,
         ...fields,
         equation: cur.equation.trim() || cur.equation,
       };
       const changed = (k: keyof MathPlotElement) => (after[k] as unknown) !== (cur[k] as unknown);
-      const converged = changed('equation') || changed('kind') || changed('error') || changed('xAxis') || changed('equalRatio');
+      const convergedChanged = changed('equation') || changed('kind') || changed('error') || changed('xAxis') || changed('equalRatio');
       if (before) {
         const diffKeys = (Object.keys(after) as (keyof MathPlotElement)[]).filter((k) => (after[k] as unknown) !== (before[k] as unknown));
-        if (diffKeys.length === 0 && !converged) return;
-        if (converged) updateElementTransient(el.id, fields as Partial<WhiteboardElement>);
+        if (diffKeys.length === 0 && !convergedChanged) return;
+        if (convergedChanged) updateElementTransient(el.id, fields as Partial<WhiteboardElement>);
         pushOperations([{ type: 'update', elementId: el.id, before, after }]);
-      } else if (converged) {
+      } else if (convergedChanged) {
         updateElement(el.id, fields as Partial<WhiteboardElement>);
       }
     };
@@ -206,6 +229,7 @@ export default function PropertyPanel() {
         value={value}
         onChange={handleParamsChange}
         onCommit={handleParamsCommit}
+        equationError={equationError}
         onDuplicate={() => {
           const clone: MathPlotElement = { ...el, id: uuidv4(), x: el.x + 24, y: el.y + 24 };
           addElement(clone);
