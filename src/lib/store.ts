@@ -75,6 +75,8 @@ interface WhiteboardState {
   loadDocument: (doc: WhiteboardDocument) => void;
   newDocument: () => void;
   setDocumentTitle: (title: string) => void;
+  /** 列表侧重命名联动当前打开文档（ZOO-158）：写穿已持久化，不置 isDirty */
+  applyDocumentRename: (id: string, title: string) => void;
   markSaved: () => void;
 }
 
@@ -279,5 +281,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   },
 
   setDocumentTitle: (title) => set({ documentTitle: title, isDirty: true }),
+  applyDocumentRename: (id, title) =>
+    set((s) => (s.documentId === id ? { documentTitle: title } : {})),
   markSaved: () => set({ isDirty: false, lastSavedAt: Date.now() }),
 }));
