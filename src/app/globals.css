@@ -25,6 +25,27 @@ body {
   overscroll-behavior: none;
 }
 
+/* —— ZOO-164 模板分组折叠动画（ƒ 面板）——
+ * grid-template-rows 0fr↔1fr 过渡：仅布局属性、~150ms，轻量不卡顿；
+ * 收起时 visibility:hidden 把组内按钮移出 Tab 序 / 无障碍树 */
+.group-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 150ms ease-out;
+}
+.group-collapse[data-collapsed='true'] {
+  grid-template-rows: 0fr;
+}
+.group-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+  visibility: visible;
+  transition: visibility 150ms;
+}
+.group-collapse[data-collapsed='true'] .group-collapse-inner {
+  visibility: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
