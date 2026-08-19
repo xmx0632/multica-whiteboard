@@ -6,6 +6,7 @@ import { exportToImage, exportToSvg, downloadBlob, downloadText } from '@/lib/ex
 import { saveToLocal, saveToServer } from '@/lib/persistence';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
+import ZoomControl from './ZoomControl';
 
 export default function TopMenuBar() {
   const {
@@ -121,7 +122,7 @@ export default function TopMenuBar() {
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <span className="text-xs text-gray-500 px-1">{Math.round(viewport.scale * 100)}%</span>
+      <ZoomControl />
 
       {message && <span className="text-xs text-green-600 px-1">{message}</span>}
       {isDirty && <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />}

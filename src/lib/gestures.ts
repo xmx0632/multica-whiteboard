@@ -24,6 +24,31 @@ export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
+/** 步进缩放百分比边界（MIN_SCALE / MAX_SCALE 的整数百分比） */
+export const MIN_ZOOM_PERCENT = Math.round(MIN_SCALE * 100);
+export const MAX_ZOOM_PERCENT = Math.round(MAX_SCALE * 100);
+
+/** 步进器档位（百分比）：常规 ±10%，Shift 微调 ±1%（ZOO-161） */
+export const ZOOM_STEP_COARSE = 10;
+export const ZOOM_STEP_FINE = 1;
+
+/** scale → 整数百分比（展示与步进共用同一读数，滑杆/步进器/手势三通道同步） */
+export function zoomPercentage(scale: number): number {
+  return Math.round(clampScale(scale) * 100);
+}
+
+/**
+ * 步进缩放的下一档 scale（ZOO-161）。
+ * 在百分比整数域上做加法（PM 验收：100% 点 + 三次 → 130%），
+ * wheel/捏合残留的小数 scale 先取整再步进，步进通道永远落在整数档；
+ * 越界夹取到 [10%, 500%]，边界时步进为空操作（按钮侧呈禁用态）。
+ */
+export function stepZoomScale(currentScale: number, dir: 1 | -1, fine = false): number {
+  const step = (fine ? ZOOM_STEP_FINE : ZOOM_STEP_COARSE) * dir;
+  const pct = Math.max(MIN_ZOOM_PERCENT, Math.min(MAX_ZOOM_PERCENT, zoomPercentage(currentScale) + step));
+  return pct / 100;
+}
+
 /**
  * 以屏幕点 anchor 为缩放中心求新 viewport（anchor 下的世界点在缩放后不动）。
  * 与原 wheel 处理公式代数等价（wheel 迁移到此处，桌面行为零变化）。
