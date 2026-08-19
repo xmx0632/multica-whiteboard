@@ -248,7 +248,7 @@ describe('渲染管线接入', () => {
     expect(b.calls.filter((c) => c.op === 'fillRect')).toHaveLength(8);
   });
 
-  it('控点命中：mathPlot 角 / 边可命中，其他元素返回 null', () => {
+  it('控点命中：mathPlot 角 / 边可命中，画布空白处返回 null', () => {
     const el = makeElement();
     // 外框 (100,80)-(580,440)，选中框外扩 4px → se 角控点 ≈ (576,436)
     expect(hitTestSelectionHandle(el, { x: 578, y: 438 }, VP)).toBe('se');
@@ -256,12 +256,7 @@ describe('渲染管线接入', () => {
     // 东边中点控点 ≈ x=580, y=(76+444)/2=260
     expect(hitTestSelectionHandle(el, { x: 578, y: 260 }, VP)).toBe('e');
     expect(hitTestSelectionHandle(el, { x: 300, y: 260 }, VP)).toBeNull();
-
-    const rect = {
-      id: 'r1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50,
-      strokeColor: '#000', strokeWidth: 2, opacity: 1, fillColor: null,
-    } as WhiteboardElement;
-    expect(hitTestSelectionHandle(rect, { x: 0, y: 0 }, VP)).toBeNull();
+    expect(hitTestSelectionHandle(el, { x: 20, y: 20 }, VP)).toBeNull();
   });
 
   it('渲染缓存：同 id 换对象引用（拖拽移动 / 调参）不重算（§6.3）', () => {

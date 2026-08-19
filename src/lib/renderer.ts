@@ -266,29 +266,55 @@ export function renderElements(
   }
 }
 
+/** mathPlot 控点方位标识（拖拽缩放语义见 Canvas.tsx resizeState）。 */
+export type MathPlotHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+/** line/arrow 端点手柄标识（ZOO-160：p1 起点改 x/y，p2 终点改 x2/y2） */
+export type EndpointHandle = 'p1' | 'p2';
+
+/** 全元素控点标识（ZOO-160：mathPlot 8 方位 + line/arrow 端点 + 其余 4 角） */
+export type ResizeHandleId = MathPlotHandle | EndpointHandle;
+
+/** 控点方块边长（屏幕 px，样式基线与 mathPlot 8 控点一致） */
+const HANDLE_SIZE = 8;
+
 /**
- * 选中框控点布局（§11 D-1）：mathPlot 为 8 控点（4 角 + 4 边中点，已验收基线），
- * 其余元素维持既有 4 角控点（零回归）。返回屏幕 px 的控点左上角数组。
+ * 选中框控点布局（§11 D-1 + ZOO-160）：mathPlot 8 控点（4 角 + 4 边中点，已验收基线）、
+ * line/arrow 两端点手柄、其余（rect/circle/path/text）4 角控点。
+ * 返回 id + 8×8 屏幕矩形（画布 rect 相对 px；方块中心即角点 / 端点）。
  */
-function selectionHandleRects(el: WhiteboardElement, x: number, y: number, w: number, h: number): [number, number][] {
-  const s = 8;
-  const r = x + w + 4;
-  const b = y + h + 4;
+function selectionHandleLayout(el: WhiteboardElement, viewport: Viewport): { id: ResizeHandleId; rect: [number, number] }[] {
+  const { offsetX, offsetY, scale } = viewport;
+  const s = HANDLE_SIZE;
+
+  if (el.type === 'line' || el.type === 'arrow') {
+    return [
+      { id: 'p1', rect: [el.x * scale + offsetX - s / 2, el.y * scale + offsetY - s / 2] },
+      { id: 'p2', rect: [el.x2 * scale + offsetX - s / 2, el.y2 * scale + offsetY - s / 2] },
+    ];
+  }
+
+  const bbox = getElementBounds(el);
+  if (!bbox) return [];
+  const x = bbox.x * scale + offsetX;
+  const y = bbox.y * scale + offsetY;
+  const r = x + bbox.width * scale + 4;
+  const b = y + bbox.height * scale + 4;
   if (el.type === 'mathPlot') {
     return [
-      [x - 4, y - 4], [r - s, y - 4],            // nw ne
-      [x - 4, b - s], [r - s, b - s],            // sw se
-      [(x - 4 + r) / 2 - s / 2, y - 4],          // n
-      [(x - 4 + r) / 2 - s / 2, b - s],          // s
-      [x - 4, (y - 4 + b) / 2 - s / 2],          // w
-      [r - s, (y - 4 + b) / 2 - s / 2],          // e
+      { id: 'nw', rect: [x - 4, y - 4] }, { id: 'ne', rect: [r - s, y - 4] },
+      { id: 'sw', rect: [x - 4, b - s] }, { id: 'se', rect: [r - s, b - s] },
+      { id: 'n', rect: [(x - 4 + r) / 2 - s / 2, y - 4] },
+      { id: 's', rect: [(x - 4 + r) / 2 - s / 2, b - s] },
+      { id: 'w', rect: [x - 4, (y - 4 + b) / 2 - s / 2] },
+      { id: 'e', rect: [r - s, (y - 4 + b) / 2 - s / 2] },
     ];
   }
   return [
-    [x - 4, y - 4],
-    [r - s, y - 4],
-    [x - 4, b - s],
-    [r - s, b - s],
+    { id: 'nw', rect: [x - 4, y - 4] },
+    { id: 'ne', rect: [r - s, y - 4] },
+    { id: 'sw', rect: [x - 4, b - s] },
+    { id: 'se', rect: [r - s, b - s] },
   ];
 }
 
@@ -314,40 +340,28 @@ export function renderSelection(
   ctx.setLineDash([]);
 
   ctx.fillStyle = '#3B82F6';
-  for (const [hx, hy] of selectionHandleRects(el, x, y, w, h)) {
-    ctx.fillRect(hx, hy, 8, 8);
+  for (const { rect: [hx, hy] } of selectionHandleLayout(el, viewport)) {
+    ctx.fillRect(hx, hy, HANDLE_SIZE, HANDLE_SIZE);
   }
   ctx.restore();
 }
 
-/** mathPlot 控点方位标识（拖拽缩放语义见 Canvas.tsx resizeState）。 */
-export type MathPlotHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
-
-const HANDLE_ORDER: MathPlotHandle[] = ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'];
-
 /**
- * 选中框控点命中（屏幕 px，画布 rect 相对坐标）。仅 mathPlot 有可拖控点
- * （D-1：8 控点缩放只给 mathPlot，其他元素维持现状返回 null）。
+ * 选中框控点命中（屏幕 px，画布 rect 相对坐标）。全部元素类型均有可拖控点
+ * （ZOO-160）：mathPlot 8 方位、line/arrow 端点、rect/circle/path/text 4 角。
+ * opts.margin 判定外扩（默认 2 鼠标 / 触控笔；触摸传 18 → 44px 等效命中框）。
  */
 export function hitTestSelectionHandle(
   el: WhiteboardElement,
   screen: Point,
-  viewport: Viewport
-): MathPlotHandle | null {
-  if (el.type !== 'mathPlot') return null;
-  const bbox = getElementBounds(el);
-  if (!bbox) return null;
-  const { offsetX, offsetY, scale } = viewport;
-  const x = bbox.x * scale + offsetX;
-  const y = bbox.y * scale + offsetY;
-  const w = bbox.width * scale;
-  const h = bbox.height * scale;
-  const rects = selectionHandleRects(el, x, y, w, h);
-  const m = 2; // 判定外扩，降低精确点选难度
-  for (let i = 0; i < rects.length; i++) {
-    const [hx, hy] = rects[i];
-    if (screen.x >= hx - m && screen.x <= hx + 8 + m && screen.y >= hy - m && screen.y <= hy + 8 + m) {
-      return HANDLE_ORDER[i];
+  viewport: Viewport,
+  opts?: { margin?: number }
+): ResizeHandleId | null {
+  const layout = selectionHandleLayout(el, viewport);
+  const m = opts?.margin ?? 2; // 判定外扩，降低精确点选难度
+  for (const { id, rect: [hx, hy] } of layout) {
+    if (screen.x >= hx - m && screen.x <= hx + HANDLE_SIZE + m && screen.y >= hy - m && screen.y <= hy + HANDLE_SIZE + m) {
+      return id;
     }
   }
   return null;
