@@ -129,6 +129,9 @@ export const COLORS = [
 export const DEFAULT_STROKE_COLOR = '#000000';
 export const DEFAULT_STROKE_WIDTH = 2;
 export const DEFAULT_FONT_SIZE = 20;
+/** 字号边界（ZOO-159）：角控点缩放 / 字号滑杆共用下限上限 */
+export const TEXT_MIN_FONT_SIZE = 10;
+export const TEXT_MAX_FONT_SIZE = 200;
 
 // —— MathPlot 元素默认常量（技术方案 §8 创建落点；原型基线曲线色 #3B82F6）——
 export const MATHPLOT_DEFAULT_WIDTH = 480;

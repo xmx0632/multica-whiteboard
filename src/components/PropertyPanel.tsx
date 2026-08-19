@@ -10,7 +10,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
-import { COLORS, MathPlotElement, WhiteboardElement } from '@/lib/types';
+import { COLORS, MathPlotElement, WhiteboardElement, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
 import { canRestyleFromToolPanel, elementStrokeColor } from '@/lib/stroke';
 import { validateEquation } from '@/lib/math/validate';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
@@ -25,7 +25,7 @@ export default function PropertyPanel() {
     activeTool, elements, selectedId,
     strokeColor, strokeWidth,
     fillColor, setFillColor, fontSize, setFontSize,
-    pickStrokeColor, inputStrokeColor, inputStrokeWidth, commitStrokeStyle,
+    pickStrokeColor, inputStrokeColor, inputStrokeWidth, commitStrokeStyle, inputFontSize,
     addElement, updateElement, updateElementTransient, deleteElement,
     setSelected, setTool, pushOperations, requestMathPlotInsert,
   } = useStore();
@@ -258,6 +258,9 @@ export default function PropertyPanel() {
 
   const showFill = ['rectangle', 'circle'].includes(activeTool);
   const showFont = activeTool === 'text';
+  // 字号滑杆（ZOO-159）：T 工具设默认字号；选中 text 元素时作用于该元素（D5 两段式）
+  const selectedText = selectedEl?.type === 'text' ? selectedEl : null;
+  const panelFontSize = selectedText ? selectedText.fontSize : fontSize;
 
   return renderFoldable(
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
@@ -330,15 +333,23 @@ export default function PropertyPanel() {
         </div>
       )}
 
-      {showFont && (
+      {(showFont || selectedText) && (
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Font Size: {fontSize}px</label>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">
+            Font Size: {panelFontSize}px{selectedText ? ' · 已选中元素' : ''}
+          </label>
           <input
             type="range"
-            min={10}
-            max={72}
-            value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
+            min={TEXT_MIN_FONT_SIZE}
+            max={TEXT_MAX_FONT_SIZE}
+            value={panelFontSize}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (selectedText) inputFontSize(v);
+              else setFontSize(v);
+            }}
+            onPointerUp={commitStrokeStyle}
+            onKeyUp={commitStrokeStyle}
             className="touch-target w-full accent-blue-500"
           />
         </div>

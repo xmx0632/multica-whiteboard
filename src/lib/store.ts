@@ -12,6 +12,7 @@ import {
 } from './types';
 import type { EquationDraftPayload } from './math/types';
 import { strokeColorPatch, canRestyleFromToolPanel, elementStrokeColor } from './stroke';
+import { measureTextElement } from './textElement';
 
 interface WhiteboardState {
   // Document
@@ -71,6 +72,8 @@ interface WhiteboardState {
   inputStrokeColor: (color: string) => void;
   /** 线宽滑杆拖动（连续）：有选中元素 → 直改预览（D5 不入栈）并同步默认线宽；快照由 commitStrokeStyle 压入 */
   inputStrokeWidth: (width: number) => void;
+  /** 字号滑杆拖动（ZOO-159，连续）：选中 text → 直改 fontSize + 重测宽高（D5 不入栈）并同步默认字号；快照由 commitStrokeStyle 压入 */
+  inputFontSize: (size: number) => void;
   /** 连续调整收尾（抬杆 / 取色器失焦）：一次手势压一条可撤销快照（无改动不压栈） */
   commitStrokeStyle: () => void;
   /** 连续手势起手元素快照（D5 两段式；非渲染态，置空表示手势未开始） */
@@ -228,6 +231,19 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set({ strokeWidth: width });
   },
 
+  inputFontSize: (size) => {
+    const { selectedId, elements } = get();
+    const el = elements.find((e) => e.id === selectedId);
+    if (el && el.type === 'text') {
+      if (!get().strokeGestureBefore) set({ strokeGestureBefore: el });
+      const { width, height } = measureTextElement({
+        content: el.content, fontSize: size, fontFamily: el.fontFamily,
+      });
+      get().updateElementTransient(el.id, { fontSize: size, width, height });
+    }
+    set({ fontSize: size });
+  },
+
   commitStrokeStyle: () => {
     const before = get().strokeGestureBefore;
     set({ strokeGestureBefore: null });
@@ -236,7 +252,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     if (!cur) return;
     const changed =
       cur.strokeWidth !== before.strokeWidth ||
-      elementStrokeColor(cur) !== elementStrokeColor(before);
+      elementStrokeColor(cur) !== elementStrokeColor(before) ||
+      (cur.type === 'text' && before.type === 'text' && cur.fontSize !== before.fontSize);
     if (!changed) return;
     get().pushOperations([{ type: 'update', elementId: before.id, before, after: { ...cur } }]);
   },
