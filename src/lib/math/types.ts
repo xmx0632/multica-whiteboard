@@ -94,9 +94,13 @@ export interface EllipseParams {
   rotation?: number;
 }
 
-/** 4a 结构校验结果（validateEquation 的返回）。错误文案沿用交互原型五类。 */
+/**
+ * 4a 结构校验结果（validateEquation 的返回）。错误文案沿用交互原型五类。
+ * ZOO-166 方案 A：explicit 携带 variable（自变量字母，缺省即 x）——任意单字母
+ * 可作自变量（y=4z ⟂ y=4x 同一条直线），图形与变量命名无关。
+ */
 export type StructuralOutcome =
-  | { kind: 'explicit' }
+  | { kind: 'explicit'; variable?: string }
   | { kind: 'line'; params: LineParams }
   | { kind: 'linePair'; params: LinePairParams }
   | { kind: 'point'; params: DegeneratePointParams }
@@ -104,15 +108,14 @@ export type StructuralOutcome =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
-  | { kind: 'error'; message: string; fix?: string };
+  | { kind: 'error'; message: string };
 
 /**
- * 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数。
- * ZOO-166：error 分支可选携带 fix（一键修正候选方程，如 y=4z → y=4x），
- * 编辑器据此渲染「改为 y=4x」替换 chip；旧消费方只读 message，零迁移。
+ * 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数
+ * 与自变量字母 variable（ZOO-166 方案 A；缺省即 x，非 x 时才携带）。
  */
 export type ParseResult =
-  | { kind: 'explicit'; fn: (x: number) => number }
+  | { kind: 'explicit'; fn: (x: number) => number; variable?: string }
   | { kind: 'line'; params: LineParams }
   | { kind: 'linePair'; params: LinePairParams }
   | { kind: 'point'; params: DegeneratePointParams }
@@ -120,7 +123,7 @@ export type ParseResult =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
-  | { kind: 'error'; message: string; fix?: string };
+  | { kind: 'error'; message: string };
 
 /** 采样折线（数学坐标，4c sample.ts 产物；MiniPreview / 主画布 / SVG 导出共用）。 */
 export type Polyline = Point[];
