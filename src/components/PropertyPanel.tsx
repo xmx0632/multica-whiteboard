@@ -10,8 +10,8 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
-import { COLORS, MathPlotElement, WhiteboardElement, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
-import { canRestyleFromToolPanel, elementStrokeColor } from '@/lib/stroke';
+import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
+import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
 import { validateEquation } from '@/lib/math/validate';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
@@ -20,12 +20,16 @@ import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import EquationEditor from './math/EquationEditor';
 import MathPlotParams, { type MathPlotParamsValue } from './math/MathPlotParams';
 
+/** 线型按钮组（ZOO-165）：顺序即面板展示序 */
+const DASH_STYLES: StrokeDashStyle[] = ['solid', 'dashed', 'dotted'];
+const DASH_LABELS: Record<StrokeDashStyle, string> = { solid: '实线', dashed: '虚线', dotted: '点线' };
+
 export default function PropertyPanel() {
   const {
     activeTool, elements, selectedId,
-    strokeColor, strokeWidth,
+    strokeColor, strokeWidth, strokeDash,
     fillColor, setFillColor, fontSize, setFontSize,
-    pickStrokeColor, inputStrokeColor, inputStrokeWidth, commitStrokeStyle, inputFontSize,
+    pickStrokeColor, inputStrokeColor, inputStrokeWidth, commitStrokeStyle, inputFontSize, pickStrokeDash,
     addElement, updateElement, updateElementTransient, deleteElement,
     setSelected, setTool, pushOperations, requestMathPlotInsert,
   } = useStore();
@@ -256,6 +260,12 @@ export default function PropertyPanel() {
   const panelColor = restyleTarget ? elementStrokeColor(restyleTarget) : strokeColor;
   const panelWidth = restyleTarget ? restyleTarget.strokeWidth : strokeWidth;
 
+  // 线型（ZOO-165）：选中描边类元素 → 改该元素；无选中 / text 选中外的场景 → 设新绘制默认。
+  // text 无描边不参与（选中 text 时线型区隐藏，颜色 / 线宽维持 ZOO-157 语义）。
+  const dashTarget = canDashFromToolPanel(selectedEl) ? selectedEl : null;
+  const showDash = dashTarget != null || selectedEl == null;
+  const panelDash = dashTarget ? elementDash(dashTarget) : strokeDash;
+
   const showFill = ['rectangle', 'circle'].includes(activeTool);
   const showFont = activeTool === 'text';
   // 字号滑杆（ZOO-159）：T 工具设默认字号；选中 text 元素时作用于该元素（D5 两段式）
@@ -300,6 +310,32 @@ export default function PropertyPanel() {
           className="touch-target w-full accent-blue-500"
         />
       </div>
+
+      {showDash && (
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">
+            Dash{dashTarget ? ' · 已选中元素' : ''}
+          </label>
+          <div className="flex gap-1">
+            {DASH_STYLES.map((d) => (
+              <button
+                key={d}
+                type="button"
+                title={DASH_LABELS[d]}
+                aria-label={DASH_LABELS[d]}
+                aria-pressed={panelDash === d}
+                onClick={() => pickStrokeDash(d)}
+                className={`touch-target flex-1 h-7 rounded-md border flex items-center justify-center ${panelDash === d ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'}`}
+              >
+                <span
+                  className="w-5"
+                  style={{ borderTop: `2px ${d} #374151` }}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showFill && (
         <div>

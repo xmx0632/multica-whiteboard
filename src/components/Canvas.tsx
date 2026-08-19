@@ -70,7 +70,7 @@ export default function Canvas() {
   const dragElementIdRef = useRef<string | null>(null);
 
   const {
-    elements, selectedId, activeTool, strokeColor, strokeWidth, fillColor,
+    elements, selectedId, activeTool, strokeColor, strokeWidth, strokeDash, fillColor,
     viewport, addElement, setSelected, setViewport, pushOperations,
     pendingMathPlot, consumeMathPlotInsert, setTool,
   } = useStore();
@@ -407,6 +407,7 @@ export default function Canvas() {
         x: point.x, y: point.y,
         points: [{ x: point.x, y: point.y }],
         strokeColor, strokeWidth, opacity: 1,
+        dash: strokeDash,
       };
       tempElementRef.current = el;
       return;
@@ -445,6 +446,7 @@ export default function Canvas() {
       const base = {
         id: uuidv4(), x: point.x, y: point.y,
         strokeColor, strokeWidth, opacity: 1,
+        dash: strokeDash,
       };
       switch (activeTool) {
         case 'rectangle':
@@ -461,7 +463,7 @@ export default function Canvas() {
           break;
       }
     }
-  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, fillColor, spaceDown, viewport, getLocalPoint, getCanvasPoint, setSelected, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, getLocalPoint, getCanvasPoint, setSelected, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {

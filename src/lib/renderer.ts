@@ -1,6 +1,16 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, Viewport, Point } from './types';
 import { drawMathPlot, resolvePlotRender } from './math/plot';
 import { plotTokenFor } from './math/cache';
+import { dashPatternFor } from './stroke';
+
+/**
+ * 描边线型（ZOO-165）：按元素 dash + 线宽设 ctx 虚线数组（世界 px 模式 × scale →
+ * 屏幕 px）。solid 不触碰 setLineDash；save/restore 作用域内调用即可，无需手动复位。
+ */
+function applyDash(ctx: CanvasRenderingContext2D, el: WhiteboardElement, scale: number) {
+  const pattern = dashPatternFor(el.dash, el.strokeWidth);
+  if (pattern.length > 0) ctx.setLineDash(pattern.map((v) => v * scale));
+}
 
 export function renderGrid(
   ctx: CanvasRenderingContext2D,
@@ -44,6 +54,7 @@ function drawPath(ctx: CanvasRenderingContext2D, el: PathElement, viewport: View
   ctx.lineWidth = el.strokeWidth * scale;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  applyDash(ctx, el, scale);
 
   ctx.beginPath();
   const p0 = el.points[0];
@@ -85,6 +96,7 @@ function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, view
   ctx.strokeStyle = el.strokeColor;
   ctx.lineWidth = el.strokeWidth * scale;
   ctx.lineJoin = 'round';
+  applyDash(ctx, el, scale);
 
   if (el.fillColor) {
     ctx.fillStyle = el.fillColor;
@@ -105,6 +117,7 @@ function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: 
   ctx.globalAlpha = el.opacity;
   ctx.strokeStyle = el.strokeColor;
   ctx.lineWidth = el.strokeWidth * scale;
+  applyDash(ctx, el, scale);
 
   ctx.beginPath();
   ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2);
@@ -124,6 +137,7 @@ function drawLine(ctx: CanvasRenderingContext2D, el: LineElement, viewport: View
   ctx.strokeStyle = el.strokeColor;
   ctx.lineWidth = el.strokeWidth * scale;
   ctx.lineCap = 'round';
+  applyDash(ctx, el, scale);
 
   ctx.beginPath();
   ctx.moveTo(el.x * scale + offsetX, el.y * scale + offsetY);
@@ -145,6 +159,7 @@ function drawArrow(ctx: CanvasRenderingContext2D, el: ArrowElement, viewport: Vi
   ctx.fillStyle = el.strokeColor;
   ctx.lineWidth = el.strokeWidth * scale;
   ctx.lineCap = 'round';
+  applyDash(ctx, el, scale);
 
   ctx.beginPath();
   ctx.moveTo(x1, y1);

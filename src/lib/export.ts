@@ -3,6 +3,7 @@ import { renderElement, getAllElementsBounds } from './renderer';
 import { resolvePlotRender, stepForAxis, formatTickLabel, MIN_GRID_PX, MIN_TICK_LABEL_PX } from './math/plot';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
+import { dashPatternFor } from './stroke';
 
 export interface ExportOptions {
   format: 'png' | 'jpg' | 'svg';
@@ -42,23 +43,29 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/** 线型 → SVG stroke-dasharray 属性片段（ZOO-165）：solid 返回空串保持既有输出 */
+function svgDashAttr(el: WhiteboardElement): string {
+  const pattern = dashPatternFor(el.dash, el.strokeWidth);
+  return pattern.length > 0 ? ` stroke-dasharray="${pattern.join(',')}"` : '';
+}
+
 function elementToSvg(el: WhiteboardElement): string {
   const opacity = el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
 
   switch (el.type) {
     case 'path':
-      return `<path d="${pathToSvgPath(el)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`;
+      return `<path d="${pathToSvgPath(el)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`;
     case 'rectangle':
-      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
+      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
     case 'circle': {
       const cx = el.x + el.width / 2;
       const cy = el.y + el.height / 2;
       const rx = el.width / 2;
       const ry = el.height / 2;
-      return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
+      return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
     }
     case 'line':
-      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" stroke-linecap="round"${opacity}/>`;
+      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} stroke-linecap="round"${opacity}/>`;
     case 'arrow': {
       const headLen = Math.max(10, el.strokeWidth * 4);
       const angle = Math.atan2(el.y2 - el.y, el.x2 - el.x);
@@ -66,7 +73,7 @@ function elementToSvg(el: WhiteboardElement): string {
       const ay1 = el.y2 - headLen * Math.sin(angle - Math.PI / 6);
       const ax2 = el.x2 - headLen * Math.cos(angle + Math.PI / 6);
       const ay2 = el.y2 - headLen * Math.sin(angle + Math.PI / 6);
-      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" stroke-linecap="round"${opacity}/>` +
+      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x2}" y2="${el.y2}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} stroke-linecap="round"${opacity}/>` +
         `<polygon points="${el.x2},${el.y2} ${ax1},${ay1} ${ax2},${ay2}" fill="${el.strokeColor}"${opacity}/>`;
     }
     case 'text': {
