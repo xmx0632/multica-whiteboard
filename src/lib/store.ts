@@ -6,12 +6,14 @@ import {
   Viewport,
   Operation,
   WhiteboardDocument,
+  StrokeDashStyle,
   DEFAULT_STROKE_COLOR,
   DEFAULT_STROKE_WIDTH,
+  DEFAULT_STROKE_DASH,
   DEFAULT_FONT_SIZE,
 } from './types';
 import type { EquationDraftPayload } from './math/types';
-import { strokeColorPatch, canRestyleFromToolPanel, elementStrokeColor } from './stroke';
+import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor } from './stroke';
 import { measureTextElement } from './textElement';
 
 interface WhiteboardState {
@@ -27,6 +29,8 @@ interface WhiteboardState {
   activeTool: ToolType;
   strokeColor: string;
   strokeWidth: number;
+  /** 新绘制默认线型（ZOO-165）：pen / rect / circle / line / arrow 建元素携带 */
+  strokeDash: StrokeDashStyle;
   fillColor: string | null;
   fontSize: number;
 
@@ -62,6 +66,8 @@ interface WhiteboardState {
   setTool: (tool: ToolType) => void;
   setStrokeColor: (color: string) => void;
   setStrokeWidth: (width: number) => void;
+  /** 线型点选（ZOO-165，离散）：有选中描边元素 → 立即改该元素线型（单条可撤销快照）并同步默认；无选中 → 仅设默认 */
+  pickStrokeDash: (dash: StrokeDashStyle) => void;
   setFillColor: (color: string | null) => void;
   setFontSize: (size: number) => void;
 
@@ -109,6 +115,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   activeTool: 'pen',
   strokeColor: DEFAULT_STROKE_COLOR,
   strokeWidth: DEFAULT_STROKE_WIDTH,
+  strokeDash: DEFAULT_STROKE_DASH,
   fillColor: null,
   fontSize: DEFAULT_FONT_SIZE,
 
@@ -198,6 +205,15 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   setTool: (tool) => set({ activeTool: tool, selectedId: null }),
   setStrokeColor: (color) => set({ strokeColor: color }),
   setStrokeWidth: (width) => set({ strokeWidth: width }),
+  // 线型与色板点选同语义（ZOO-165）：离散选择即时落元素，单条快照可撤销
+  pickStrokeDash: (dash) => {
+    const { selectedId, elements } = get();
+    const el = elements.find((e) => e.id === selectedId);
+    if (el && canDashFromToolPanel(el)) {
+      get().updateElement(el.id, { dash });
+    }
+    set({ strokeDash: dash });
+  },
   setFillColor: (color) => set({ fillColor: color }),
   setFontSize: (size) => set({ fontSize: size }),
 
