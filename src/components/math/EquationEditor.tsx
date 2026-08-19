@@ -9,10 +9,15 @@
  * - 回车 / 「插入图形」确认 → onConfirm(EquationDraftPayload)，error 态同样允许确认
  *   （4d 据此生成错误占位元素，交互原型决策 4）；
  * - 预览采样默认走 ZOO-134 管线（createPreviewPolylines），可注入替换。
+ * - ZOO-164：模板区按方程族分组折叠（默认首组展开），折叠状态会话级保持
+ *   （src/lib/templateGroupCollapse.ts）；插入行为与平铺版零差异。
+ * - ZOO-166：错误态带一键修正候选（outcome.fix，如 y=4z → 改为 y=4x）时，
+ *   状态行下方渲染替换 chip，点击整串替换输入框并聚焦（复用 applyTemplate）。
  */
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import MiniPreview from './MiniPreview';
-import { EQUATION_TEMPLATES, SYMBOL_BUTTONS } from '@/lib/math/templates';
+import { SYMBOL_BUTTONS, groupTemplates } from '@/lib/math/templates';
+import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
 import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
 import type { EquationDraftPayload, PreviewData, StructuralOutcome } from '@/lib/math/types';
@@ -47,6 +52,15 @@ export default function EquationEditor({
 }: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // ZOO-164：分组折叠状态（会话级 store——面板收起 / 切工具再回来不丢）。
+  // 第三参 getServerSnapshot 供 SSG 预渲染（mathplot-demo 静态导出），快照确定无 hydration 问题
+  const expandedGroupIds = useSyncExternalStore(
+    subscribeTemplateGroupCollapse,
+    getExpandedGroupIds,
+    getExpandedGroupIds,
+  );
+  const templateGroups = useMemo(() => groupTemplates(), []);
 
   const trimmed = draft.trim();
   const outcome = useMemo(() => validateEquation(draft), [draft]);
@@ -93,6 +107,9 @@ export default function EquationEditor({
   };
   const status = statusLine();
 
+  // ZOO-166：一键修正候选（仅未知单字母符号手滑，如 y=4z → y=4x）
+  const fix = isError && outcome.kind === 'error' && outcome.fix !== trimmed ? outcome.fix : undefined;
+
   return (
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5 pb-0.5">
@@ -133,6 +150,16 @@ export default function EquationEditor({
           aria-label="方程输入"
         />
         <div className={`text-[11px] mt-1 leading-snug ${status.cls}`}>{status.text}</div>
+        {fix && (
+          <button
+            type="button"
+            onClick={() => applyTemplate(fix)}
+            className="touch-target mt-1 max-w-full items-center gap-1 inline-flex border border-blue-300 bg-blue-50 rounded-md px-1.5 py-0.5 text-[11px] text-blue-600 cursor-pointer hover:border-blue-500 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+          >
+            <span aria-hidden="true">↺</span>
+            <span className="font-serif truncate">改为 {fix}</span>
+          </button>
+        )}
       </div>
 
       {/* ZOO-144：小屏（粗指针）下内容超高 → 中段内滚，方程输入与插入按钮钉在可视区 */}
@@ -167,21 +194,52 @@ export default function EquationEditor({
 
       <div>
         <span className="text-xs font-medium text-gray-500 mb-1 block">模板 Templates</span>
-        <div className="grid grid-cols-2 gap-1">
-          {EQUATION_TEMPLATES.map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              title={t.equation}
-              onClick={() => applyTemplate(t.equation)}
-              className="touch-target border border-gray-200 bg-white rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
-            >
-              <span className="block text-[10px] text-gray-400 leading-tight">{t.name}</span>
-              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">
-                {t.equation}
-              </span>
-            </button>
-          ))}
+        <div className="flex flex-col gap-1">
+          {templateGroups.map((group) => {
+            const expanded = expandedGroupIds.has(group.id);
+            const listId = `tpl-group-${group.id}`;
+            return (
+              <div key={group.id} className="border border-gray-200 rounded-md overflow-hidden bg-white">
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={listId}
+                  title={`${group.name}（${group.templates.length} 个模板）`}
+                  onClick={() => toggleGroupExpansion(group.id)}
+                  className="touch-target w-full flex items-center gap-1.5 px-1.5 py-1 border-none bg-transparent cursor-pointer hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
+                >
+                  <span className="text-[11px] font-medium text-gray-600">{group.name}</span>
+                  <span className="text-[10px] text-gray-400">{group.templates.length}</span>
+                  <span
+                    className={`ml-auto text-gray-400 text-[11px] leading-none transition-transform duration-150 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+                    aria-hidden="true"
+                  >
+                    ⌄
+                  </span>
+                </button>
+                <div className="group-collapse" data-collapsed={!expanded}>
+                  <div className="group-collapse-inner">
+                    <div id={listId} className="grid grid-cols-2 gap-1 p-1 pt-0">
+                      {group.templates.map((t) => (
+                      <button
+                        key={t.name}
+                        type="button"
+                        title={t.equation}
+                        onClick={() => applyTemplate(t.equation)}
+                        className="touch-target border border-gray-200 bg-white rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
+                      >
+                        <span className="block text-[10px] text-gray-400 leading-tight">{t.name}</span>
+                        <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">
+                          {t.equation}
+                        </span>
+                      </button>
+                    ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
       </div>{/* /touch-scroll */}

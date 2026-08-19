@@ -4,7 +4,8 @@ import { useStore } from '@/lib/store';
 import { ToolType } from '@/lib/types';
 
 const tools: { tool: ToolType; label: string; shortcut: string; icon: string; divider?: boolean }[] = [
-  { tool: 'select', label: 'Select', shortcut: 'V', icon: '⇱' },
+  { tool: 'hand', label: 'Hand (Pan)', shortcut: 'H', icon: '✋' },
+  { tool: 'select', label: 'Select', shortcut: 'V', icon: '⇱', divider: true },
   { tool: 'pen', label: 'Pen', shortcut: 'B', icon: '✎' },
   { tool: 'rectangle', label: 'Rectangle', shortcut: 'R', icon: '▭' },
   { tool: 'circle', label: 'Circle', shortcut: 'C', icon: '○' },

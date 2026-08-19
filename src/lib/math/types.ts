@@ -104,9 +104,13 @@ export type StructuralOutcome =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; fix?: string };
 
-/** 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数。 */
+/**
+ * 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数。
+ * ZOO-166：error 分支可选携带 fix（一键修正候选方程，如 y=4z → y=4x），
+ * 编辑器据此渲染「改为 y=4x」替换 chip；旧消费方只读 message，零迁移。
+ */
 export type ParseResult =
   | { kind: 'explicit'; fn: (x: number) => number }
   | { kind: 'line'; params: LineParams }
@@ -116,7 +120,7 @@ export type ParseResult =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; fix?: string };
 
 /** 采样折线（数学坐标，4c sample.ts 产物；MiniPreview / 主画布 / SVG 导出共用）。 */
 export type Polyline = Point[];

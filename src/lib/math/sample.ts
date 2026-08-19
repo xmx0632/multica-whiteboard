@@ -92,7 +92,8 @@ export function sampleExplicit(
     ys[i] = y;
     if (Number.isFinite(y)) finiteYs.push(y);
   }
-  if (finiteYs.length === 0) return { error: '定义域内无有效值' };
+  // ZOO-166：附「怎么办」指引（调整定义域或检查表达式）
+  if (finiteYs.length === 0) return { error: '定义域内无有效值——请调整定义域或检查表达式（如 y=√x 需 x≥0）' };
 
   const auto = fitYWindow(finiteYs);
   const yMin = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMin : auto.min;

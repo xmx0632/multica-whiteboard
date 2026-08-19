@@ -11,6 +11,8 @@
  * 分类与错误文案逐条对齐交互原型五类（无法识别的符号 / 括号未闭合 /
  * 表达式不完整 / 定义域内无有效值〔采样期报〕/ 暂不支持隐式方程），
  * 与 4a 结构校验（validate.ts）的既有文案保持一致。
+ * ZOO-166：错误文案全面升级为「现象 + 怎么办」双段式（——分隔）；
+ * 未知单字母符号（z/t/a 手滑）附一键修正候选 fix（buildSymbolFix）。
  */
 import { parse } from 'mathjs/number';
 import type { MathNode } from 'mathjs/number';
@@ -19,7 +21,8 @@ import { buildImplicitExpression, classifyImplicit, splitTopLevelEquals, type Bi
 import { compileCached } from './cache';
 import type { CircleParams, EllipseParams, ParseResult } from './types';
 
-const err = (message: string): ParseResult => ({ kind: 'error', message });
+const err = (message: string, fix?: string): ParseResult =>
+  fix ? { kind: 'error', message, fix } : { kind: 'error', message };
 
 /** 圆 (x-a)²+(y-b)²=r² / 椭圆 x²/A+(y-b)²/B=1 标准形识别（原型 detectGeometry 平移）。 */
 function detectGeometry(src: string): ParseResult | null {
@@ -67,57 +70,99 @@ for (const name of ALLOWED_FUNCTIONS) {
 }
 
 /**
+ * AST 节点白名单巡检结果（ZOO-166 起为结构化）：
+ * message 为用户可读文案；symbol 为首个未知单字母符号名（一键修正候选依据）。
+ */
+interface NodeProblem {
+  message: string;
+  symbol?: string;
+}
+
+/** 兜底文案（ZOO-166）：带「怎么办」指引的通用错误。 */
+const GENERIC_MESSAGE = '无法识别的表达式——请检查输入格式（如 y=sin(x)）';
+/** 字符白名单拒绝文案（ZOO-166）：附输入法指引。 */
+const BAD_CHAR_SUFFIX = '——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符';
+
+/**
  * AST 节点白名单巡检（安全防线之二，PRD §8 禁公式注入）：
  * 只放行 Constant / 白名单 Symbol / 白名单 Function / Operator / Parenthesis；
  * Assignment / Accessor / Conditional / Block 等一律拒绝。
- * 返回 null 表示通过，否则为用户可读错误文案。
+ * 返回 null 表示通过，否则为结构化问题（message + 可选未知符号）。
  */
-function checkNode(node: MathNode, symbols: Set<string> = ALLOWED_SYMBOLS): string | null {
+function checkNode(node: MathNode, symbols: Set<string> = ALLOWED_SYMBOLS, implicit = false): NodeProblem | null {
   switch (node.type) {
     case 'ConstantNode':
       return null;
     case 'ParenthesisNode': {
       const content = (node as unknown as { content?: MathNode }).content;
-      return content ? checkNode(content, symbols) : '无法识别的表达式';
+      return content ? checkNode(content, symbols, implicit) : { message: GENERIC_MESSAGE };
     }
     case 'OperatorNode': {
       const args = (node as unknown as { args?: MathNode[] }).args ?? [];
-      if (args.length === 0) return '无法识别的表达式';
+      if (args.length === 0) return { message: GENERIC_MESSAGE };
       for (const arg of args) {
-        const problem = checkNode(arg, symbols);
+        const problem = checkNode(arg, symbols, implicit);
         if (problem) return problem;
       }
       return null;
     }
     case 'SymbolNode': {
       const name = (node as unknown as { name?: string }).name ?? '';
-      return symbols.has(name) ? null : `无法识别的符号 “${name}”`;
+      if (symbols.has(name)) return null;
+      // ZOO-166：未知符号附自变量指引；隐式路径 y 也是合法变量
+      const hint = implicit ? '请使用 x、y 作为变量（如 y=2x）' : '请使用 x 作为自变量（如 y=4x）';
+      return {
+        message: `无法识别符号 “${name}”——${hint}`,
+        symbol: /^[a-z]$/.test(name) ? name : undefined,
+      };
     }
     case 'FunctionNode': {
       const fn = (node as unknown as { fn?: { name?: string } }).fn;
       const name = fn?.name ?? '';
-      if (!ALLOWED_FUNCTIONS.has(name)) return `无法识别的符号 “${name}”`;
+      if (!ALLOWED_FUNCTIONS.has(name)) {
+        return { message: `无法识别的函数 “${name}”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan` };
+      }
       const [min, max] = FUNCTION_ARITY[name];
       const args = (node as unknown as { args?: MathNode[] }).args ?? [];
-      if (args.length < min || args.length > max) return '无法识别的表达式';
+      if (args.length < min || args.length > max) {
+        return { message: '函数参数个数有误——请检查括号内的参数（如 sin(x)、log(8,2)）' };
+      }
       for (const arg of args) {
-        const problem = checkNode(arg, symbols);
+        const problem = checkNode(arg, symbols, implicit);
         if (problem) return problem;
       }
       return null;
     }
     default:
       // AssignmentNode / AccessorNode / ConditionalNode / BlockNode / RangeNode …
-      return '无法识别的表达式';
+      return { message: GENERIC_MESSAGE };
   }
 }
 
-/** mathjs SyntaxError → 原型五类文案映射。 */
+/**
+ * 未知单字母符号一键修正候选（ZOO-166）：raw 中该符号的独立出现（前后非字母，
+ * 不误伤 sin 内的字母）全部替换为目标变量，重新解析通过才给建议——
+ * propose-and-verify，天然排除 y=z+t（两个未知变量，替换后仍报错）这类坏建议。
+ * 显式路径目标恒为 x；隐式路径 raw 已含 x 时改提 y（z=4x → y=4x 更贴近本意）。
+ */
+function buildSymbolFix(raw: string, symbol: string, replacement: string): string | undefined {
+  const isLetter = (ch: string | undefined): boolean => !!ch && /[a-z]/i.test(ch);
+  let candidate = '';
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    // 逐字符扫描（不用 lookbehind 正则：兼容旧 Safari，且无相邻边界吞字符问题）
+    candidate += ch.toLowerCase() === symbol && !isLetter(raw[i - 1]) && !isLetter(raw[i + 1]) ? replacement : ch;
+  }
+  candidate = candidate.trim();
+  return candidate && parseEquation(candidate).kind !== 'error' ? candidate : undefined;
+}
+
+/** mathjs SyntaxError → 原型五类文案映射（ZOO-166：附「怎么办」指引）。 */
 function mapSyntaxError(message: string): string {
-  if (/parenthesis/i.test(message)) return '括号或绝对值符号未闭合';
-  if (/unexpected end/i.test(message)) return '表达式不完整';
-  if (/unexpected part/i.test(message)) return '数字格式有误';
-  return '无法识别的表达式';
+  if (/parenthesis/i.test(message)) return '括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)';
+  if (/unexpected end/i.test(message)) return '表达式不完整——请补全公式，如 y=2x+1';
+  if (/unexpected part/i.test(message)) return '数字格式有误——请检查数字写法，如 1.5';
+  return GENERIC_MESSAGE;
 }
 
 /** 隐式方程不支持文案（D7 引导式：非多项式隐式；空集另有专用文案）。 */
@@ -133,14 +178,14 @@ const UNSUPPORTED_IMPLICIT =
  * 退化形 → 'linePair'（两直线）/ 'point'（单点）出图、空集友好报错；
  * 非多项式 → 引导文案。
  */
-function parseImplicit(src: string): ParseResult {
+function parseImplicit(src: string, raw: string): ParseResult {
   const split = splitTopLevelEquals(src);
   if (!split) return err(src.includes('=') ? '方程只能包含一个等号' : '方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
   const expr = buildImplicitExpression(split.lhs, split.rhs);
 
   // 字符白名单（与显式路径同款， '#' 等必须在 parse 前拦截）
   const badChar = expr.match(/[^a-z0-9+\-*/^().,]/);
-  if (badChar) return err(`无法识别的字符 “${badChar[0]}”`);
+  if (badChar) return err(`无法识别的字符 “${badChar[0]}”${BAD_CHAR_SUFFIX}`);
 
   let node: MathNode;
   try {
@@ -149,8 +194,12 @@ function parseImplicit(src: string): ParseResult {
     return err(mapSyntaxError(e instanceof Error ? e.message : String(e)));
   }
 
-  const problem = checkNode(node, IMPLICIT_SYMBOLS);
-  if (problem) return err(problem);
+  const problem = checkNode(node, IMPLICIT_SYMBOLS, true);
+  if (problem) {
+    // ZOO-166：隐式路径修正目标——raw 已含 x 提 y，否则提 x（a=2 → x=2、z=4x → y=4x）
+    const fix = problem.symbol ? buildSymbolFix(raw, problem.symbol, src.includes('x') ? 'y' : 'x') : undefined;
+    return err(problem.message, fix);
+  }
 
   try {
     const compiled = compileCached(expr, node);
@@ -173,7 +222,7 @@ function parseImplicit(src: string): ParseResult {
     if (outcome.kind === 'degenerate' || outcome.kind === 'unsupported') return err(outcome.message);
     return err(UNSUPPORTED_IMPLICIT);
   } catch {
-    return err('无法识别的表达式');
+    return err(GENERIC_MESSAGE);
   }
 }
 
@@ -188,26 +237,26 @@ export function parseEquation(raw: string): ParseResult {
   if (!src) return err('请输入方程');
 
   // 未配对的 | / √ 在归一化中保留原样，统一在此报未闭合
-  if (src.includes('|') || src.includes('√')) return err('括号或绝对值符号未闭合');
+  if (src.includes('|') || src.includes('√')) return err('括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)');
 
   const geo = detectGeometry(src);
   if (geo) return geo;
 
   // 剥离 y= / f(x)= 前缀
   const body = src.replace(/^y=/, '').replace(/^f\(x\)=/, '');
-  if (!body) return err('方程缺少右侧表达式');
+  if (!body) return err('方程缺少右侧表达式——请输入 y=f(x) 形式，如 y=2x+1');
 
   // 剩余 '=' 或裸 y：既非 y=f(x) 前缀、也未命中几何标准形 → 隐式方程分类（D7）
-  if (body.includes('=')) return parseImplicit(src);
+  if (body.includes('=')) return parseImplicit(src, raw);
   if (/(^|[^a-z])y([^a-z]|$)/.test(body)) {
     // 等号被剥前缀后右侧仍含自由 y（如 y=x+y ⟺ x=0）→ 按隐式方程整体分类；
     // 无等号的裸 y（如 "2y"，数字邻接按 mathjs 原生隐式乘法保留）不是方程，单独引导
-    return src.includes('=') ? parseImplicit(src) : err('方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
+    return src.includes('=') ? parseImplicit(src, raw) : err('方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
   }
 
   // 字符白名单（mathjs 会把 '#' 等解析为 undefined 常量，必须前置拦截）
   const badChar = body.match(/[^a-z0-9+\-*/^().,]/);
-  if (badChar) return err(`无法识别的字符 “${badChar[0]}”`);
+  if (badChar) return err(`无法识别的字符 “${badChar[0]}”${BAD_CHAR_SUFFIX}`);
 
   let node: MathNode;
   try {
@@ -217,7 +266,11 @@ export function parseEquation(raw: string): ParseResult {
   }
 
   const problem = checkNode(node);
-  if (problem) return err(problem);
+  if (problem) {
+    // ZOO-166：显式路径修正目标恒为 x（y=4z → y=4x）
+    const fix = problem.symbol ? buildSymbolFix(raw, problem.symbol, 'x') : undefined;
+    return err(problem.message, fix);
+  }
 
   try {
     const compiled = compileCached(body, node);
@@ -232,6 +285,6 @@ export function parseEquation(raw: string): ParseResult {
     };
     return { kind: 'explicit', fn };
   } catch {
-    return err('无法识别的表达式');
+    return err(GENERIC_MESSAGE);
   }
 }

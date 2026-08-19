@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { exportToImage, exportToSvg, downloadBlob, downloadText } from '@/lib/export';
 import { saveToLocal, saveToServer } from '@/lib/persistence';
+import { usePhonePortrait } from '@/lib/usePhonePortrait';
+import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
+import ZoomControl from './ZoomControl';
 
 export default function TopMenuBar() {
   const {
@@ -13,6 +16,17 @@ export default function TopMenuBar() {
   const [showExport, setShowExport] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  // 手机竖屏（ZOO-152 追加）：菜单默认收起为一枚钮，点击弹出完整面板
+  const phonePortrait = usePhonePortrait();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // 画布触点 / 展开菜单后操作完随手落笔 → 自动收起（与底部抽屉同语义）
+  useEffect(() => {
+    const close = () => setMenuOpen(false);
+    window.addEventListener(CANVAS_INTERACT_EVENT, close);
+    return () => window.removeEventListener(CANVAS_INTERACT_EVENT, close);
+  }, []);
 
   const handleExportPng = useCallback(async () => {
     const blob = await exportToImage(elements, 'png', { scale: 2 });
@@ -61,8 +75,8 @@ export default function TopMenuBar() {
     newDocument();
   }, [isDirty, newDocument]);
 
-  return (
-    <div className="whiteboard-chrome touch-menubar absolute top-3 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center gap-1 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-2 py-1.5 z-10">
+  const barContent = (
+    <>
       <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title="New (Ctrl+N)">
         New
       </button>
@@ -108,10 +122,42 @@ export default function TopMenuBar() {
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <span className="text-xs text-gray-500 px-1">{Math.round(viewport.scale * 100)}%</span>
+      <ZoomControl />
 
       {message && <span className="text-xs text-green-600 px-1">{message}</span>}
       {isDirty && <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />}
+    </>
+  );
+
+  // —— 手机竖屏：默认收起为一枚钮（顶部不常驻占位），点击弹出完整面板 ——
+  if (phonePortrait && !menuOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setMenuOpen(true)}
+        aria-label="展开菜单面板"
+        className="whiteboard-chrome touch-target absolute top-3 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 z-10"
+      >
+        ☰ 菜单
+      </button>
+    );
+  }
+
+  return (
+    <div className="whiteboard-chrome touch-menubar absolute top-3 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center gap-1 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-2 py-1.5 z-10">
+      {barContent}
+      {phonePortrait && (
+        <>
+          <div className="w-px h-5 bg-gray-200" />
+          <button
+            onClick={() => setMenuOpen(false)}
+            aria-label="收起菜单面板"
+            className="touch-target px-2 py-1 text-xs text-gray-400 hover:text-gray-600 active:text-gray-800 rounded-md"
+          >
+            ✕
+          </button>
+        </>
+      )}
     </div>
   );
 }

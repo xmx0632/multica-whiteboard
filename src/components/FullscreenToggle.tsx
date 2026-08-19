@@ -3,12 +3,13 @@
 import { useFullscreenToggle } from '@/lib/useFullscreenToggle';
 
 /**
- * 移动端全屏切换钮（ZOO-152 追加需求）：右上角常驻。
- * - 竖屏：进入「横屏全屏」（全屏 + 方向锁横屏，最大化画布）；
- * - 横屏非全屏：进入全屏；全屏中：退出全屏（方向锁随之释放）。
+ * 移动端全屏切换钮（ZOO-152 追加需求）。
+ * - 竖屏手机：由 page.tsx 放入右下角操作行（inRow，与沉浸钮同行）；
+ * - 横屏 / 平板竖屏：右上角常驻（绝对定位）；
+ * - 竖屏：进入「横屏全屏」（全屏 + 方向锁横屏）；横屏非全屏：进入全屏；全屏中：退出。
  * 桌面（细指针）与不支持元素全屏的浏览器（iOS Safari）不渲染。
  */
-export default function FullscreenToggle() {
+export default function FullscreenToggle({ inRow = false }: { inRow?: boolean }) {
   const { mode, onToggle } = useFullscreenToggle();
 
   if (mode === 'hidden') return null;
@@ -23,7 +24,7 @@ export default function FullscreenToggle() {
       type="button"
       onClick={onToggle}
       aria-label={label}
-      className={`fullscreen-toggle whiteboard-chrome touch-target absolute top-3 right-3 z-20 px-3 py-1.5 text-xs rounded-xl shadow-lg border flex items-center gap-1 backdrop-blur-sm transition-colors ${
+      className={`fullscreen-toggle whiteboard-chrome touch-target ${inRow ? '' : 'absolute top-3 right-3'} z-20 px-3 py-1.5 text-xs rounded-xl shadow-lg border flex items-center gap-1 backdrop-blur-sm transition-colors ${
         mode === 'exit'
           ? 'bg-gray-900/85 text-white border-gray-700 active:bg-gray-900'
           : 'bg-white/90 text-gray-600 border-gray-200 hover:bg-gray-50 active:bg-gray-100'

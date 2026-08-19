@@ -279,35 +279,35 @@ describe('parseEquation 求值正确性（mathjs number 构建）', () => {
 });
 
 describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () => {
-  it('空输入 / 缺右侧', () => {
+  it('空输入 / 缺右侧（ZOO-166：附「怎么办」指引）', () => {
     expect(errorMessage('')).toBe('请输入方程');
     expect(errorMessage('   ')).toBe('请输入方程');
-    expect(errorMessage('y=')).toBe('方程缺少右侧表达式');
+    expect(errorMessage('y=')).toBe('方程缺少右侧表达式——请输入 y=f(x) 形式，如 y=2x+1');
   });
 
-  it('不可识别的符号（AST 白名单拒绝）', () => {
-    expect(errorMessage('y=foo(x)')).toBe('无法识别的符号 “foo”');
-    expect(errorMessage('y=x+t')).toBe('无法识别的符号 “t”');
+  it('不可识别的符号 / 函数（AST 白名单拒绝，ZOO-166 指引）', () => {
+    expect(errorMessage('y=foo(x)')).toBe('无法识别的函数 “foo”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan');
+    expect(errorMessage('y=x+t')).toBe('无法识别符号 “t”——请使用 x 作为自变量（如 y=4x）');
   });
 
   it('不可识别的字符（mathjs 会把 # 吞成 undefined 常量，须前置拦截）', () => {
-    expect(errorMessage('#')).toBe('无法识别的字符 “#”');
-    expect(errorMessage('y=2#3')).toBe('无法识别的字符 “#”');
-    expect(errorMessage("y=x);require('fs')")).toBe('无法识别的字符 “;”');
+    expect(errorMessage('#')).toBe('无法识别的字符 “#”——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符');
+    expect(errorMessage('y=2#3')).toBe('无法识别的字符 “#”——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符');
+    expect(errorMessage("y=x);require('fs')")).toBe('无法识别的字符 “;”——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符');
   });
 
   it('括号 / 绝对值未闭合', () => {
-    expect(errorMessage('y=sin(x')).toBe('括号或绝对值符号未闭合');
-    expect(errorMessage('y=abs(x-1')).toBe('括号或绝对值符号未闭合');
-    expect(errorMessage('y=|x-1')).toBe('括号或绝对值符号未闭合');
-    expect(errorMessage('y=(x+1')).toBe('括号或绝对值符号未闭合');
+    expect(errorMessage('y=sin(x')).toBe('括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)');
+    expect(errorMessage('y=abs(x-1')).toBe('括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)');
+    expect(errorMessage('y=|x-1')).toBe('括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)');
+    expect(errorMessage('y=(x+1')).toBe('括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)');
   });
 
-  it('表达式不完整 / 数字格式', () => {
-    expect(errorMessage('y=2+')).toBe('表达式不完整');
-    expect(errorMessage('y=sin()')).toBe('无法识别的表达式'); // 函数零参（arity 白名单）
-    expect(errorMessage('2..5')).toBe('数字格式有误');
-    expect(errorMessage('y=2.5.3')).toBe('数字格式有误');
+  it('表达式不完整 / 函数参数 / 数字格式', () => {
+    expect(errorMessage('y=2+')).toBe('表达式不完整——请补全公式，如 y=2x+1');
+    expect(errorMessage('y=sin()')).toBe('函数参数个数有误——请检查括号内的参数（如 sin(x)、log(8,2)）'); // 函数零参（arity 白名单）
+    expect(errorMessage('2..5')).toBe('数字格式有误——请检查数字写法，如 1.5');
+    expect(errorMessage('y=2.5.3')).toBe('数字格式有误——请检查数字写法，如 1.5');
   });
 
   it('隐式方程：非多项式仍明确拒绝（不白屏）', () => {
@@ -375,16 +375,16 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
     expect(errorMessage('0=1')).toBe('该等式恒不成立（化简后左右两侧不相等），无图像');
     expect(errorMessage('x==3')).toBe('方程只能包含一个等号');
     expect(errorMessage('2y')).toBe('方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
-    expect(errorMessage('a=2')).toBe('无法识别的符号 “a”'); // 非白名单符号走 AST 拦截
+    expect(errorMessage('a=2')).toBe('无法识别符号 “a”——请使用 x、y 作为变量（如 y=2x）'); // 非白名单符号走 AST 拦截（隐式路径）
   });
 });
 
 describe('parseEquation 安全性（PRD §8 禁 eval / 公式注入）', () => {
   it('属性访问 / 赋值 / 条件 / 块节点一律拒绝', () => {
-    expect(errorMessage('y=x.constructor')).toBe('无法识别的表达式'); // AccessorNode（字符白名单放行，AST 白名单拒绝）
-    expect(errorMessage('y=__proto__.x')).toBe('无法识别的字符 “_”'); // 字符白名单前置拦截
-    expect(errorMessage('y=x?1:2')).toBe('无法识别的字符 “?”');
-    expect(errorMessage('y=x;1')).toBe('无法识别的字符 “;”');
+    expect(errorMessage('y=x.constructor')).toBe('无法识别的表达式——请检查输入格式（如 y=sin(x)）'); // AccessorNode（字符白名单放行，AST 白名单拒绝）
+    expect(errorMessage('y=__proto__.x')).toBe('无法识别的字符 “_”——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符'); // 字符白名单前置拦截
+    expect(errorMessage('y=x?1:2')).toBe('无法识别的字符 “?”——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符');
+    expect(errorMessage('y=x;1')).toBe('无法识别的字符 “;”——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符');
   });
 
   it('注入载荷在 parse/白名单阶段即失败，不产生求值函数', () => {
@@ -411,7 +411,57 @@ describe('validateEquation（编辑器每键调用的薄适配）', () => {
   it('消费结构与 4a 契约一致（kind/message/params，无 fn）', () => {
     expect(validateEquation('y=sin(x)')).toEqual({ kind: 'explicit' });
     expect(validateEquation('(x-1)²+(y-2)²=9')).toEqual({ kind: 'circle', params: { cx: 1, cy: 2, r: 3 } });
-    expect(validateEquation('y=2+')).toEqual({ kind: 'error', message: '表达式不完整' });
+    expect(validateEquation('y=2+')).toEqual({ kind: 'error', message: '表达式不完整——请补全公式，如 y=2x+1' });
     expect(validateEquation('')).toEqual({ kind: 'error', message: '请输入方程' });
+  });
+});
+
+describe('未知符号一键修正 fix（ZOO-166）', () => {
+  const fixOf = (raw: string): string | undefined => {
+    const r = parseEquation(raw);
+    return r.kind === 'error' ? r.fix : undefined;
+  };
+
+  it('y=4z / y=4t：单字母手滑 → 改为 y=4x（propose-and-verify）', () => {
+    expect(errorMessage('y=4z')).toBe('无法识别符号 “z”——请使用 x 作为自变量（如 y=4x）');
+    expect(fixOf('y=4z')).toBe('y=4x');
+    expect(fixOf('y=4t')).toBe('y=4x');
+  });
+
+  it('同一未知符号多次出现全部替换，保留用户书写形式', () => {
+    expect(fixOf('y=z²+2z')).toBe('y=x²+2x');
+    expect(fixOf('  y=4z  ')).toBe('y=4x'); // 首尾空白不进入建议
+  });
+
+  it('大写输入同样命中（归一化小写后比对）', () => {
+    expect(fixOf('Y=4Z')).toBe('Y=4x');
+  });
+
+  it('替换不得误伤已知词内的字母（如 sin 的 s）', () => {
+    expect(fixOf('y=s+z')).toBeUndefined(); // 两个未知符号：替换任一后仍报错，不给建议
+    expect(errorMessage('y=s+z')).toBe('无法识别符号 “s”——请使用 x 作为自变量（如 y=4x）');
+    // sin 内的 s 不是独立符号，唯一未知是 t：sin 原样保留
+    expect(fixOf('y=sin(t)')).toBe('y=sin(x)');
+  });
+
+  it('多字母符号 / 未知函数只升级文案，不给替换建议', () => {
+    expect(fixOf('y=foo')).toBeUndefined();
+    expect(fixOf('y=foo(x)')).toBeUndefined();
+  });
+
+  it('隐式路径：raw 已含 x 时建议改 y（z=4x → y=4x），否则改 x（a=2 → x=2）', () => {
+    expect(fixOf('z=4x')).toBe('y=4x');
+    expect(fixOf('a=2')).toBe('x=2');
+    expect(errorMessage('z=4x')).toBe('无法识别符号 “z”——请使用 x、y 作为变量（如 y=2x）');
+  });
+
+  it('validateEquation 透传 fix（编辑器「改为」chip 消费）', () => {
+    expect(validateEquation('y=4z')).toEqual({
+      kind: 'error',
+      message: '无法识别符号 “z”——请使用 x 作为自变量（如 y=4x）',
+      fix: 'y=4x',
+    });
+    // 非符号类错误不带 fix，旧消费方零感知
+    expect(validateEquation('y=2+')).not.toHaveProperty('fix');
   });
 });
