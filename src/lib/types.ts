@@ -42,13 +42,23 @@ export interface CircleElement extends BaseElement {
   fillColor: string | null;
 }
 
-export interface LineElement extends BaseElement {
+/**
+ * 折线顶点（ZOO-168）：可选——无 points 或 ≤2 顶点即两点退化直线（旧文档天然等价）。
+ * points[0] 镜像起点 x/y、末位镜像终点 x2/y2，>2 顶点为折线形态；两端字段与
+ * 首尾顶点的一致性由 polyline.ts 的 polylinePatch 统一维护（增删 / 拖动顶点
+ * 均产出完整补丁，不出现双数据源漂移）。
+ */
+export interface LinearVertices {
+  points?: Point[];
+}
+
+export interface LineElement extends BaseElement, LinearVertices {
   type: 'line';
   x2: number;
   y2: number;
 }
 
-export interface ArrowElement extends BaseElement {
+export interface ArrowElement extends BaseElement, LinearVertices {
   type: 'arrow';
   x2: number;
   y2: number;

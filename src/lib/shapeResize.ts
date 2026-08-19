@@ -10,6 +10,7 @@
  */
 import { WhiteboardElement, RectangleElement, CircleElement, LineElement, ArrowElement, PathElement } from './types';
 import { getElementBounds } from './renderer';
+import { lineVertices, polylinePatch, isPolyline } from './polyline';
 
 /** 角控点方位（rect/circle/path 共用；mathPlot 8 控点的角子集） */
 export type CornerHandle = 'nw' | 'ne' | 'sw' | 'se';
@@ -68,13 +69,22 @@ export function boxResizePatch(
 /**
  * 端点手柄（line/arrow）：p1 拖拽改起点 x/y（终点不动），p2 改终点 x2/y2。
  * 端点可自由移动（两端可重合，与绘制单击落线的既有语义一致）。
+ * 折线形态（ZOO-168）经 polylinePatch 同步改首/尾顶点，防止 x/y 与 points[0]
+ * 双数据源漂移（lineVertices 优先读 points，漏改会出现端点拖不动的表象）。
  */
 export function endpointResizePatch(
   handle: 'p1' | 'p2',
   startEl: LineElement | ArrowElement,
   world: { x: number; y: number }
 ): Partial<LineElement> {
-  return handle === 'p1' ? { x: world.x, y: world.y } : { x2: world.x, y2: world.y };
+  // 普通两点直线：仅改端点字段（既有最小补丁契约，调用方合并语义不变）
+  if (!isPolyline(startEl)) {
+    return handle === 'p1' ? { x: world.x, y: world.y } : { x2: world.x, y2: world.y };
+  }
+  const vertices = lineVertices(startEl).map((p) => ({ x: p.x, y: p.y }));
+  if (handle === 'p1') vertices[0] = { x: world.x, y: world.y };
+  else vertices[vertices.length - 1] = { x: world.x, y: world.y };
+  return polylinePatch(startEl, vertices);
 }
 
 /**

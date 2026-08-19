@@ -2,6 +2,7 @@ import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineEl
 import { drawMathPlot, resolvePlotRender } from './math/plot';
 import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
+import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
 
 /**
  * 描边线型（ZOO-165）：按元素 dash + 线宽设 ctx 虚线数组（世界 px 模式 × scale →
@@ -129,29 +130,44 @@ function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: 
   ctx.restore();
 }
 
-function drawLine(ctx: CanvasRenderingContext2D, el: LineElement, viewport: Viewport) {
+/** line/arrow 折线形态绘制（ZOO-168）：逐段 lineTo；普通两点直线与旧渲染逐像素等价 */
+function drawLinearPath(
+  ctx: CanvasRenderingContext2D,
+  el: LineElement | ArrowElement,
+  viewport: Viewport
+): { headX: number; headY: number; headAngle: number } | null {
   const { offsetX, offsetY, scale } = viewport;
+  const pts = lineVertices(el);
+  if (pts.length < 2) return null;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x * scale + offsetX, pts[0].y * scale + offsetY);
+  for (let i = 1; i < pts.length; i++) {
+    ctx.lineTo(pts[i].x * scale + offsetX, pts[i].y * scale + offsetY);
+  }
+  ctx.stroke();
+  // 箭头语义：折线化后箭头跟随最后一段的方向（ZOO-168 验收 5）
+  const n = pts.length;
+  const x2 = pts[n - 1].x * scale + offsetX;
+  const y2 = pts[n - 1].y * scale + offsetY;
+  const prev = pts[n - 2];
+  return { headX: x2, headY: y2, headAngle: Math.atan2(pts[n - 1].y - prev.y, pts[n - 1].x - prev.x) };
+}
 
+function drawLine(ctx: CanvasRenderingContext2D, el: LineElement, viewport: Viewport) {
+  const { scale } = viewport;
   ctx.save();
   ctx.globalAlpha = el.opacity;
   ctx.strokeStyle = el.strokeColor;
   ctx.lineWidth = el.strokeWidth * scale;
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   applyDash(ctx, el, scale);
-
-  ctx.beginPath();
-  ctx.moveTo(el.x * scale + offsetX, el.y * scale + offsetY);
-  ctx.lineTo(el.x2 * scale + offsetX, el.y2 * scale + offsetY);
-  ctx.stroke();
+  drawLinearPath(ctx, el, viewport);
   ctx.restore();
 }
 
 function drawArrow(ctx: CanvasRenderingContext2D, el: ArrowElement, viewport: Viewport) {
-  const { offsetX, offsetY, scale } = viewport;
-  const x1 = el.x * scale + offsetX;
-  const y1 = el.y * scale + offsetY;
-  const x2 = el.x2 * scale + offsetX;
-  const y2 = el.y2 * scale + offsetY;
+  const { scale } = viewport;
 
   ctx.save();
   ctx.globalAlpha = el.opacity;
@@ -159,15 +175,17 @@ function drawArrow(ctx: CanvasRenderingContext2D, el: ArrowElement, viewport: Vi
   ctx.fillStyle = el.strokeColor;
   ctx.lineWidth = el.strokeWidth * scale;
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   applyDash(ctx, el, scale);
 
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
+  const head = drawLinearPath(ctx, el, viewport);
+  if (!head) {
+    ctx.restore();
+    return;
+  }
 
   const headLen = Math.max(10, el.strokeWidth * 4) * scale;
-  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const { headX: x2, headY: y2, headAngle: angle } = head;
   ctx.beginPath();
   ctx.moveTo(x2, y2);
   ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
@@ -287,8 +305,8 @@ export type MathPlotHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 /** line/arrow 端点手柄标识（ZOO-160：p1 起点改 x/y，p2 终点改 x2/y2） */
 export type EndpointHandle = 'p1' | 'p2';
 
-/** 全元素控点标识（ZOO-160：mathPlot 8 方位 + line/arrow 端点 + 其余 4 角） */
-export type ResizeHandleId = MathPlotHandle | EndpointHandle;
+/** 全元素控点标识（ZOO-160：mathPlot 8 方位 + line/arrow 端点 + 其余 4 角；ZOO-168 增折线顶点 vN） */
+export type ResizeHandleId = MathPlotHandle | EndpointHandle | VertexHandle;
 
 /** 控点方块边长（屏幕 px，样式基线与 mathPlot 8 控点一致） */
 const HANDLE_SIZE = 8;
@@ -296,13 +314,25 @@ const HANDLE_SIZE = 8;
 /**
  * 选中框控点布局（§11 D-1 + ZOO-160）：mathPlot 8 控点（4 角 + 4 边中点，已验收基线）、
  * line/arrow 两端点手柄、其余（rect/circle/path/text）4 角控点。
- * 返回 id + 8×8 屏幕矩形（画布 rect 相对 px；方块中心即角点 / 端点）。
+ * ZOO-168 折线编辑态（polylineEditing）：line/arrow 布局换成逐顶点手柄 v0…vn-1
+ * （v0 / v末位 语义同 p1 / p2）。
+ * 返回 id + 8×8 屏幕矩形（画布 rect 相对 px；方块中心即角点 / 端点 / 顶点）。
  */
-function selectionHandleLayout(el: WhiteboardElement, viewport: Viewport): { id: ResizeHandleId; rect: [number, number] }[] {
+function selectionHandleLayout(
+  el: WhiteboardElement,
+  viewport: Viewport,
+  polylineEditing = false
+): { id: ResizeHandleId; rect: [number, number] }[] {
   const { offsetX, offsetY, scale } = viewport;
   const s = HANDLE_SIZE;
 
   if (el.type === 'line' || el.type === 'arrow') {
+    if (polylineEditing) {
+      return lineVertices(el).map((p, i) => ({
+        id: vertexHandle(i),
+        rect: [p.x * scale + offsetX - s / 2, p.y * scale + offsetY - s / 2] as [number, number],
+      }));
+    }
     return [
       { id: 'p1', rect: [el.x * scale + offsetX - s / 2, el.y * scale + offsetY - s / 2] },
       { id: 'p2', rect: [el.x2 * scale + offsetX - s / 2, el.y2 * scale + offsetY - s / 2] },
@@ -333,12 +363,36 @@ function selectionHandleLayout(el: WhiteboardElement, viewport: Viewport): { id:
   ];
 }
 
+/**
+ * 选中态绘制。opts.polylineEditing（ZOO-168 折线编辑态）：line/arrow 不画包围盒
+ * 虚线框（折线包围盒视觉噪音大），改画逐顶点圆点手柄——白底蓝圈，选中顶点
+ * （opts.selectedVertex）实心蓝。
+ */
 export function renderSelection(
   ctx: CanvasRenderingContext2D,
   el: WhiteboardElement,
-  viewport: Viewport
+  viewport: Viewport,
+  opts?: { polylineEditing?: boolean; selectedVertex?: number | null }
 ) {
   const { offsetX, offsetY, scale } = viewport;
+
+  if (opts?.polylineEditing && (el.type === 'line' || el.type === 'arrow')) {
+    ctx.save();
+    for (const [i, p] of lineVertices(el).entries()) {
+      const cx = p.x * scale + offsetX;
+      const cy = p.y * scale + offsetY;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx.fillStyle = i === opts.selectedVertex ? '#3B82F6' : '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#3B82F6';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
   const bbox = getElementBounds(el);
   if (!bbox) return;
 
@@ -355,7 +409,7 @@ export function renderSelection(
   ctx.setLineDash([]);
 
   ctx.fillStyle = '#3B82F6';
-  for (const { rect: [hx, hy] } of selectionHandleLayout(el, viewport)) {
+  for (const { rect: [hx, hy] } of selectionHandleLayout(el, viewport, opts?.polylineEditing ?? false)) {
     ctx.fillRect(hx, hy, HANDLE_SIZE, HANDLE_SIZE);
   }
   ctx.restore();
@@ -364,15 +418,16 @@ export function renderSelection(
 /**
  * 选中框控点命中（屏幕 px，画布 rect 相对坐标）。全部元素类型均有可拖控点
  * （ZOO-160）：mathPlot 8 方位、line/arrow 端点、rect/circle/path/text 4 角。
+ * opts.polylineEditing（ZOO-168）：line/arrow 改按逐顶点手柄布局判定。
  * opts.margin 判定外扩（默认 2 鼠标 / 触控笔；触摸传 18 → 44px 等效命中框）。
  */
 export function hitTestSelectionHandle(
   el: WhiteboardElement,
   screen: Point,
   viewport: Viewport,
-  opts?: { margin?: number }
+  opts?: { margin?: number; polylineEditing?: boolean }
 ): ResizeHandleId | null {
-  const layout = selectionHandleLayout(el, viewport);
+  const layout = selectionHandleLayout(el, viewport, opts?.polylineEditing ?? false);
   const m = opts?.margin ?? 2; // 判定外扩，降低精确点选难度
   for (const { id, rect: [hx, hy] } of layout) {
     if (screen.x >= hx - m && screen.x <= hx + HANDLE_SIZE + m && screen.y >= hy - m && screen.y <= hy + HANDLE_SIZE + m) {
@@ -384,15 +439,20 @@ export function hitTestSelectionHandle(
 
 /**
  * 元素整体平移（ZOO-154）：x/y 与所有锚点同步位移，几何形状不变。
- * 多锚点类型——line/arrow 的 x2/y2、path 的 points——均随基准点平移；
- * rectangle/circle/text/mathPlot 等外框语义类型只需 x/y。纯函数，不改原元素。
+ * 多锚点类型——line/arrow 的 x2/y2（折线形态含 points 全顶点，ZOO-168）、
+ * path 的 points——均随基准点平移；rectangle/circle/text/mathPlot 等外框语义
+ * 类型只需 x/y。纯函数，不改原元素。
  */
 export function translateElement(el: WhiteboardElement, dx: number, dy: number): WhiteboardElement {
   const moved = { ...el, x: el.x + dx, y: el.y + dy } as WhiteboardElement;
   switch (moved.type) {
     case 'line':
-    case 'arrow':
-      return { ...moved, x2: moved.x2 + dx, y2: moved.y2 + dy };
+    case 'arrow': {
+      const shifted = { ...moved, x2: moved.x2 + dx, y2: moved.y2 + dy } as LineElement | ArrowElement;
+      return isPolyline(shifted)
+        ? { ...shifted, points: (shifted.points as Point[]).map((p) => ({ x: p.x + dx, y: p.y + dy })) }
+        : shifted;
+    }
     case 'path':
       return { ...moved, points: moved.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
     default:
@@ -419,9 +479,16 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
       return { x: el.x, y: el.y, width: el.width, height: el.height };
     case 'line':
     case 'arrow': {
-      const minX = Math.min(el.x, el.x2);
-      const minY = Math.min(el.y, el.y2);
-      return { x: minX, y: minY, width: Math.abs(el.x2 - el.x), height: Math.abs(el.y2 - el.y) };
+      // 折线形态：包围盒覆盖全部顶点（ZOO-168）；两点直线与旧算法等价
+      const pts = lineVertices(el);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of pts) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+      return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
     case 'text':
       return { x: el.x, y: el.y, width: el.width || 100, height: el.height || el.fontSize * 1.3 };
@@ -430,12 +497,22 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
   }
 }
 
+/**
+ * 元素命中测试。line/arrow（含折线形态，ZOO-168）按「点到线段距离阈值」逐段
+ * 判定——折线包围盒内部的空白区不再误命中；其余类型维持包围盒判定。
+ */
 export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport): boolean {
   const { scale } = viewport;
   const bbox = getElementBounds(el);
   if (!bbox) return false;
 
   const margin = Math.max(8 / scale, el.strokeWidth / 2 + 4 / scale);
+
+  if (el.type === 'line' || el.type === 'arrow') {
+    const near = nearestOnPolyline(point, lineVertices(el));
+    return near !== null && near.dist <= margin;
+  }
+
   return (
     point.x >= bbox.x - margin &&
     point.x <= bbox.x + bbox.width + margin &&

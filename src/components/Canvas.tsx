@@ -7,6 +7,7 @@ import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChan
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
+import { parseVertexHandle, vertexDragPatch, insertVertexPatch } from '@/lib/polyline';
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt, panBy } from '@/lib/gestures';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { isEditableTarget } from '@/lib/keyboard';
@@ -73,6 +74,7 @@ export default function Canvas() {
     elements, selectedId, activeTool, strokeColor, strokeWidth, strokeDash, fillColor,
     viewport, addElement, setSelected, setViewport, pushOperations,
     pendingMathPlot, consumeMathPlotInsert, setTool,
+    polylineEditId, polylineVertexIndex, selectPolylineVertex,
   } = useStore();
 
   // 容器宽（ZOO-159）：输入浮层右缘避让用；ResizeObserver 维护，渲染期不读 ref
@@ -182,9 +184,13 @@ export default function Canvas() {
     }
     const sel = elements.find((e) => e.id === selectedId);
     if (sel && sel.id !== hiddenTextId) {
-      renderSelection(ctx, sel, viewport);
+      // 折线编辑态（ZOO-168）：选中框改画逐顶点手柄（renderer 内部分派）
+      renderSelection(ctx, sel, viewport, {
+        polylineEditing: sel.id === polylineEditId && (sel.type === 'line' || sel.type === 'arrow'),
+        selectedVertex: polylineVertexIndex,
+      });
     }
-  }, [elements, selectedId, viewport, hiddenTextId]);
+  }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex]);
 
   useEffect(() => {
     render();
@@ -368,15 +374,23 @@ export default function Canvas() {
     if (activeTool === 'select') {
       // 控点缩放优先于元素命中（D-1：mathPlot 8 控点画在包围盒外沿；ZOO-159 text、
       // ZOO-160 rect/circle/path 角控点与 line/arrow 端点手柄，同优先级）。
+      // ZOO-168 折线编辑态：line/arrow 布局换成逐顶点手柄 vN（v0/v末位 同端点语义）。
       // 触摸命中外扩至 44px 等效（8px 方块 + 18px 边距）；鼠标 / 触控笔维持 2px 基线
       const sel = elements.find((el) => el.id === selectedId);
+      const editingPolyline =
+        !!sel && sel.id === polylineEditId && (sel.type === 'line' || sel.type === 'arrow');
       if (sel) {
         const handle = hitTestSelectionHandle(
           sel, local, viewport,
-          e.pointerType === 'touch' ? { margin: 18 } : undefined
+          e.pointerType === 'touch'
+            ? { margin: 18, polylineEditing: editingPolyline }
+            : { polylineEditing: editingPolyline }
         );
         if (handle) {
           resizeRef.current = { handle, startEl: { ...sel }, startWorld: point };
+          // 点中顶点手柄 = 选中该顶点（Delete 的删除目标）
+          const vi = parseVertexHandle(handle);
+          if (vi != null) selectPolylineVertex(vi);
           isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在抬指时用陈旧起点压脏快照
           return;
         }
@@ -392,6 +406,10 @@ export default function Canvas() {
         }
       }
       if (!found) setSelected(null);
+      // 点中编辑元素的线身（非顶点手柄）：清顶点选中，保留编辑态可继续拖整体
+      if (found && useStore.getState().polylineVertexIndex !== null) {
+        selectPolylineVertex(null);
+      }
       return;
     }
 
@@ -463,7 +481,7 @@ export default function Canvas() {
           break;
       }
     }
-  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, getLocalPoint, getCanvasPoint, setSelected, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {
@@ -561,9 +579,14 @@ export default function Canvas() {
           next = boxResizePatch(rs.handle as CornerHandle, start, point, { shift: e.shiftKey, minSize });
           break;
         case 'line':
-        case 'arrow':
-          next = endpointResizePatch(rs.handle as 'p1' | 'p2', start, point);
+        case 'arrow': {
+          // 折线编辑态顶点手柄 vN（ZOO-168）：拖动第 N 个顶点；非编辑态维持 p1/p2 端点语义
+          const vi = parseVertexHandle(rs.handle);
+          next = vi != null
+            ? vertexDragPatch(start, vi, point)
+            : endpointResizePatch(rs.handle as 'p1' | 'p2', start, point);
           break;
+        }
         case 'path':
           next = pathResizePatch(rs.handle as CornerHandle, start, point, { minSize });
           break;
@@ -740,7 +763,12 @@ export default function Canvas() {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, []);
 
-  /** 双击文字 → 原位编辑（ZOO-159，select 工具；触摸双击同经 dblclick） */
+  /**
+   * 双击交互（select 工具）：文字 → 原位编辑（ZOO-159）；
+   * line/arrow → 折线编辑态（ZOO-168）：双击中段进入编辑态，并在双击处
+   * （最近段投影点）插入首个可拖顶点；已在编辑态 → 双击某段即追加顶点。
+   * 距段端点过近（<12 屏幕 px）不插——双击落在端点 / 既有顶点手柄上防重合顶点。
+   */
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (activeTool !== 'select' || textDraftRef.current) return;
     const st = useStore.getState();
@@ -749,6 +777,23 @@ export default function Canvas() {
       const el = st.elements[i];
       if (el.type === 'text' && hitTest(el, point, st.viewport)) {
         openTextDraftForElement(el);
+        return;
+      }
+    }
+    for (let i = st.elements.length - 1; i >= 0; i--) {
+      const el = st.elements[i];
+      if ((el.type === 'line' || el.type === 'arrow') && hitTest(el, point, st.viewport)) {
+        if (st.polylineEditId !== el.id) {
+          st.setSelected(el.id); // 选中变化会清旧编辑态，先选再进（同元素则原位保留）
+          st.beginPolylineEdit(el.id);
+        }
+        const insert = insertVertexPatch(el, point, { minEndDist: 12 / st.viewport.scale });
+        if (insert) {
+          st.updateElement(el.id, insert.patch); // 转换 / 插点 = 单条可撤销快照
+          st.selectPolylineVertex(insert.index);
+        } else {
+          st.selectPolylineVertex(null);
+        }
         return;
       }
     }
