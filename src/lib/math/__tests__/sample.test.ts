@@ -42,9 +42,9 @@ describe('sampleExplicit 定义域校验', () => {
     });
   });
 
-  it('定义域内全无效 → 原型错误文案（不崩溃）', () => {
+  it('定义域内全无效 → 原型错误文案（不崩溃，ZOO-166 附指引）', () => {
     const r = sampleExplicit(fnOf('y=√(-x²-1)'), { xMin: -10, xMax: 10 }, 160);
-    expect(r).toEqual({ error: '定义域内无有效值' });
+    expect(r).toEqual({ error: '定义域内无有效值——请调整定义域或检查表达式（如 y=√x 需 x≥0）' });
   });
 });
 
@@ -316,7 +316,7 @@ describe('sampleGeometry parabola / hyperbola（二元二次参数化，ZOO-147 
 describe('sampleEquation 统一分发（4c 渲染管线入口）', () => {
   it('error 结果透传', () => {
     const r = sampleEquation(parseEquation('y=foo(x)'), { xMin: -10, xMax: 10 });
-    expect(r).toEqual({ error: '无法识别的符号 “foo”' });
+    expect(r).toEqual({ error: '无法识别的函数 “foo”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan' });
   });
 
   it('explicit / circle 分发正确', () => {

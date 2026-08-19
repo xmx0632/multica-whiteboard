@@ -11,6 +11,8 @@
  * - 预览采样默认走 ZOO-134 管线（createPreviewPolylines），可注入替换。
  * - ZOO-164：模板区按方程族分组折叠（默认首组展开），折叠状态会话级保持
  *   （src/lib/templateGroupCollapse.ts）；插入行为与平铺版零差异。
+ * - ZOO-166：错误态带一键修正候选（outcome.fix，如 y=4z → 改为 y=4x）时，
+ *   状态行下方渲染替换 chip，点击整串替换输入框并聚焦（复用 applyTemplate）。
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import MiniPreview from './MiniPreview';
@@ -105,6 +107,9 @@ export default function EquationEditor({
   };
   const status = statusLine();
 
+  // ZOO-166：一键修正候选（仅未知单字母符号手滑，如 y=4z → y=4x）
+  const fix = isError && outcome.kind === 'error' && outcome.fix !== trimmed ? outcome.fix : undefined;
+
   return (
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5 pb-0.5">
@@ -145,6 +150,16 @@ export default function EquationEditor({
           aria-label="方程输入"
         />
         <div className={`text-[11px] mt-1 leading-snug ${status.cls}`}>{status.text}</div>
+        {fix && (
+          <button
+            type="button"
+            onClick={() => applyTemplate(fix)}
+            className="touch-target mt-1 max-w-full items-center gap-1 inline-flex border border-blue-300 bg-blue-50 rounded-md px-1.5 py-0.5 text-[11px] text-blue-600 cursor-pointer hover:border-blue-500 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+          >
+            <span aria-hidden="true">↺</span>
+            <span className="font-serif truncate">改为 {fix}</span>
+          </button>
+        )}
       </div>
 
       {/* ZOO-144：小屏（粗指针）下内容超高 → 中段内滚，方程输入与插入按钮钉在可视区 */}
