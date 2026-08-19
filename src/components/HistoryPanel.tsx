@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { listLocalDocuments, loadFromLocal, deleteFromLocal, listServerDocuments, loadFromServer, deleteFromServer, renameLocalDocument, renameServerDocument, resolveRenameInput } from '@/lib/persistence';
+import { deleteSnapshot, recoverForDocument } from '@/lib/autosave';
 import { useStore } from '@/lib/store';
 import { WhiteboardDocument } from '@/lib/types';
 
@@ -51,7 +52,8 @@ export default function HistoryPanel() {
       doc = await loadFromServer(id);
     }
     if (doc) {
-      loadDocument(doc);
+      // 本地快照比载入的版本新（刷新前有未保存编辑）→ 打开快照版本（ZOO-170 需求 3）
+      loadDocument(await recoverForDocument(doc));
       closePanel();
     }
   }, [isDirty, loadDocument, closePanel]);
@@ -63,6 +65,8 @@ export default function HistoryPanel() {
     } else {
       await deleteFromServer(id);
     }
+    // 删除即弃：连带清掉自动保存快照与会话标记，防止刷新后「复活」
+    await deleteSnapshot(id);
     refreshDocs();
   }, [refreshDocs]);
 
