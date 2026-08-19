@@ -15,6 +15,25 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "MulticaBoard - Online Whiteboard",
   description: "Online whiteboard tool with export and persistence",
+  /**
+   * ZOO-162 应用图标集：候选 A「蓝色画布 · 白色正弦」定稿
+   * （SVG 源与备选方案见 docs/design/app-icon/）
+   */
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      {
+        url: "/icons/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
 /**
@@ -28,6 +47,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   interactiveWidget: "resizes-visual",
+  // ZOO-162：PWA 主题色与品牌蓝一致
+  themeColor: "#3B82F6",
 };
 
 export default function RootLayout({
