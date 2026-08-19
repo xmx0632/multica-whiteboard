@@ -12,5 +12,10 @@ import type { StructuralOutcome } from './types';
 
 export function validateEquation(raw: string): StructuralOutcome {
   const result = parseEquation(raw);
-  return result.kind === 'explicit' ? { kind: 'explicit' } : result;
+  // ZOO-166 方案 A：透传自变量字母（缺省 x 不携带，旧消费方零感知）
+  return result.kind === 'explicit'
+    ? result.variable
+      ? { kind: 'explicit', variable: result.variable }
+      : { kind: 'explicit' }
+    : result;
 }

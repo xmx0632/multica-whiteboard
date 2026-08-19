@@ -285,9 +285,9 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
     expect(errorMessage('y=')).toBe('方程缺少右侧表达式——请输入 y=f(x) 形式，如 y=2x+1');
   });
 
-  it('不可识别的符号 / 函数（AST 白名单拒绝，ZOO-166 指引）', () => {
+  it('不可识别的函数（AST 白名单拒绝，ZOO-166 指引）', () => {
     expect(errorMessage('y=foo(x)')).toBe('无法识别的函数 “foo”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan');
-    expect(errorMessage('y=x+t')).toBe('无法识别符号 “t”——请使用 x 作为自变量（如 y=4x）');
+    // 注：未知单字母不再报错（ZOO-166 方案 A 自由变量）；多字母 / 双自由字母见对应 describe
   });
 
   it('不可识别的字符（mathjs 会把 # 吞成 undefined 常量，须前置拦截）', () => {
@@ -375,7 +375,7 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
     expect(errorMessage('0=1')).toBe('该等式恒不成立（化简后左右两侧不相等），无图像');
     expect(errorMessage('x==3')).toBe('方程只能包含一个等号');
     expect(errorMessage('2y')).toBe('方程缺少等号：请输入 y=f(x) 或二元一次方程（如 3x+2y=6）');
-    expect(errorMessage('a=2')).toBe('无法识别符号 “a”——请使用 x、y 作为变量（如 y=2x）'); // 非白名单符号走 AST 拦截（隐式路径）
+    // 注：a=2 不再报错（ZOO-166 方案 A：a 补 x 位 ⟺ x=2），见自由变量绑定 describe
   });
 });
 
@@ -416,52 +416,73 @@ describe('validateEquation（编辑器每键调用的薄适配）', () => {
   });
 });
 
-describe('未知符号一键修正 fix（ZOO-166）', () => {
-  const fixOf = (raw: string): string | undefined => {
-    const r = parseEquation(raw);
-    return r.kind === 'error' ? r.fix : undefined;
-  };
-
-  it('y=4z / y=4t：单字母手滑 → 改为 y=4x（propose-and-verify）', () => {
-    expect(errorMessage('y=4z')).toBe('无法识别符号 “z”——请使用 x 作为自变量（如 y=4x）');
-    expect(fixOf('y=4z')).toBe('y=4x');
-    expect(fixOf('y=4t')).toBe('y=4x');
+describe('自由变量绑定（ZOO-166 方案 A）', () => {
+  it('任意单字母可作自变量：y=4z / y=4t 直接出图', () => {
+    const r = parseEquation('y=4z');
+    expect(r.kind).toBe('explicit');
+    if (r.kind === 'explicit') {
+      expect(r.variable).toBe('z');
+      expect(r.fn(2)).toBe(8);
+    }
+    const t = parseEquation('y=sin(t)');
+    expect(t.kind).toBe('explicit');
+    if (t.kind === 'explicit') {
+      expect(t.variable).toBe('t');
+      expect(t.fn(0)).toBe(0);
+    }
+    const poly = parseEquation('y=z²+2z');
+    expect(poly.kind).toBe('explicit');
+    if (poly.kind === 'explicit') {
+      expect(poly.variable).toBe('z');
+      expect(poly.fn(3)).toBe(15);
+    }
+    const prefixed = parseEquation('f(t)=t²-1');
+    expect(prefixed.kind).toBe('explicit'); // 求值函数前缀放宽为任意单字母
+    if (prefixed.kind === 'explicit') {
+      expect(prefixed.variable).toBe('t');
+      expect(prefixed.fn(2)).toBe(3);
+    }
   });
 
-  it('同一未知符号多次出现全部替换，保留用户书写形式', () => {
-    expect(fixOf('y=z²+2z')).toBe('y=x²+2x');
-    expect(fixOf('  y=4z  ')).toBe('y=4x'); // 首尾空白不进入建议
+  it('x 为自变量时不携带 variable 字段（既有行为零变化）', () => {
+    const r = parseEquation('y=sin(x)');
+    expect(r.kind).toBe('explicit');
+    if (r.kind === 'explicit') expect(r.variable).toBeUndefined();
   });
 
-  it('大写输入同样命中（归一化小写后比对）', () => {
-    expect(fixOf('Y=4Z')).toBe('Y=4x');
+  it('pi / e 保留常数语义，不抢作变量', () => {
+    const e = parseEquation('y=e');
+    expect(e.kind).toBe('explicit');
+    if (e.kind === 'explicit') {
+      expect(e.variable).toBeUndefined();
+      expect(e.fn(5)).toBeCloseTo(Math.E);
+    }
+    const pi = parseEquation('y=2pi+x');
+    expect(pi.kind).toBe('explicit');
+    if (pi.kind === 'explicit') expect(pi.fn(0)).toBeCloseTo(2 * Math.PI);
   });
 
-  it('替换不得误伤已知词内的字母（如 sin 的 s）', () => {
-    expect(fixOf('y=s+z')).toBeUndefined(); // 两个未知符号：替换任一后仍报错，不给建议
-    expect(errorMessage('y=s+z')).toBe('无法识别符号 “s”——请使用 x 作为自变量（如 y=4x）');
-    // sin 内的 s 不是独立符号，唯一未知是 t：sin 原样保留
-    expect(fixOf('y=sin(t)')).toBe('y=sin(x)');
+  it('两个及以上自由字母报错（数学上欠定）', () => {
+    expect(errorMessage('y=x+z')).toBe('方程包含多个自变量（x、z）——请只保留一个字母作为自变量（如 y=2x）');
+    expect(errorMessage('y=z+t')).toBe('方程包含多个自变量（z、t）——请只保留一个字母作为自变量（如 y=2x）');
+    expect(errorMessage('x+y+z=3')).toBe('二元方程最多两个变量字母（当前 x、y、z）——请化简后重试');
   });
 
-  it('多字母符号 / 未知函数只升级文案，不给替换建议', () => {
-    expect(fixOf('y=foo')).toBeUndefined();
-    expect(fixOf('y=foo(x)')).toBeUndefined();
+  it('多字母词仍拦截（拼写 / 未知名）', () => {
+    expect(errorMessage('y=foo')).toBe('无法识别符号 “foo”——请检查拼写，变量请用单个字母（如 y=2z）');
+    expect(parseEquation('y=globalThis').kind).toBe('error'); // 安全：多字母名不可达
   });
 
-  it('隐式路径：raw 已含 x 时建议改 y（z=4x → y=4x），否则改 x（a=2 → x=2）', () => {
-    expect(fixOf('z=4x')).toBe('y=4x');
-    expect(fixOf('a=2')).toBe('x=2');
-    expect(errorMessage('z=4x')).toBe('无法识别符号 “z”——请使用 x、y 作为变量（如 y=2x）');
+  it('隐式路径：未知字母按出现顺序补进 x/y 空缺位', () => {
+    expect(parseEquation('z=4x').kind).toBe('line'); // z 补 y 位 ⟺ y=4x
+    expect(parseEquation('a=2').kind).toBe('line'); // a 补 x 位 ⟺ x=2
+    expect(parseEquation('x+t=3').kind).toBe('line'); // t 补 y 位
+    const geo = parseEquation('w²+z²=4'); // 双未知走一般形探针 → 圆/椭圆
+    expect(geo.kind === 'circle' || geo.kind === 'ellipse').toBe(true);
   });
 
-  it('validateEquation 透传 fix（编辑器「改为」chip 消费）', () => {
-    expect(validateEquation('y=4z')).toEqual({
-      kind: 'error',
-      message: '无法识别符号 “z”——请使用 x 作为自变量（如 y=4x）',
-      fix: 'y=4x',
-    });
-    // 非符号类错误不带 fix，旧消费方零感知
-    expect(validateEquation('y=2+')).not.toHaveProperty('fix');
+  it('validateEquation 透传 variable（缺省 x 不携带，旧消费方零感知）', () => {
+    expect(validateEquation('y=sin(x)')).toEqual({ kind: 'explicit' });
+    expect(validateEquation('y=4z')).toEqual({ kind: 'explicit', variable: 'z' });
   });
 });

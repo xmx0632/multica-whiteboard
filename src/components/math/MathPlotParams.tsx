@@ -9,7 +9,9 @@
  * 松手/失焦触发 onCommit（压一条快照）；离散控件（色板/开关/预设）一次
  * onChange + onCommit。错误态走「重新编辑方程」回调（原位替换，原型决策）。
  */
+import { useMemo } from 'react';
 import { COLORS } from '@/lib/types';
+import { validateEquation } from '@/lib/math/validate';
 import {
   ellipseTeachingInfo,
   formatCoef,
@@ -102,6 +104,11 @@ const SAMPLE_STEPS: { label: string; count: 160 | 320 | 640 }[] = [
 export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit, equationError }: MathPlotParamsProps) {
   const isFn = value.kind === 'explicit';
   const isError = value.kind === 'error';
+  // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）
+  const variable = useMemo(() => {
+    const r = validateEquation(value.equation);
+    return r.kind === 'explicit' && r.variable ? r.variable : 'x';
+  }, [value.equation]);
   const badge = KIND_BADGES[value.kind];
   const line = value.kind === 'line' && value.lineParams ? lineTeachingInfo(value.lineParams) : null;
   const linePair = value.kind === 'linePair' && value.linePairParams ? linePairTeachingInfo(value.linePairParams) : null;
@@ -166,7 +173,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           {isFn && (
             <>
               <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">定义域 x ∈</label>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">定义域 {variable} ∈</label>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
@@ -178,7 +185,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                     }}
                     onBlur={onCommit}
                     className="touch-target w-full px-1.5 py-1 border border-gray-300 rounded-md text-xs outline-none select-text focus:border-blue-500"
-                    aria-label="x 最小值"
+                    aria-label={`${variable} 最小值`}
                   />
                   <span className="text-gray-400">~</span>
                   <input
@@ -191,7 +198,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
                     }}
                     onBlur={onCommit}
                     className="touch-target w-full px-1.5 py-1 border border-gray-300 rounded-md text-xs outline-none select-text focus:border-blue-500"
-                    aria-label="x 最大值"
+                    aria-label={`${variable} 最大值`}
                   />
                 </div>
                 <div className="flex gap-1 mt-1">
