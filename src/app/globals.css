@@ -119,3 +119,12 @@ body {
     width: min(480px, calc(100vw - 2rem));
   }
 }
+
+/* —— ZOO-152 全屏切换钮位置（仅粗指针设备渲染）——
+ * 竖屏顶部菜单换行占满宽度 → 钮移右下；横屏顶部右侧空闲 → 钮在右上 */
+@media (pointer: coarse) and (orientation: portrait) {
+  .fullscreen-toggle {
+    top: auto;
+    bottom: 0.75rem;
+  }
+}

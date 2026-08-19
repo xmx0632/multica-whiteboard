@@ -5,6 +5,7 @@ import LeftToolbar from '@/components/LeftToolbar';
 import PropertyPanel from '@/components/PropertyPanel';
 import TopMenuBar from '@/components/TopMenuBar';
 import HistoryPanel from '@/components/HistoryPanel';
+import FullscreenToggle from '@/components/FullscreenToggle';
 import { useShortcuts } from '@/lib/useShortcuts';
 
 export default function Home() {
@@ -17,6 +18,7 @@ export default function Home() {
       <PropertyPanel />
       <TopMenuBar />
       <HistoryPanel />
+      <FullscreenToggle />
     </div>
   );
 }
