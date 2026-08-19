@@ -37,6 +37,14 @@ export function zoomAt(viewport: Viewport, anchor: Point, nextScale: number): Vi
   };
 }
 
+/**
+ * 屏幕位移 → 平移 viewport（手型工具 / 空格 / 中键拖动共用，ZOO-157）。
+ * 屏幕系与偏移同系（offset 即世界原点的屏幕坐标），dx/dy 直接叠加，scale 不变。
+ */
+export function panBy(viewport: Viewport, dx: number, dy: number): Viewport {
+  return { ...viewport, offsetX: viewport.offsetX + dx, offsetY: viewport.offsetY + dy };
+}
+
 export interface PinchSnapshot {
   /** 手势开始时的 viewport 快照 */
   viewport: Viewport;

@@ -11,6 +11,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
 import { COLORS, MathPlotElement, WhiteboardElement } from '@/lib/types';
+import { canRestyleFromToolPanel, elementStrokeColor } from '@/lib/stroke';
 import { validateEquation } from '@/lib/math/validate';
 import { mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
@@ -21,8 +22,9 @@ import MathPlotParams, { type MathPlotParamsValue } from './math/MathPlotParams'
 export default function PropertyPanel() {
   const {
     activeTool, elements, selectedId,
-    strokeColor, setStrokeColor, strokeWidth, setStrokeWidth,
+    strokeColor, strokeWidth,
     fillColor, setFillColor, fontSize, setFontSize,
+    pickStrokeColor, inputStrokeColor, inputStrokeWidth, commitStrokeStyle,
     addElement, updateElement, updateElementTransient, deleteElement,
     setSelected, setTool, pushOperations, requestMathPlotInsert,
   } = useStore();
@@ -218,40 +220,51 @@ export default function PropertyPanel() {
     );
   }
 
-  // —— 态 3：既有工具默认面板（维持原状）——
+  // —— 态 3：既有工具默认面板 ——
+  // ZOO-157 选中改色：有选中元素（mathPlot 除外，其走态 2 专属面板）时，颜色 / 线宽
+  // 操作直接作用于该元素（可撤销），面板回显元素当前样式；无选中维持原语义（设默认值）。
+  const restyleTarget = canRestyleFromToolPanel(selectedEl) ? selectedEl : null;
+  const panelColor = restyleTarget ? elementStrokeColor(restyleTarget) : strokeColor;
+  const panelWidth = restyleTarget ? restyleTarget.strokeWidth : strokeWidth;
+
   const showFill = ['rectangle', 'circle'].includes(activeTool);
   const showFont = activeTool === 'text';
 
   return renderFoldable(
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div>
-        <label className="text-xs font-medium text-gray-500 mb-1 block">Stroke</label>
+        <label className="text-xs font-medium text-gray-500 mb-1 block">
+          Stroke{restyleTarget ? ' · 已选中元素' : ''}
+        </label>
         <div className="flex flex-wrap gap-1">
           {COLORS.map((c) => (
             <button
               key={c}
-              onClick={() => setStrokeColor(c)}
-              className={`touch-swatch w-5 h-5 rounded-full border-2 ${strokeColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
+              onClick={() => pickStrokeColor(c)}
+              className={`touch-swatch w-5 h-5 rounded-full border-2 ${panelColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
               style={{ backgroundColor: c }}
             />
           ))}
           <input
             type="color"
-            value={strokeColor}
-            onChange={(e) => setStrokeColor(e.target.value)}
+            value={panelColor}
+            onChange={(e) => inputStrokeColor(e.target.value)}
+            onBlur={commitStrokeStyle}
             className="touch-swatch w-5 h-5 rounded cursor-pointer border border-gray-300"
           />
         </div>
       </div>
 
       <div>
-        <label className="text-xs font-medium text-gray-500 mb-1 block">Width: {strokeWidth}px</label>
+        <label className="text-xs font-medium text-gray-500 mb-1 block">Width: {panelWidth}px</label>
         <input
           type="range"
           min={1}
           max={50}
-          value={strokeWidth}
-          onChange={(e) => setStrokeWidth(Number(e.target.value))}
+          value={panelWidth}
+          onChange={(e) => inputStrokeWidth(Number(e.target.value))}
+          onPointerUp={commitStrokeStyle}
+          onKeyUp={commitStrokeStyle}
           className="touch-target w-full accent-blue-500"
         />
       </div>
