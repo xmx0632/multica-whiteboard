@@ -9,6 +9,7 @@ import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt, panBy } from '@/lib/gestures';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
+import { isEditableTarget } from '@/lib/keyboard';
 import TextInputOverlay from './TextInputOverlay';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -721,7 +722,13 @@ export default function Canvas() {
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setSpaceDown(true); }
+      if (e.code !== 'Space' || e.repeat) return;
+      // 编辑态守卫（ZOO-163）：焦点在输入控件（内联文字浮层 textarea、方程输入框等）
+      // 时空格归文本输入——不平移、不 preventDefault，否则空格字符被吞（a b 变 ab）。
+      // keyup 不设守卫：按住空格中途点进输入框，抬键仍要解除平移态。
+      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+      e.preventDefault();
+      setSpaceDown(true);
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') setSpaceDown(false);
