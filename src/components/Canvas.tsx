@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle } from '@/lib/renderer';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, translateElement } from '@/lib/renderer';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt } from '@/lib/gestures';
@@ -24,7 +24,8 @@ export default function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   const tempElementRef = useRef<WhiteboardElement | null>(null);
   const dragStartRef = useRef<Point>({ x: 0, y: 0 });
-  const dragElementStartRef = useRef<Point>({ x: 0, y: 0 });
+  /** select 拖拽起手元素快照（ZOO-154 整体平移）：多锚点类型须存整元素——移动 / 双指取消恢复 / 抬指 undo 快照三处共用 */
+  const dragElementStartRef = useRef<WhiteboardElement | null>(null);
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const panOffsetStartRef = useRef<Point>({ x: 0, y: 0 });
   // pan 的 rAF 合并（技术方案 §6.4）：pointermove 只记最新位移，每帧至多一次 setViewport
@@ -141,13 +142,13 @@ export default function Canvas() {
     }
 
     const dragId = dragElementIdRef.current;
-    if (dragId) {
+    const dragStart = dragElementStartRef.current;
+    if (dragId && dragStart) {
       dragElementIdRef.current = null;
+      dragElementStartRef.current = null;
       const st = useStore.getState();
       useStore.setState({
-        elements: st.elements.map((el) =>
-          el.id === dragId ? { ...el, x: dragElementStartRef.current.x, y: dragElementStartRef.current.y } : el
-        ),
+        elements: st.elements.map((el) => (el.id === dragId ? dragStart : el)),
       });
     }
   }, []);
@@ -250,7 +251,7 @@ export default function Canvas() {
       for (let i = elements.length - 1; i >= 0; i--) {
         if (hitTest(elements[i], point, viewport)) {
           setSelected(elements[i].id);
-          dragElementStartRef.current = { x: elements[i].x, y: elements[i].y };
+          dragElementStartRef.current = elements[i];
           dragElementIdRef.current = elements[i].id;
           found = true;
           break;
@@ -416,17 +417,16 @@ export default function Canvas() {
     const point = getCanvasPoint(e);
     const temp = tempElementRef.current;
     if (!temp) {
-      // Select tool dragging
+      // Select tool dragging（ZOO-154：整体平移——以起手快照 + 位移重算，多锚点同步移动、形状不变）
       if (activeTool === 'select' && selectedId) {
         const dx = point.x - dragStartRef.current.x;
         const dy = point.y - dragStartRef.current.y;
         const el = useStore.getState().elements.find((e) => e.id === selectedId);
-        if (el) {
+        const start = dragElementStartRef.current;
+        if (el && start) {
           useStore.setState({
             elements: useStore.getState().elements.map((e) =>
-              e.id === selectedId
-                ? { ...e, x: dragElementStartRef.current.x + dx, y: dragElementStartRef.current.y + dy }
-                : e
+              e.id === selectedId ? translateElement(start, dx, dy) : e
             ),
           });
         }
@@ -528,15 +528,15 @@ export default function Canvas() {
       tempElementRef.current = null;
     }
 
-    // Commit select drag
+    // Commit select drag（before 取起手整元素快照——undo 按整元素回滚，多锚点不变形）
     if (activeTool === 'select' && selectedId) {
       const el = useStore.getState().elements.find((e) => e.id === selectedId);
-      if (el) {
-        const orig = { x: dragElementStartRef.current.x, y: dragElementStartRef.current.y };
+      const orig = dragElementStartRef.current;
+      if (el && orig) {
         if (el.x !== orig.x || el.y !== orig.y) {
           useStore.getState().pushOperations([{
             type: 'update', elementId: selectedId,
-            before: { ...el, x: orig.x, y: orig.y },
+            before: orig,
             after: { ...el },
           }]);
         }

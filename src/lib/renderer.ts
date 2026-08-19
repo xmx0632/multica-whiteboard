@@ -353,6 +353,24 @@ export function hitTestSelectionHandle(
   return null;
 }
 
+/**
+ * 元素整体平移（ZOO-154）：x/y 与所有锚点同步位移，几何形状不变。
+ * 多锚点类型——line/arrow 的 x2/y2、path 的 points——均随基准点平移；
+ * rectangle/circle/text/mathPlot 等外框语义类型只需 x/y。纯函数，不改原元素。
+ */
+export function translateElement(el: WhiteboardElement, dx: number, dy: number): WhiteboardElement {
+  const moved = { ...el, x: el.x + dx, y: el.y + dy } as WhiteboardElement;
+  switch (moved.type) {
+    case 'line':
+    case 'arrow':
+      return { ...moved, x2: moved.x2 + dx, y2: moved.y2 + dy };
+    case 'path':
+      return { ...moved, points: moved.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+    default:
+      return moved;
+  }
+}
+
 export function getElementBounds(el: WhiteboardElement): { x: number; y: number; width: number; height: number } | null {
   switch (el.type) {
     case 'path': {
