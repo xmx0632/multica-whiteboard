@@ -5,7 +5,7 @@ import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, translateElement } from '@/lib/renderer';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { createMathPlotElement } from '@/lib/mathplotElement';
-import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt } from '@/lib/gestures';
+import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt, panBy } from '@/lib/gestures';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,6 +22,8 @@ export default function Canvas() {
   const isPanningRef = useRef(false);
   const isDrawingRef = useRef(false);
   const [spaceDown, setSpaceDown] = useState(false);
+  // pan 进行中（ZOO-157 手型工具光标 grab → grabbing；空格 / 中键平移同享）
+  const [panActive, setPanActive] = useState(false);
   const tempElementRef = useRef<WhiteboardElement | null>(null);
   const dragStartRef = useRef<Point>({ x: 0, y: 0 });
   /** select 拖拽起手元素快照（ZOO-154 整体平移）：多锚点类型须存整元素——移动 / 双指取消恢复 / 抬指 undo 快照三处共用 */
@@ -217,6 +219,16 @@ export default function Canvas() {
     // 双指提升（ZOO-144 验收：双指落下不产生元素）：取消工具手势，进入画布平移缩放
     if (e.pointerType === 'touch' && shouldPromoteToPinch(touchCount())) {
       if (isDrawingRef.current || resizeRef.current || dragElementIdRef.current) cancelToolGesture();
+      // 手型 / 空格单指平移进行中提升为双指：终止单指 pan（含未决 rAF 帧），双指手势全量接管视口
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        setPanActive(false);
+        panPendingRef.current = null;
+        if (panRafRef.current !== null) {
+          cancelAnimationFrame(panRafRef.current);
+          panRafRef.current = null;
+        }
+      }
       if (!pinchRef.current) beginPinch();
       return;
     }
@@ -224,8 +236,10 @@ export default function Canvas() {
     // 该指针接管当前手势通道（工具 / pan 均独占，后续 move 只认它）
     toolPointerIdRef.current = e.pointerId;
 
-    if (spaceDown || e.button === 1) {
+    // 平移起手（ZOO-157）：手型工具主键（鼠标 / 触摸 / 触控笔统一），空格按住与中键为既有通道
+    if (spaceDown || e.button === 1 || (activeTool === 'hand' && e.button === 0)) {
       isPanningRef.current = true;
+      setPanActive(true);
       panStartRef.current = { x: e.clientX, y: e.clientY };
       panOffsetStartRef.current = { x: viewport.offsetX, y: viewport.offsetY };
       return;
@@ -332,10 +346,11 @@ export default function Canvas() {
     const d = panPendingRef.current;
     if (!d) return;
     panPendingRef.current = null;
-    setViewport({
-      offsetX: panOffsetStartRef.current.x + d.x,
-      offsetY: panOffsetStartRef.current.y + d.y,
-    });
+    setViewport(panBy(
+      { offsetX: panOffsetStartRef.current.x, offsetY: panOffsetStartRef.current.y, scale: useStore.getState().viewport.scale },
+      d.x,
+      d.y,
+    ));
   }, [setViewport]);
 
   /** 控点缩放几何（§5.2 缩放语义）：equalRatio 角拖拽锁定纵横比 → y 视窗随宽高比保持，圆不变形。 */
@@ -483,6 +498,7 @@ export default function Canvas() {
 
     if (isPanningRef.current) {
       isPanningRef.current = false;
+      setPanActive(false);
       // 结束 pan：取消未决帧并同步落定最终位移（避免停留在倒数第二帧位置）
       if (panRafRef.current !== null) {
         cancelAnimationFrame(panRafRef.current);
@@ -491,10 +507,11 @@ export default function Canvas() {
       const d = panPendingRef.current;
       panPendingRef.current = null;
       if (d) {
-        setViewport({
-          offsetX: panOffsetStartRef.current.x + d.x,
-          offsetY: panOffsetStartRef.current.y + d.y,
-        });
+        setViewport(panBy(
+          { offsetX: panOffsetStartRef.current.x, offsetY: panOffsetStartRef.current.y, scale: useStore.getState().viewport.scale },
+          d.x,
+          d.y,
+        ));
       }
       return;
     }
@@ -576,7 +593,7 @@ export default function Canvas() {
       <canvas
         ref={canvasRef}
         className="whiteboard-canvas absolute inset-0 w-full h-full"
-        style={{ cursor: spaceDown ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
+        style={{ cursor: panActive ? 'grabbing' : spaceDown || activeTool === 'hand' ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

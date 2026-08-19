@@ -11,6 +11,7 @@ import {
   DEFAULT_FONT_SIZE,
 } from './types';
 import type { EquationDraftPayload } from './math/types';
+import { strokeColorPatch, canRestyleFromToolPanel, elementStrokeColor } from './stroke';
 
 interface WhiteboardState {
   // Document
@@ -63,6 +64,18 @@ interface WhiteboardState {
   setFillColor: (color: string | null) => void;
   setFontSize: (size: number) => void;
 
+  // Actions - 选中样式（ZOO-157：面板操作有选中元素时直接作用于该元素）
+  /** 颜色色板点选（离散）：有选中元素 → 立即改该元素颜色（单条可撤销快照）并同步默认色；无选中 → 仅设默认色 */
+  pickStrokeColor: (color: string) => void;
+  /** 自定义取色器拖动（连续）：有选中元素 → 直改预览（D5 不入栈）并同步默认色；快照由 commitStrokeStyle 压入 */
+  inputStrokeColor: (color: string) => void;
+  /** 线宽滑杆拖动（连续）：有选中元素 → 直改预览（D5 不入栈）并同步默认线宽；快照由 commitStrokeStyle 压入 */
+  inputStrokeWidth: (width: number) => void;
+  /** 连续调整收尾（抬杆 / 取色器失焦）：一次手势压一条可撤销快照（无改动不压栈） */
+  commitStrokeStyle: () => void;
+  /** 连续手势起手元素快照（D5 两段式；非渲染态，置空表示手势未开始） */
+  strokeGestureBefore: WhiteboardElement | null;
+
   // Actions - Viewport
   setViewport: (viewport: Partial<Viewport>) => void;
 
@@ -107,6 +120,9 @@ export const useStore = create<WhiteboardState>((set, get) => ({
 
   // MathPlot 插入握手
   pendingMathPlot: null,
+
+  // 选中样式连续手势快照（取色器 / 线宽滑杆共用）
+  strokeGestureBefore: null,
 
   // Element actions
   addElement: (element) => {
@@ -179,6 +195,49 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   setStrokeWidth: (width) => set({ strokeWidth: width }),
   setFillColor: (color) => set({ fillColor: color }),
   setFontSize: (size) => set({ fontSize: size }),
+
+  // 选中样式（ZOO-157）：mathPlot 有专属参数面板，默认面板操作跳过它防回归
+  pickStrokeColor: (color) => {
+    const { selectedId, elements } = get();
+    const el = elements.find((e) => e.id === selectedId);
+    if (el && canRestyleFromToolPanel(el)) {
+      get().updateElement(el.id, strokeColorPatch(el, color));
+    }
+    set({ strokeColor: color });
+  },
+
+  inputStrokeColor: (color) => {
+    const { selectedId, elements } = get();
+    const el = elements.find((e) => e.id === selectedId);
+    if (el && canRestyleFromToolPanel(el)) {
+      if (!get().strokeGestureBefore) set({ strokeGestureBefore: el });
+      get().updateElementTransient(el.id, strokeColorPatch(el, color));
+    }
+    set({ strokeColor: color });
+  },
+
+  inputStrokeWidth: (width) => {
+    const { selectedId, elements } = get();
+    const el = elements.find((e) => e.id === selectedId);
+    if (el && canRestyleFromToolPanel(el)) {
+      if (!get().strokeGestureBefore) set({ strokeGestureBefore: el });
+      get().updateElementTransient(el.id, { strokeWidth: width });
+    }
+    set({ strokeWidth: width });
+  },
+
+  commitStrokeStyle: () => {
+    const before = get().strokeGestureBefore;
+    set({ strokeGestureBefore: null });
+    if (!before) return;
+    const cur = get().elements.find((e) => e.id === before.id);
+    if (!cur) return;
+    const changed =
+      cur.strokeWidth !== before.strokeWidth ||
+      elementStrokeColor(cur) !== elementStrokeColor(before);
+    if (!changed) return;
+    get().pushOperations([{ type: 'update', elementId: before.id, before, after: { ...cur } }]);
+  },
 
   // MathPlot 插入握手：面板只投递载荷，落点（画布中心）由 Canvas 用自身 rect 计算
   requestMathPlotInsert: (payload) => set((s) => ({
