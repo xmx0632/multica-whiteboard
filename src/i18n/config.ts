@@ -2,12 +2,13 @@
  * i18n 语言解析（ZOO-176）—— 纯函数，无 React / Next 依赖，可单测。
  *
  * 优先级：cookie 用户偏好 > Accept-Language 协商 > 默认 zh-CN。
- * 语言匹配规则：精确（zh-CN / en-US）→ 语言主子串匹配（zh-TW → zh-CN、en-GB → en-US）
+ * 语言匹配规则：精确（zh-CN / en-US / ja-JP / ko-KR）→ 语言主子串匹配
+ * （zh-TW → zh-CN、en-GB → en-US、ja → ja-JP、ko → ko-KR）
  * → 不支持的语言回退默认 zh-CN。GeoIP 不引入：语言 ≠ 地理，浏览器语言偏好
  * （Accept-Language 即 navigator.languages 的 HTTP 投影）已是更准的信号。
  */
 
-export const LOCALES = ['zh-CN', 'en-US'] as const;
+export const LOCALES = ['zh-CN', 'en-US', 'ja-JP', 'ko-KR'] as const;
 
 export type Locale = (typeof LOCALES)[number];
 
@@ -26,7 +27,8 @@ export function isLocale(value: string | undefined | null): value is Locale {
 
 /**
  * 单个语言标签 → 支持语言匹配：
- * 'zh-CN' → 'zh-CN'；'zh-TW' / 'zh' → 'zh-CN'；'en-GB' / 'en' → 'en-US'；其余 null。
+ * 'zh-CN' → 'zh-CN'；'zh-TW' / 'zh' → 'zh-CN'；'en-GB' / 'en' → 'en-US'；
+ * 'ja-JP' / 'ja' → 'ja-JP'；'ko-KR' / 'ko' → 'ko-KR'；其余 null。
  */
 export function matchLocale(tag: string): Locale | null {
   const normalized = tag.trim().toLowerCase();

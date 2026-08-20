@@ -8,8 +8,9 @@
     "description": "Online teaching whiteboard with equation plotting: draw, export, and sync across devices"
   },
   "lang": {
-    "toggle": "中文",
-    "toggleAria": "Switch to Chinese"
+    "nativeName": "English",
+    "title": "Language",
+    "switchTo": "Switch to {lang}"
   },
   "toolbar": {
     "hand": "Hand (Pan)",
