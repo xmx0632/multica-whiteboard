@@ -8,10 +8,12 @@
  * （EquationDraftPayload 携带 StructuralOutcome），由渲染侧按需重新编译（LRU 缓存命中）。
  */
 import { parseEquation } from './parse';
+import { zhT, type LibT } from '../../i18n/lib';
 import type { StructuralOutcome } from './types';
 
-export function validateEquation(raw: string): StructuralOutcome {
-  const result = parseEquation(raw);
+/** ZOO-176：t 透传给 parseEquation（错误文案随语言；缺省中文与历史行为一致）。 */
+export function validateEquation(raw: string, t: LibT = zhT): StructuralOutcome {
+  const result = parseEquation(raw, t);
   // ZOO-166 方案 A：透传自变量字母（缺省 x 不携带，旧消费方零感知）
   return result.kind === 'explicit'
     ? result.variable

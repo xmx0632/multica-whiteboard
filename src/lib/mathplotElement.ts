@@ -6,6 +6,7 @@
  * 几何方程（直线 / 圆 / 椭圆）强制 equalRatio，定义域取采样包围盒（等比卡片取纵横比）。
  */
 import { v4 as uuidv4 } from 'uuid';
+import { zhT, type LibT } from '../i18n/lib';
 import { sampleGeometry } from './math/sample';
 import { validateEquation } from './math/validate';
 import type { EquationDraftPayload } from './math/types';
@@ -81,8 +82,9 @@ export interface EquationCommitResult {
  * 非法方程返回 fields=null —— 调用方须回滚元素到手势前快照（保持原曲线），
  * 不得把 error 态写入既有元素（属性面板编辑路径，区别于编辑器建卡的错误占位流）。
  */
-export function convergeEquationCommit(equation: string): EquationCommitResult {
-  const outcome = validateEquation(equation);
+/** ZOO-176：t 透传（错误文案随语言；缺省中文与历史行为一致）。 */
+export function convergeEquationCommit(equation: string, t: LibT = zhT): EquationCommitResult {
+  const outcome = validateEquation(equation, t);
   const trimmed = equation.trim();
   if (outcome.kind === 'error') return { fields: null, error: outcome.message };
   return { fields: mathPlotFieldsFromPayload({ equation: trimmed || equation, outcome }) };

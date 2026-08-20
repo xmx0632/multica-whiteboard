@@ -16,9 +16,9 @@ const errorMessage = (raw: string) => {
 
 describe('parseEquation 分类：14 模板 + PRD 方程族', () => {
   it('全部 17 个模板可解析', () => {
-    for (const t of EQUATION_TEMPLATES) {
-      const r = parseEquation(t.equation);
-      expect(r.kind, `模板「${t.name}」${t.equation}`).not.toBe('error');
+    for (const tpl of EQUATION_TEMPLATES) {
+      const r = parseEquation(tpl.equation);
+      expect(r.kind, `模板「${tpl.id}」${tpl.equation}`).not.toBe('error');
     }
   });
 

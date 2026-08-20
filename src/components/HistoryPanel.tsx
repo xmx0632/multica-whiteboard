@@ -5,6 +5,7 @@ import { listLocalDocuments, loadFromLocal, deleteFromLocal, listServerDocuments
 import { deleteSnapshot, recoverForDocument } from '@/lib/autosave';
 import { useStore } from '@/lib/store';
 import { WhiteboardDocument } from '@/lib/types';
+import { useI18n } from '@/i18n/I18nProvider';
 
 interface DocMeta {
   id: string;
@@ -22,6 +23,7 @@ export default function HistoryPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const { loadDocument, newDocument, isDirty, applyDocumentRename } = useStore();
+  const { locale, t } = useI18n();
 
   const refreshDocs = useCallback(async () => {
     setLocalDocs(listLocalDocuments());
@@ -44,7 +46,7 @@ export default function HistoryPanel() {
   }, []);
 
   const handleLoad = useCallback(async (id: string, source: 'local' | 'server') => {
-    if (isDirty && !confirm('Discard unsaved changes?')) return;
+    if (isDirty && !confirm(t('menu.confirmDiscard'))) return;
     let doc: WhiteboardDocument | null = null;
     if (source === 'local') {
       doc = loadFromLocal(id);
@@ -56,10 +58,10 @@ export default function HistoryPanel() {
       loadDocument(await recoverForDocument(doc));
       closePanel();
     }
-  }, [isDirty, loadDocument, closePanel]);
+  }, [isDirty, loadDocument, closePanel, t]);
 
   const handleDelete = useCallback(async (id: string, source: 'local' | 'server') => {
-    if (!confirm('Delete this whiteboard?')) return;
+    if (!confirm(t('history.confirmDelete'))) return;
     if (source === 'local') {
       deleteFromLocal(id);
     } else {
@@ -68,13 +70,14 @@ export default function HistoryPanel() {
     // 删除即弃：连带清掉自动保存快照与会话标记，防止刷新后「复活」
     await deleteSnapshot(id);
     refreshDocs();
-  }, [refreshDocs]);
+  }, [refreshDocs, t]);
 
   const handleNew = useCallback(() => {
-    if (isDirty && !confirm('Discard unsaved changes?')) return;
-    newDocument();
+    if (isDirty && !confirm(t('menu.confirmDiscard'))) return;
+    // ZOO-176：默认标题随语言
+    newDocument(t('common.untitled'));
     closePanel();
-  }, [isDirty, newDocument, closePanel]);
+  }, [isDirty, newDocument, closePanel, t]);
 
   const startRename = useCallback((doc: DocMeta) => {
     setEditingId(doc.id);
@@ -101,7 +104,8 @@ export default function HistoryPanel() {
 
   const cancelRename = useCallback(() => setEditingId(null), []);
 
-  const formatDate = (ts: number) => new Date(ts).toLocaleString();
+  // ZOO-176：日期格式随语言环境（Intl）
+  const formatDate = (ts: number) => new Date(ts).toLocaleString(locale);
 
   const docs = tab === 'local' ? localDocs : serverDocs;
 
@@ -111,14 +115,14 @@ export default function HistoryPanel() {
         onClick={() => setOpen(true)}
         className="whiteboard-chrome touch-target absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 z-10"
       >
-        ☰ History
+        {t('history.open')}
       </button>
 
       {open && (
         <div className="absolute inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={closePanel}>
           <div className="touch-panel touch-modal bg-white rounded-2xl shadow-2xl w-[480px] max-w-[calc(100vw-1.5rem)] max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Whiteboards</h2>
+              <h2 className="text-lg font-semibold">{t('history.title')}</h2>
               <button onClick={closePanel} className="touch-target text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
 
@@ -127,20 +131,20 @@ export default function HistoryPanel() {
                 onClick={() => switchTab('local')}
                 className={`touch-target flex-1 py-2 text-sm font-medium ${tab === 'local' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
               >
-                Browser Storage ({localDocs.length})
+                {t('history.localTab', { count: localDocs.length })}
               </button>
               <button
                 onClick={() => switchTab('server')}
                 className={`touch-target flex-1 py-2 text-sm font-medium ${tab === 'server' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
               >
-                Server ({serverDocs.length})
+                {t('history.serverTab', { count: serverDocs.length })}
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-2">
               {docs.length === 0 ? (
                 <div className="text-center text-gray-400 py-8 text-sm">
-                  No saved whiteboards
+                  {t('history.empty')}
                 </div>
               ) : (
                 docs.map((doc) => (
@@ -158,11 +162,11 @@ export default function HistoryPanel() {
                           if (e.key === 'Escape') cancelRename();
                         }}
                         className="flex-1 min-w-0 text-base border border-blue-400 rounded-md px-2 py-1 outline-none"
-                        aria-label="Whiteboard name"
+                        aria-label={t('history.nameAria')}
                       />
                     ) : (
                       <>
-                        <div className="flex-1 min-w-0" title="Double-click to rename">
+                        <div className="flex-1 min-w-0" title={t('history.dblClickTip')}>
                           <div
                             className="text-sm font-medium truncate cursor-text"
                             onDoubleClick={() => startRename(doc)}
@@ -175,19 +179,19 @@ export default function HistoryPanel() {
                           onClick={() => handleLoad(doc.id, tab)}
                           className="touch-target px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 active:bg-blue-200"
                         >
-                          Open
+                          {t('history.openBtn')}
                         </button>
                         <button
                           onClick={() => startRename(doc)}
                           className="touch-target touch-visible px-2 py-1 text-xs text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
-                          Rename
+                          {t('history.renameBtn')}
                         </button>
                         <button
                           onClick={() => handleDelete(doc.id, tab)}
                           className="touch-target touch-visible px-2 py-1 text-xs text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
-                          Delete
+                          {t('history.deleteBtn')}
                         </button>
                       </>
                     )}
@@ -201,7 +205,7 @@ export default function HistoryPanel() {
                 onClick={handleNew}
                 className="touch-target w-full py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 transition-colors"
               >
-                New Whiteboard
+                {t('history.newBtn')}
               </button>
             </div>
           </div>

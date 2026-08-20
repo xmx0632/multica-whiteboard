@@ -1,6 +1,7 @@
 'use client';
 
 import { useFullscreenToggle } from '@/lib/useFullscreenToggle';
+import { useT } from '@/i18n/I18nProvider';
 
 /**
  * 移动端全屏切换钮（ZOO-152 追加需求）。
@@ -11,13 +12,14 @@ import { useFullscreenToggle } from '@/lib/useFullscreenToggle';
  */
 export default function FullscreenToggle({ inRow = false }: { inRow?: boolean }) {
   const { mode, onToggle } = useFullscreenToggle();
+  const t = useT();
 
   if (mode === 'hidden') return null;
 
   const label =
-    mode === 'exit' ? '✕ 退出全屏'
-    : mode === 'enter-landscape' ? '⛶ 横屏全屏'
-    : '⛶ 全屏';
+    mode === 'exit' ? t('fullscreen.exit')
+    : mode === 'enter-landscape' ? t('fullscreen.landscape')
+    : t('fullscreen.enter');
 
   return (
     <button

@@ -95,7 +95,8 @@ export interface EllipseParams {
 }
 
 /**
- * 4a 结构校验结果（validateEquation 的返回）。错误文案沿用交互原型五类。
+ * 4a 结构校验结果（validateEquation 的返回）。错误文案沿用交互原型五类
+ * （ZOO-176 起文案经注入翻译器随语言，见 parse.ts / i18n/lib.ts）。
  * ZOO-166 方案 A：explicit 携带 variable（自变量字母，缺省即 x）——任意单字母
  * 可作自变量（y=4z ⟂ y=4x 同一条直线），图形与变量命名无关。
  */

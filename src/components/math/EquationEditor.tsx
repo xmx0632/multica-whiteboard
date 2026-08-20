@@ -16,25 +16,29 @@
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import MiniPreview from './MiniPreview';
-import { SYMBOL_BUTTONS, groupTemplates } from '@/lib/math/templates';
+import { useT } from '@/i18n/I18nProvider';
+import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey } from '@/lib/math/templates';
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
 import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
 import type { EquationDraftPayload, PreviewData, StructuralOutcome } from '@/lib/math/types';
 
-const KIND_LABELS: Record<string, string> = {
-  line: '直线（二元一次方程）',
-  linePair: '两条直线（退化二次方程）',
-  point: '单点（退化二次方程）',
-  parabola: '抛物线（二元二次方程，含 xy 交叉项旋转形）',
-  hyperbola: '双曲线（二元二次方程，含 xy 交叉项旋转形）',
-  circle: '圆（几何方程）',
-  ellipse: '椭圆（几何标准形 / 二元二次方程）',
+/** 分类状态行文案资源键（ZOO-166 方案 A：显式函数按实际自变量字母显示；ZOO-176 随语言）。 */
+const KIND_LABEL_KEYS: Record<string, string> = {
+  line: 'equation.kindLine',
+  linePair: 'equation.kindLinePair',
+  point: 'equation.kindPoint',
+  parabola: 'equation.kindParabola',
+  hyperbola: 'equation.kindHyperbola',
+  circle: 'equation.kindCircle',
+  ellipse: 'equation.kindEllipse',
 };
 
-/** 分类状态行文案（ZOO-166 方案 A：显式函数按实际自变量字母显示）。 */
-function kindLabel(outcome: StructuralOutcome): string {
-  return outcome.kind === 'explicit' ? `显式函数 y=f(${outcome.variable ?? 'x'})` : KIND_LABELS[outcome.kind] ?? outcome.kind;
+/** 分类状态行文案（经注入 t 按语言渲染）。 */
+function kindLabel(outcome: StructuralOutcome, t: (key: string, params?: Record<string, string | number>) => string): string {
+  if (outcome.kind === 'explicit') return t('equation.kindExplicit', { v: outcome.variable ?? 'x' });
+  const key = KIND_LABEL_KEYS[outcome.kind];
+  return key ? t(key) : outcome.kind;
 }
 
 export interface EquationEditorProps {
@@ -56,6 +60,7 @@ export default function EquationEditor({
 }: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
   const inputRef = useRef<HTMLInputElement>(null);
+  const t = useT();
 
   // ZOO-164：分组折叠状态（会话级 store——面板收起 / 切工具再回来不丢）。
   // 第三参 getServerSnapshot 供 SSG 预渲染（mathplot-demo 静态导出），快照确定无 hydration 问题
@@ -67,7 +72,7 @@ export default function EquationEditor({
   const templateGroups = useMemo(() => groupTemplates(), []);
 
   const trimmed = draft.trim();
-  const outcome = useMemo(() => validateEquation(draft), [draft]);
+  const outcome = useMemo(() => validateEquation(draft, t), [draft, t]);
   const isError = trimmed.length > 0 && outcome.kind === 'error';
   const isValid = trimmed.length > 0 && !isError;
 
@@ -105,9 +110,9 @@ export default function EquationEditor({
   };
 
   const statusLine = () => {
-    if (!trimmed) return { text: '等待输入…', cls: 'text-gray-400' };
+    if (!trimmed) return { text: t('equation.wait'), cls: 'text-gray-400' };
     if (isError) return { text: `⚠ ${outcome.kind === 'error' ? outcome.message : ''}`, cls: 'text-red-500' };
-    return { text: `✓ 已识别：${kindLabel(outcome)}`, cls: 'text-green-600' };
+    return { text: t('equation.recognized', { kind: kindLabel(outcome, t) }), cls: 'text-green-600' };
   };
   const status = statusLine();
 
@@ -115,14 +120,14 @@ export default function EquationEditor({
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5 pb-0.5">
         <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
-        方程 Equation
+        {t('equation.title')}
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
             className="touch-target ml-auto border-none bg-transparent text-gray-400 text-[11px] cursor-pointer hover:text-gray-600 active:text-gray-800 transition-colors"
           >
-            ✕ 取消
+            {t('equation.cancel')}
           </button>
         )}
       </div>
@@ -139,7 +144,7 @@ export default function EquationEditor({
             }
             if (e.key === 'Escape') inputRef.current?.blur();
           }}
-          placeholder="如 y=sin(x) 或 y=x²-2x-3"
+          placeholder={t('equation.placeholder')}
           autoComplete="off"
           spellCheck={false}
           autoFocus
@@ -148,7 +153,7 @@ export default function EquationEditor({
               ? 'border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]'
               : 'border-gray-300 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.15)]'
           }`}
-          aria-label="方程输入"
+          aria-label={t('equation.inputAria')}
         />
         <div className={`text-[11px] mt-1 leading-snug ${status.cls}`}>{status.text}</div>
       </div>
@@ -166,25 +171,25 @@ export default function EquationEditor({
       />
 
       <div>
-        <span className="text-xs font-medium text-gray-500 mb-1 block">插入符号</span>
+        <span className="text-xs font-medium text-gray-500 mb-1 block">{t('equation.symbols')}</span>
         <div className="flex gap-1 flex-wrap">
-          {SYMBOL_BUTTONS.map((s) => (
+          {SYMBOL_BUTTONS.map((sym) => (
             <button
-              key={s.label}
+              key={sym.label}
               type="button"
-              title={s.title}
+              title={t(symbolTitleKey(sym.id))}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => insertAtCursor(s.insert)}
+              onClick={() => insertAtCursor(sym.insert)}
               className="touch-target min-w-7 h-6 px-1.5 border border-gray-200 bg-white rounded-md font-serif text-[13px] text-gray-700 cursor-pointer hover:border-blue-500 hover:text-blue-500 active:bg-gray-100 transition-colors"
             >
-              {s.label}
+              {sym.label}
             </button>
           ))}
         </div>
       </div>
 
       <div>
-        <span className="text-xs font-medium text-gray-500 mb-1 block">模板 Templates</span>
+        <span className="text-xs font-medium text-gray-500 mb-1 block">{t('equation.templates')}</span>
         <div className="flex flex-col gap-1">
           {templateGroups.map((group) => {
             const expanded = expandedGroupIds.has(group.id);
@@ -195,11 +200,11 @@ export default function EquationEditor({
                   type="button"
                   aria-expanded={expanded}
                   aria-controls={listId}
-                  title={`${group.name}（${group.templates.length} 个模板）`}
+                  title={t('equation.groupTip', { name: t(templateGroupNameKey(group.id)), count: group.templates.length })}
                   onClick={() => toggleGroupExpansion(group.id)}
                   className="touch-target w-full flex items-center gap-1.5 px-1.5 py-1 border-none bg-transparent cursor-pointer hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
                 >
-                  <span className="text-[11px] font-medium text-gray-600">{group.name}</span>
+                  <span className="text-[11px] font-medium text-gray-600">{t(templateGroupNameKey(group.id))}</span>
                   <span className="text-[10px] text-gray-400">{group.templates.length}</span>
                   <span
                     className={`ml-auto text-gray-400 text-[11px] leading-none transition-transform duration-150 ${expanded ? 'rotate-0' : '-rotate-90'}`}
@@ -211,17 +216,17 @@ export default function EquationEditor({
                 <div className="group-collapse" data-collapsed={!expanded}>
                   <div className="group-collapse-inner">
                     <div id={listId} className="grid grid-cols-2 gap-1 p-1 pt-0">
-                      {group.templates.map((t) => (
+                      {group.templates.map((tpl) => (
                       <button
-                        key={t.name}
+                        key={tpl.id}
                         type="button"
-                        title={t.equation}
-                        onClick={() => applyTemplate(t.equation)}
+                        title={tpl.equation}
+                        onClick={() => applyTemplate(tpl.equation)}
                         className="touch-target border border-gray-200 bg-white rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
                       >
-                        <span className="block text-[10px] text-gray-400 leading-tight">{t.name}</span>
+                        <span className="block text-[10px] text-gray-400 leading-tight">{t(templateNameKey(tpl.id))}</span>
                         <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">
-                          {t.equation}
+                          {tpl.equation}
                         </span>
                       </button>
                     ))}
@@ -242,7 +247,7 @@ export default function EquationEditor({
           disabled={!trimmed}
           className="touch-target flex-1 py-1.5 border-none rounded-lg bg-blue-500 text-white text-[13px] font-semibold cursor-pointer hover:bg-[#2f7ae5] active:bg-[#2564c4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          插入图形 ⏎
+          {t('equation.insert')}
         </button>
         <button
           type="button"
@@ -252,13 +257,11 @@ export default function EquationEditor({
           }}
           className="touch-target py-1.5 px-3 border border-gray-200 rounded-lg bg-white text-gray-500 text-xs cursor-pointer hover:bg-gray-100 active:bg-gray-200 transition-colors"
         >
-          清空
+          {t('equation.clear')}
         </button>
       </div>
 
-      <div className="text-[11px] text-gray-400 leading-relaxed">
-        确认后在画布生成数学图形元素（MathPlot）：自带坐标系，可移动 / 缩放 / 撤销重做。
-      </div>
+      <div className="text-[11px] text-gray-400 leading-relaxed">{t('equation.hint')}</div>
     </div>
   );
 }
