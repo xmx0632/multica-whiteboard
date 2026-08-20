@@ -4,57 +4,67 @@
  *
  * ZOO-164：模板按方程族分组（TEMPLATE_GROUPS）供面板分组折叠渲染；
  * EQUATION_TEMPLATES 仍为唯一数据源，插入路径不变。
+ * ZOO-176 i18n：模板 / 分组 / 符号只存稳定 id，显示名经资源键
+ * （equation.tpl<Id> / equation.group<Id> / equation.symbol<Id>）按语言渲染，
+ * 新增语言无需改本文件。
  */
 
 export interface EquationTemplate {
-  /** 模板名（按钮小字） */
-  name: string;
+  /** 模板 id（显示名资源键后缀，见 templateNameKey） */
+  id: string;
   /** 填入输入框的方程原文 */
   equation: string;
 }
 
 export const EQUATION_TEMPLATES: EquationTemplate[] = [
-  { name: '一次函数', equation: 'y=2x+1' },
-  { name: '二元一次', equation: '3x+2y=6' },
-  { name: '二次函数', equation: 'y=x²-2x-3' },
-  { name: '三次函数', equation: 'y=x³-2x' },
-  { name: '正弦', equation: 'y=sin(x)' },
-  { name: '正弦变换', equation: 'y=2sin(2x+π/3)' },
-  { name: '正切', equation: 'y=tan(x)' },
-  { name: '根式', equation: 'y=√x' },
-  { name: '反比例', equation: 'y=1/x' },
-  { name: '指数', equation: 'y=2ˣ' },
-  { name: '对数', equation: 'y=ln(x)' },
-  { name: '绝对值', equation: 'y=|x-1|' },
-  { name: '圆', equation: '(x-1)²+(y-2)²=9' },
-  { name: '椭圆', equation: 'x²/9+y²/4=1' },
-  { name: '抛物线', equation: 'y²=4x' },
-  { name: '双曲线', equation: 'x²/9-y²/4=1' },
-  { name: '退化两直线', equation: 'x²-y²=0' },
-  { name: '旋转双曲线', equation: 'xy=1' },
-  { name: '旋转椭圆', equation: '5x²-6xy+5y²=8' },
+  { id: 'linear', equation: 'y=2x+1' },
+  { id: 'linear2var', equation: '3x+2y=6' },
+  { id: 'quadratic', equation: 'y=x²-2x-3' },
+  { id: 'cubic', equation: 'y=x³-2x' },
+  { id: 'sine', equation: 'y=sin(x)' },
+  { id: 'sineTransform', equation: 'y=2sin(2x+π/3)' },
+  { id: 'tangent', equation: 'y=tan(x)' },
+  { id: 'radical', equation: 'y=√x' },
+  { id: 'inverse', equation: 'y=1/x' },
+  { id: 'exponent', equation: 'y=2ˣ' },
+  { id: 'log', equation: 'y=ln(x)' },
+  { id: 'absolute', equation: 'y=|x-1|' },
+  { id: 'circle', equation: '(x-1)²+(y-2)²=9' },
+  { id: 'ellipse', equation: 'x²/9+y²/4=1' },
+  { id: 'parabola', equation: 'y²=4x' },
+  { id: 'hyperbola', equation: 'x²/9-y²/4=1' },
+  { id: 'degenerateLines', equation: 'x²-y²=0' },
+  { id: 'rotatedHyperbola', equation: 'xy=1' },
+  { id: 'rotatedEllipse', equation: '5x²-6xy+5y²=8' },
 ];
+
+/** id → 资源键后缀（首字母大写驼峰）：'linear2var' → 'tplLinear2var'。 */
+const keySuffix = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+
+/** 模板显示名资源键（equation.tpl<Id>）。 */
+export const templateNameKey = (id: string) => `equation.tpl${keySuffix(id)}`;
 
 export interface TemplateGroup {
   /** 分组 id（折叠状态记忆的键） */
   id: string;
-  /** 组头行显示的组名（PRD 方程族对齐） */
-  name: string;
-  /** 组内模板名（引用 EQUATION_TEMPLATES 的 name；分组渲染解析，插入路径不变） */
-  templateNames: readonly string[];
+  /** 组内模板 id（引用 EQUATION_TEMPLATES 的 id；分组渲染解析，插入路径不变） */
+  templateIds: readonly string[];
 }
 
 /** 模板分组（ZOO-164）：按 PRD §5.2 方程族归类，组序即面板展示序 */
 export const TEMPLATE_GROUPS: readonly TemplateGroup[] = [
-  { id: 'basic', name: '基本函数', templateNames: ['一次函数', '二次函数', '三次函数', '根式', '反比例', '绝对值'] },
-  { id: 'trig', name: '三角函数', templateNames: ['正弦', '正弦变换', '正切'] },
-  { id: 'explog', name: '指数对数', templateNames: ['指数', '对数'] },
-  { id: 'conic', name: '几何曲线', templateNames: ['圆', '椭圆', '抛物线', '双曲线', '旋转双曲线', '旋转椭圆'] },
-  { id: 'line', name: '直线与方程', templateNames: ['二元一次', '退化两直线'] },
+  { id: 'basic', templateIds: ['linear', 'quadratic', 'cubic', 'radical', 'inverse', 'absolute'] },
+  { id: 'trig', templateIds: ['sine', 'sineTransform', 'tangent'] },
+  { id: 'explog', templateIds: ['exponent', 'log'] },
+  { id: 'conic', templateIds: ['circle', 'ellipse', 'parabola', 'hyperbola', 'rotatedHyperbola', 'rotatedEllipse'] },
+  { id: 'line', templateIds: ['linear2var', 'degenerateLines'] },
 ];
 
+/** 分组显示名资源键（equation.group<Id>）。 */
+export const templateGroupNameKey = (id: string) => `equation.group${keySuffix(id)}`;
+
 export interface ResolvedTemplateGroup extends TemplateGroup {
-  /** 组内模板对象（按 templateNames 声明序） */
+  /** 组内模板对象（按 templateIds 声明序） */
   templates: EquationTemplate[];
 }
 
@@ -65,27 +75,31 @@ export interface ResolvedTemplateGroup extends TemplateGroup {
 export function groupTemplates(): ResolvedTemplateGroup[] {
   return TEMPLATE_GROUPS.map((g) => ({
     ...g,
-    templates: g.templateNames.map((name) => {
-      const t = EQUATION_TEMPLATES.find((tpl) => tpl.name === name);
-      if (!t) throw new Error(`模板分组引用了不存在的模板名：${name}`);
+    templates: g.templateIds.map((id) => {
+      const t = EQUATION_TEMPLATES.find((tpl) => tpl.id === id);
+      if (!t) throw new Error(`模板分组引用了不存在的模板 id：${id}`);
       return t;
     }),
   }));
 }
 
 export interface SymbolButton {
-  /** 按钮显示 */
+  /** 按钮显示（符号本身，语言无关） */
   label: string;
   /** 插入输入框光标处的文本 */
   insert: string;
-  title: string;
+  /** 悬停提示资源键后缀 id（见 symbolTitleKey） */
+  id: string;
 }
 
+/** 符号悬停提示资源键（equation.symbol<Id>）。 */
+export const symbolTitleKey = (id: string) => `equation.symbol${keySuffix(id)}`;
+
 export const SYMBOL_BUTTONS: SymbolButton[] = [
-  { label: 'π', insert: 'π', title: '圆周率 π' },
-  { label: '√', insert: '√(', title: '根号 √(' },
-  { label: '²', insert: '²', title: '平方 ²' },
-  { label: '³', insert: '³', title: '立方 ³' },
-  { label: '^', insert: '^', title: '幂 ^' },
-  { label: '|x|', insert: '|x-1|', title: '绝对值 |x-1|' },
+  { id: 'pi', label: 'π', insert: 'π' },
+  { id: 'sqrt', label: '√', insert: '√(' },
+  { id: 'sq', label: '²', insert: '²' },
+  { id: 'cube', label: '³', insert: '³' },
+  { id: 'pow', label: '^', insert: '^' },
+  { id: 'abs', label: '|x|', insert: '|x-1|' },
 ];

@@ -21,6 +21,7 @@ import type {
   PreviewData,
   StructuralOutcome,
 } from './types';
+import { zhT, type LibT } from '../../i18n/lib';
 
 /** 采样数硬上限（PRD §8 / PM 硬约束，UI 不暴露超限入口，sample 内 clamp）。 */
 export const MAX_SAMPLE_COUNT = 2000;
@@ -73,12 +74,13 @@ export function sampleExplicit(
   fn: (x: number) => number,
   view: Pick<MathViewport, 'xMin' | 'xMax'> & Partial<Pick<MathViewport, 'yMin' | 'yMax'>>,
   count: number,
+  t: LibT = zhT,
 ): SampleResult {
   const { xMin, xMax } = view;
-  if (!(xMin < xMax)) return { error: '定义域无效：xmin 需小于 xmax' };
+  if (!(xMin < xMax)) return { error: t('mathErr.domainOrder') };
   const width = xMax - xMin;
   if (width < MIN_DOMAIN_WIDTH - 1e-12 || width > MAX_DOMAIN_WIDTH + 1e-12) {
-    return { error: '定义域无效：宽度需在 0.1–1000 之间' };
+    return { error: t('mathErr.domainWidth') };
   }
 
   const n = clampSampleCount(count);
@@ -93,7 +95,7 @@ export function sampleExplicit(
     if (Number.isFinite(y)) finiteYs.push(y);
   }
   // ZOO-166：附「怎么办」指引（调整定义域或检查表达式）
-  if (finiteYs.length === 0) return { error: '定义域内无有效值——请调整定义域或检查表达式（如 y=√x 需 x≥0）' };
+  if (finiteYs.length === 0) return { error: t('mathErr.noValidValues') };
 
   const auto = fitYWindow(finiteYs);
   const yMin = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMin : auto.min;
@@ -172,9 +174,9 @@ function linePolyline(a: number, b: number, c: number, r: number): Polyline {
  * 截距；采样折线沿方向向量 (b,−a) 越出视窗对角（两端各 2×最大半宽），
  * 绘制层按卡片矩形天然裁剪——平移缩放不重采样承诺不受影响。
  */
-function sampleLine(params: LineParams, aspect: number): SampleResult {
+function sampleLine(params: LineParams, aspect: number, t: LibT = zhT): SampleResult {
   const { a, b, c } = params;
-  if (a === 0 && b === 0) return { error: '该方程不表示直线' };
+  if (a === 0 && b === 0) return { error: t('mathErr.notALine') };
   const base = lineWindowBase(a, b, c);
   const { halfX, halfY } = aspectWindow(base * 1.15 + 0.5, base * 1.15 + 0.5, aspect); // 15% + 0.5 内边距
   const r = 2 * Math.max(halfX, halfY); // 采样半径：必越出视窗对角线，卡片裁剪后两端不缺角
@@ -186,8 +188,8 @@ function sampleLine(params: LineParams, aspect: number): SampleResult {
  * 同一原点居中视窗（基准半宽取两线锚点的较大者，网格 / 轴上下文一致），
  * 各产出一条贯穿折线；重合直线退化为单线。
  */
-function sampleLinePair(params: LinePairParams, aspect: number): SampleResult {
-  if (params.lines.some((l) => l.a === 0 && l.b === 0)) return { error: '该方程不表示直线' };
+function sampleLinePair(params: LinePairParams, aspect: number, t: LibT = zhT): SampleResult {
+  if (params.lines.some((l) => l.a === 0 && l.b === 0)) return { error: t('mathErr.notALine') };
   const base = Math.max(...params.lines.map((l) => lineWindowBase(l.a, l.b, l.c)));
   const { halfX, halfY } = aspectWindow(base * 1.15 + 0.5, base * 1.15 + 0.5, aspect);
   const r = 2 * Math.max(halfX, halfY);
@@ -229,10 +231,10 @@ function samplePoint(params: DegeneratePointParams, aspect: number): SampleResul
  * （深度 max(4, 3|p|)）；t 上限取「越出上下边」与「越出开口侧边」所需者的
  * 较大值（旋转形按对角线放宽），卡片裁剪。
  */
-function sampleParabola(params: ParabolaParams, aspect: number): SampleResult {
+function sampleParabola(params: ParabolaParams, aspect: number, t: LibT = zhT): SampleResult {
   const { h, k, p, axis } = params;
   const phi = params.rotation ?? 0;
-  if (!(Math.abs(p) > 1e-12)) return { error: '该方程不表示抛物线' };
+  if (!(Math.abs(p) > 1e-12)) return { error: t('mathErr.notAParabola') };
   const depth = Math.max(4, 3 * Math.abs(p)); // 沿开口轴的展示深度
   const spread = Math.sqrt(4 * Math.abs(p) * depth); // 该深度处的张口半宽
   const anchor = Math.abs(p) + 1.5; // 焦点可见余量
@@ -285,10 +287,10 @@ const HYPERBOLA_SEGMENTS = 140;
  * 既有缺陷）；tMax 使 a·cosh t、b·sinh t 越出卡片对角线（旋转形 e₁/e₂ 在
  * x/y 两轴均有分量，统一按对角线放宽 2 倍余量），卡片裁剪贯穿边缘。
  */
-function sampleHyperbola(params: HyperbolaParams, aspect: number): SampleResult {
+function sampleHyperbola(params: HyperbolaParams, aspect: number, t: LibT = zhT): SampleResult {
   const { h, k, a, b, axis } = params;
   const phi = params.rotation ?? 0;
-  if (!(a > 0) || !(b > 0)) return { error: '该方程不表示双曲线' };
+  if (!(a > 0) || !(b > 0)) return { error: t('mathErr.notAHyperbola') };
   const c = Math.hypot(a, b);
   const r = Math.max(a, b, c);
   const { halfX, halfY } = aspectWindow(Math.max(LINE_VIEW_BASE, Math.abs(h) + 1.4 * r), Math.max(6, Math.abs(k) + 1.2 * r), aspect);
@@ -324,12 +326,13 @@ export function sampleGeometry(
   kind: 'line' | 'linePair' | 'point' | 'circle' | 'ellipse' | 'parabola' | 'hyperbola',
   params: LineParams | LinePairParams | DegeneratePointParams | CircleParams | EllipseParams | ParabolaParams | HyperbolaParams,
   aspect: number = DEFAULT_ASPECT,
+  t: LibT = zhT,
 ): SampleResult {
-  if (kind === 'line') return sampleLine(params as LineParams, aspect);
-  if (kind === 'linePair') return sampleLinePair(params as LinePairParams, aspect);
+  if (kind === 'line') return sampleLine(params as LineParams, aspect, t);
+  if (kind === 'linePair') return sampleLinePair(params as LinePairParams, aspect, t);
   if (kind === 'point') return samplePoint(params as DegeneratePointParams, aspect);
-  if (kind === 'parabola') return sampleParabola(params as ParabolaParams, aspect);
-  if (kind === 'hyperbola') return sampleHyperbola(params as HyperbolaParams, aspect);
+  if (kind === 'parabola') return sampleParabola(params as ParabolaParams, aspect, t);
+  if (kind === 'hyperbola') return sampleHyperbola(params as HyperbolaParams, aspect, t);
   const isCircle = kind === 'circle';
   const rx = isCircle ? (params as CircleParams).r : (params as EllipseParams).rx;
   const ry = isCircle ? (params as CircleParams).r : (params as EllipseParams).ry;
@@ -340,9 +343,9 @@ export function sampleGeometry(
   const segments = 120;
   const polyline: Polyline = [];
   for (let i = 0; i <= segments; i++) {
-    const t = (2 * Math.PI * i) / segments;
-    const ox = rx * Math.cos(t);
-    const oy = ry * Math.sin(t);
+    const ang = (2 * Math.PI * i) / segments;
+    const ox = rx * Math.cos(ang);
+    const oy = ry * Math.sin(ang);
     polyline.push({ x: cx + ox * cos - oy * sin, y: cy + ox * sin + oy * cos });
   }
   const padX = rx * 0.15 + 0.5;
@@ -365,12 +368,13 @@ export function sampleGeometry(
 export function sampleEquation(
   result: ParseResult,
   opts: { xMin: number; xMax: number; yMin?: number; yMax?: number; sampleCount?: number; aspect?: number },
+  t: LibT = zhT,
 ): SampleResult {
   if (result.kind === 'error') return { error: result.message };
   if (result.kind === 'explicit') {
-    return sampleExplicit(result.fn, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT);
+    return sampleExplicit(result.fn, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, t);
   }
-  return sampleGeometry(result.kind, result.params, opts.aspect ?? DEFAULT_ASPECT);
+  return sampleGeometry(result.kind, result.params, opts.aspect ?? DEFAULT_ASPECT, t);
 }
 
 /**

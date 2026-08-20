@@ -19,6 +19,7 @@ import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
 import { sampleEquation } from './sample';
 import type { MathViewport, Polyline } from './types';
+import { zhT, type LibT } from '../../i18n/lib';
 
 /** §6.1 各层默认色（与 MiniPreview / 交互原型一致）。 */
 export const PLOT_COLORS = {
@@ -364,6 +365,8 @@ export interface DrawMathPlotOptions {
   showLabel: boolean;
   /** 方程原文（内部经 beautifyEquation 美化） */
   equation: string;
+  /** ZOO-176：错误占位提示文案翻译器（缺省中文，画布 / 演示台按语言传入） */
+  t?: LibT;
 }
 
 /**
@@ -386,7 +389,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
   ctx.stroke();
 
   if (render.error) {
-    drawErrorPlaceholder(ctx, x, y, width, height, render.error, equation);
+    drawErrorPlaceholder(ctx, x, y, width, height, render.error, equation, opts.t);
     ctx.restore();
     return;
   }
@@ -435,6 +438,7 @@ function drawErrorPlaceholder(
   height: number,
   message: string,
   equation: string,
+  t: LibT = zhT,
 ): void {
   ctx.save();
   ctx.strokeStyle = PLOT_COLORS.errorBorder;
@@ -485,7 +489,7 @@ function drawErrorPlaceholder(
   }
   ctx.fillStyle = PLOT_COLORS.errorHint;
   ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('点击「重新编辑方程」修正', cx, ly);
+  ctx.fillText(t('math.errorHint'), cx, ly);
   ctx.restore();
 }
 
@@ -518,7 +522,7 @@ export function resolvePlotRender(spec: PlotSpec, frame: PlotFrame, cacheKey: ob
 function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
   const nominal: MathViewport = { xMin: spec.xAxis.min, xMax: spec.xAxis.max, yMin: -6, yMax: 6 };
   if (spec.kind === 'error') {
-    return { polylines: [], view: nominal, error: spec.errorMessage || '无法识别的方程', path2d: null };
+    return { polylines: [], view: nominal, error: spec.errorMessage || zhT('math.unrecognized'), path2d: null };
   }
 
   const yWindow = spec.equalRatio

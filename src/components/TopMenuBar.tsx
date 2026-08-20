@@ -7,13 +7,16 @@ import { saveToLocal, saveToServer } from '@/lib/persistence';
 import { useAutosaveStore } from '@/lib/autosave';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
+import { useI18n } from '@/i18n/I18nProvider';
 import ZoomControl from './ZoomControl';
+import LanguageSwitch from './LanguageSwitch';
 
 export default function TopMenuBar() {
   const {
     elements, viewport, documentId, documentTitle,
-    undo, redo, undoStack, redoStack, clearAll, newDocument, markSaved, isDirty, setDocumentTitle,
+    undo, redo, undoStack, redoStack, clearAll, newDocument, markSaved, isDirty,
   } = useStore();
+  const { locale, t } = useI18n();
   const [showExport, setShowExport] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -22,8 +25,8 @@ export default function TopMenuBar() {
   const { lastSavedAt, notice, setNotice } = useAutosaveStore();
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => setNotice(null), notice.kind === 'conflict' ? 6000 : 3000);
-    return () => clearTimeout(t);
+    const t2 = setTimeout(() => setNotice(null), notice.kind === 'conflict' ? 6000 : 3000);
+    return () => clearTimeout(t2);
   }, [notice, setNotice]);
 
   // 手机竖屏（ZOO-152 追加）：菜单默认收起为一枚钮，点击弹出完整面板
@@ -50,52 +53,53 @@ export default function TopMenuBar() {
   }, [elements, documentTitle]);
 
   const handleExportSvg = useCallback(() => {
-    const svg = exportToSvg(elements);
+    const svg = exportToSvg(elements, t);
     downloadText(svg, `${documentTitle || 'whiteboard'}.svg`);
     setShowExport(false);
-  }, [elements, documentTitle]);
+  }, [elements, documentTitle, t]);
 
   const handleSaveLocal = useCallback(() => {
     saveToLocal({ id: documentId, title: documentTitle, elements, viewport, createdAt: Date.now(), updatedAt: Date.now() });
     markSaved();
-    setMessage('Saved to browser');
+    setMessage(t('menu.savedLocal'));
     setTimeout(() => setMessage(''), 2000);
-  }, [documentId, documentTitle, elements, viewport, markSaved]);
+  }, [documentId, documentTitle, elements, viewport, markSaved, t]);
 
   const handleSaveServer = useCallback(async () => {
     setSaving(true);
     try {
       await saveToServer({ id: documentId, title: documentTitle, elements, viewport, createdAt: Date.now(), updatedAt: Date.now() });
       markSaved();
-      setMessage('Saved to server');
+      setMessage(t('menu.savedServer'));
     } catch {
-      setMessage('Server save failed');
+      setMessage(t('menu.saveFailed'));
     }
     setSaving(false);
     setTimeout(() => setMessage(''), 2000);
-  }, [documentId, documentTitle, elements, viewport, markSaved]);
+  }, [documentId, documentTitle, elements, viewport, markSaved, t]);
 
   const handleClear = useCallback(() => {
-    if (confirm('Clear all elements?')) clearAll();
-  }, [clearAll]);
+    if (confirm(t('menu.confirmClear'))) clearAll();
+  }, [clearAll, t]);
 
   const handleNew = useCallback(() => {
-    if (isDirty && !confirm('Discard unsaved changes?')) return;
-    newDocument();
-  }, [isDirty, newDocument]);
+    if (isDirty && !confirm(t('menu.confirmDiscard'))) return;
+    // ZOO-176：默认标题随语言（新建即入历史列表的可见文案）
+    newDocument(t('common.untitled'));
+  }, [isDirty, newDocument, t]);
 
   const barContent = (
     <>
-      <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title="New (Ctrl+N)">
-        New
+      <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title={`${t('menu.new')} (Ctrl+N)`}>
+        {t('menu.new')}
       </button>
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <button onClick={undo} disabled={undoStack.length === 0} className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30" title="Undo (Ctrl+Z)">
+      <button onClick={undo} disabled={undoStack.length === 0} className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30" title={`${t('menu.undo')} (Ctrl+Z)`}>
         ↩
       </button>
-      <button onClick={redo} disabled={redoStack.length === 0} className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30" title="Redo (Ctrl+Shift+Z)">
+      <button onClick={redo} disabled={redoStack.length === 0} className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30" title={`${t('menu.redo')} (Ctrl+Shift+Z)`}>
         ↪
       </button>
 
@@ -103,13 +107,13 @@ export default function TopMenuBar() {
 
       <div className="relative">
         <button onClick={() => setShowExport(!showExport)} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
-          Export
+          {t('menu.export')}
         </button>
         {showExport && (
           <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[120px]">
-            <button onClick={handleExportPng} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">Export PNG</button>
-            <button onClick={handleExportJpg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">Export JPG</button>
-            <button onClick={handleExportSvg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">Export SVG</button>
+            <button onClick={handleExportPng} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">{t('menu.exportPng')}</button>
+            <button onClick={handleExportJpg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">{t('menu.exportJpg')}</button>
+            <button onClick={handleExportSvg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">{t('menu.exportSvg')}</button>
           </div>
         )}
       </div>
@@ -117,21 +121,26 @@ export default function TopMenuBar() {
       <div className="w-px h-5 bg-gray-200" />
 
       <button onClick={handleSaveLocal} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
-        Save
+        {t('menu.save')}
       </button>
       <button onClick={handleSaveServer} disabled={saving} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-50">
-        {saving ? '...' : 'Save Server'}
+        {saving ? '...' : t('menu.saveServer')}
       </button>
 
       <div className="w-px h-5 bg-gray-200" />
 
       <button onClick={handleClear} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
-        Clear
+        {t('menu.clear')}
       </button>
 
       <div className="w-px h-5 bg-gray-200" />
 
       <ZoomControl />
+
+      <div className="w-px h-5 bg-gray-200" />
+
+      {/* ZOO-176：语言切换（cookie 记住偏好，优先级高于自动检测） */}
+      <LanguageSwitch />
 
       {message && <span className="text-xs text-green-600 px-1">{message}</span>}
       {notice ? (
@@ -139,11 +148,13 @@ export default function TopMenuBar() {
           {notice.text}
         </span>
       ) : lastSavedAt ? (
-        <span className="text-xs text-gray-400 px-1" title="内容已自动保存到本地，刷新/崩溃可恢复">
-          ✓ 已自动保存 {new Date(lastSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        <span className="text-xs text-gray-400 px-1" title={t('menu.autosavedTip')}>
+          {t('menu.autosaved', {
+            time: new Date(lastSavedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+          })}
         </span>
       ) : null}
-      {isDirty && <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />}
+      {isDirty && <span className="w-2 h-2 rounded-full bg-orange-400" title={t('menu.dirtyTip')} />}
     </>
   );
 
@@ -153,10 +164,10 @@ export default function TopMenuBar() {
       <button
         type="button"
         onClick={() => setMenuOpen(true)}
-        aria-label="展开菜单面板"
+        aria-label={t('menu.openMenuAria')}
         className="whiteboard-chrome touch-target absolute top-3 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 z-10"
       >
-        ☰ 菜单
+        {t('menu.menu')}
       </button>
     );
   }
@@ -169,7 +180,7 @@ export default function TopMenuBar() {
           <div className="w-px h-5 bg-gray-200" />
           <button
             onClick={() => setMenuOpen(false)}
-            aria-label="收起菜单面板"
+            aria-label={t('menu.closeMenuAria')}
             className="touch-target px-2 py-1 text-xs text-gray-400 hover:text-gray-600 active:text-gray-800 rounded-md"
           >
             ✕

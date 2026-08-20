@@ -17,12 +17,14 @@ import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplo
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
 import { usePhoneLandscape } from '@/lib/usePhoneLandscape';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
+import { useT } from '@/i18n/I18nProvider';
+import type { LibT } from '@/i18n/lib';
 import EquationEditor from './math/EquationEditor';
 import MathPlotParams, { type MathPlotParamsValue } from './math/MathPlotParams';
 
-/** 线型按钮组（ZOO-165）：顺序即面板展示序 */
+/** 线型按钮组（ZOO-165）：顺序即面板展示序；文案 key 随语言（ZOO-176） */
 const DASH_STYLES: StrokeDashStyle[] = ['solid', 'dashed', 'dotted'];
-const DASH_LABELS: Record<StrokeDashStyle, string> = { solid: '实线', dashed: '虚线', dotted: '点线' };
+const DASH_LABEL_KEYS: Record<StrokeDashStyle, string> = { solid: 'panel.dashSolid', dashed: 'panel.dashDashed', dotted: 'panel.dashDotted' };
 
 export default function PropertyPanel() {
   const {
@@ -34,6 +36,7 @@ export default function PropertyPanel() {
     setSelected, setTool, pushOperations, requestMathPlotInsert,
   } = useStore();
 
+  const t: LibT = useT();
   const [editingId, setEditingId] = useState<string | null>(null);
   // D5 两段式：手势（滑杆拖动 / 文本输入）开始前的元素快照，onCommit 时压一条快照
   const gestureStartRef = useRef<MathPlotElement | null>(null);
@@ -100,7 +103,7 @@ export default function PropertyPanel() {
       {!folded && compactLayout && (
         <button
           type="button"
-          aria-label="收起面板"
+          aria-label={t('panel.collapseAria')}
           onClick={() => dispatchFold({ type: 'toggle' })}
           className="panel-collapse whiteboard-chrome touch-target absolute right-[264px] bottom-[68px] w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 text-gray-500 flex items-center justify-center active:bg-gray-100 z-10"
         >
@@ -110,7 +113,7 @@ export default function PropertyPanel() {
       {folded && (
         <button
           type="button"
-          aria-label={panelState === 'tool' ? '展开触笔颜色面板' : panelState === 'equation' ? '展开方程面板' : '展开参数面板'}
+          aria-label={panelState === 'tool' ? t('panel.expandToolAria') : panelState === 'equation' ? t('panel.expandEquationAria') : t('panel.expandParamsAria')}
           onClick={() => dispatchFold({ type: 'toggle' })}
           className="panel-chip whiteboard-chrome touch-target absolute right-3 bottom-3 z-20 w-11 h-11 rounded-full bg-white/90 backdrop-blur-sm shadow-lg border border-gray-200 flex items-center justify-center active:bg-gray-100"
         >
@@ -156,7 +159,7 @@ export default function PropertyPanel() {
     // 几何方程教学参数（D7 / ZOO-147/149）：元素只存方程原文，面板展示前经 validateEquation 重解析取系数
     const revalidated =
       el.kind === 'line' || el.kind === 'linePair' || el.kind === 'point' || el.kind === 'parabola' || el.kind === 'hyperbola' || el.kind === 'ellipse'
-        ? validateEquation(el.equation)
+        ? validateEquation(el.equation, t)
         : null;
     const value: MathPlotParamsValue = {
       equation: el.equation,
@@ -201,10 +204,10 @@ export default function PropertyPanel() {
       const cur = useStore.getState().elements.find((e) => e.id === el.id) as MathPlotElement | undefined;
       if (!cur) return;
       // 方程文本收敛：重新校验分类与错误信息（几何方程同步推导定义域）
-      const converged = convergeEquationCommit(cur.equation);
+      const converged = convergeEquationCommit(cur.equation, t);
       if (!converged.fields) {
         // ZOO-155：非法方程不落错误占位 —— 元素回滚到手势前快照（曲线保持原样），面板提示原因
-        setEquationError(converged.error ?? '无法识别的方程');
+        setEquationError(converged.error ?? t('math.unrecognized'));
         if (before) {
           updateElementTransient(el.id, {
             equation: before.equation,
@@ -276,7 +279,7 @@ export default function PropertyPanel() {
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-48 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
       <div>
         <label className="text-xs font-medium text-gray-500 mb-1 block">
-          Stroke{restyleTarget ? ' · 已选中元素' : ''}
+          {t('panel.stroke')}{restyleTarget ? t('panel.selectedSuffix') : ''}
         </label>
         <div className="flex flex-wrap gap-1">
           {COLORS.map((c) => (
@@ -298,7 +301,7 @@ export default function PropertyPanel() {
       </div>
 
       <div>
-        <label className="text-xs font-medium text-gray-500 mb-1 block">Width: {panelWidth}px</label>
+        <label className="text-xs font-medium text-gray-500 mb-1 block">{t('panel.width', { n: panelWidth })}</label>
         <input
           type="range"
           min={1}
@@ -314,15 +317,15 @@ export default function PropertyPanel() {
       {showDash && (
         <div>
           <label className="text-xs font-medium text-gray-500 mb-1 block">
-            Dash{dashTarget ? ' · 已选中元素' : ''}
+            {t('panel.dash')}{dashTarget ? t('panel.selectedSuffix') : ''}
           </label>
           <div className="flex gap-1">
             {DASH_STYLES.map((d) => (
               <button
                 key={d}
                 type="button"
-                title={DASH_LABELS[d]}
-                aria-label={DASH_LABELS[d]}
+                title={t(DASH_LABEL_KEYS[d])}
+                aria-label={t(DASH_LABEL_KEYS[d])}
                 aria-pressed={panelDash === d}
                 onClick={() => pickStrokeDash(d)}
                 className={`touch-target flex-1 h-7 rounded-md border flex items-center justify-center ${panelDash === d ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'}`}
@@ -346,7 +349,7 @@ export default function PropertyPanel() {
               onChange={(e) => setFillColor(e.target.checked ? '#3B82F6' : null)}
               className="accent-blue-500"
             />
-            Fill
+            {t('panel.fill')}
           </label>
           {fillColor !== null && (
             <div className="flex flex-wrap gap-1 mt-1">
@@ -372,7 +375,7 @@ export default function PropertyPanel() {
       {(showFont || selectedText) && (
         <div>
           <label className="text-xs font-medium text-gray-500 mb-1 block">
-            Font Size: {panelFontSize}px{selectedText ? ' · 已选中元素' : ''}
+            {t('panel.fontSize', { n: panelFontSize })}{selectedText ? t('panel.selectedSuffix') : ''}
           </label>
           <input
             type="range"

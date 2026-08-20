@@ -1,5 +1,6 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement } from './types';
 import { renderElement, getAllElementsBounds } from './renderer';
+import { zhT, type LibT } from '../i18n/lib';
 import { resolvePlotRender, stepForAxis, formatTickLabel, MIN_GRID_PX, MIN_TICK_LABEL_PX } from './math/plot';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
@@ -50,7 +51,7 @@ function svgDashAttr(el: WhiteboardElement): string {
   return pattern.length > 0 ? ` stroke-dasharray="${pattern.join(',')}"` : '';
 }
 
-function elementToSvg(el: WhiteboardElement): string {
+function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
   const opacity = el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
 
   switch (el.type) {
@@ -97,7 +98,7 @@ function elementToSvg(el: WhiteboardElement): string {
       return `<text x="${el.x}" y="${el.y}" font-size="${el.fontSize}" font-family="${el.fontFamily || 'sans-serif'}" fill="${el.color}"${opacity}>${tspans}</text>`;
     }
     case 'mathPlot':
-      return mathPlotToSvg(el);
+      return mathPlotToSvg(el, t);
     default:
       return '';
   }
@@ -108,7 +109,7 @@ function elementToSvg(el: WhiteboardElement): string {
  * 与 drawGraphCore / drawMathPlot 同一套数据（resolvePlotRender 缓存折线）与
  * 同一套可见性规则（网格最小像素间距、刻度抽稀），坐标 = 元素局部 px + el.x/y。
  */
-function mathPlotToSvg(el: MathPlotElement): string {
+function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
   const { x, y, width: w, height: h } = el;
   if (!(w > 0) || !(h > 0)) return '';
   const opacity = el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
@@ -137,7 +138,7 @@ function mathPlotToSvg(el: MathPlotElement): string {
     parts.push(`<rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${h - 8}" rx="8" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,4"/>`);
     parts.push(`<text x="${cx}" y="${cy - 14}" font-size="12" font-weight="bold" font-family="system-ui, sans-serif" fill="#ef4444" text-anchor="middle">⚠ ${escapeXml(clip(render.error, 44))}</text>`);
     parts.push(`<text x="${cx}" y="${cy + 2}" font-size="11" font-family="system-ui, sans-serif" fill="#6b7280" text-anchor="middle">${escapeXml(clip(beautifyEquation(el.equation), 44))}</text>`);
-    parts.push(`<text x="${cx}" y="${cy + 18}" font-size="10" font-family="system-ui, sans-serif" fill="#9ca3af" text-anchor="middle">点击「重新编辑方程」修正</text>`);
+    parts.push(`<text x="${cx}" y="${cy + 18}" font-size="10" font-family="system-ui, sans-serif" fill="#9ca3af" text-anchor="middle">${escapeXml(t('math.errorHint'))}</text>`);
     return parts.join('');
   }
 
@@ -248,7 +249,8 @@ function mathPlotToSvg(el: MathPlotElement): string {
   return parts.join('');
 }
 
-export function exportToSvg(elements: WhiteboardElement[], options?: Partial<ExportOptions>): string {
+/** ZOO-176：t 为文案翻译器（错误占位提示随语言），缺省中文。 */
+export function exportToSvg(elements: WhiteboardElement[], t: LibT = zhT, options?: Partial<ExportOptions>): string {
   const opts = { ...DEFAULT_OPTIONS, ...options, format: 'svg' as const };
   const bounds = getAllElementsBounds(elements);
   const pad = opts.padding;
@@ -265,7 +267,7 @@ export function exportToSvg(elements: WhiteboardElement[], options?: Partial<Exp
     ? ''
     : `<rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${opts.background}"/>`;
 
-  const els = elements.map(elementToSvg).join('\n    ');
+  const els = elements.map((el) => elementToSvg(el, t)).join('\n    ');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW}" height="${vbH}">
@@ -277,7 +279,8 @@ export function exportToSvg(elements: WhiteboardElement[], options?: Partial<Exp
 export async function exportToImage(
   elements: WhiteboardElement[],
   format: 'png' | 'jpg',
-  options?: Partial<ExportOptions>
+  options?: Partial<ExportOptions>,
+  t: LibT = zhT
 ): Promise<Blob> {
   const opts = { ...DEFAULT_OPTIONS, ...options, format };
   const bounds = getAllElementsBounds(elements);
@@ -307,7 +310,7 @@ export async function exportToImage(
 
   const viewport = { offsetX: -ox, offsetY: -oy, scale: 1 };
   for (const el of elements) {
-    renderElement(ctx, el, viewport);
+    renderElement(ctx, el, viewport, t);
   }
 
   return new Promise((resolve, reject) => {

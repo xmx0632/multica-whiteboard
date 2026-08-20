@@ -8,6 +8,7 @@
  * 函数（技术方案 D3「预览即真实渲染结果」），仅网格密度参数不同（8px vs 45px）。
  */
 import { useEffect, useRef } from 'react';
+import { useT } from '@/i18n/I18nProvider';
 import { drawGraphCore, MIN_GRID_PX } from '@/lib/math/plot';
 import type { Polyline } from '@/lib/math/types';
 
@@ -66,6 +67,7 @@ export default function MiniPreview({
   strokeWidth = 2,
 }: MiniPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const t = useT();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -84,7 +86,7 @@ export default function MiniPreview({
       ctx.font = '11px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('实时预览', W / 2, H / 2);
+      ctx.fillText(t('equation.previewWait'), W / 2, H / 2);
       return;
     }
 
@@ -94,7 +96,7 @@ export default function MiniPreview({
       ctx.font = '10px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const msg = errorMessage || '无法预览';
+      const msg = errorMessage || t('equation.previewUnavailable');
       const maxWidth = W - 24;
       const lines: string[] = [];
       let line = '';
@@ -127,14 +129,14 @@ export default function MiniPreview({
       tickLabels: false,
       gridTargetPx: MIN_GRID_PX,
     });
-  }, [status, errorMessage, polylines, xMin, xMax, yMin, yMax, strokeColor, strokeWidth]);
+  }, [status, errorMessage, polylines, xMin, xMax, yMin, yMax, strokeColor, strokeWidth, t]);
 
   return (
     <canvas
       ref={canvasRef}
       style={{ width: '100%', height: H, display: 'block' }}
       className="bg-white border border-[#eef0f3] rounded-lg"
-      aria-label="方程实时预览"
+      aria-label={t('equation.previewAria')}
     />
   );
 }

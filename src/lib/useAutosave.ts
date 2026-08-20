@@ -12,7 +12,8 @@
  * 恢复落地前用户已开画（服务端拉取慢的竞态）→ 放弃恢复不覆盖；快照留在磁盘等下次。
  * 撤销 / 重做栈不进快照，恢复后清空（loadDocument 语义，PR 已说明）。
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useT } from '@/i18n/I18nProvider';
 import { useStore } from './store';
 import { loadFromServer } from './persistence';
 import { WhiteboardDocument } from './types';
@@ -48,6 +49,14 @@ const scheduleIdle: (cb: () => void) => void =
     : (cb) => setTimeout(cb, 0);
 
 export function useAutosave() {
+  // ZOO-176：恢复 / 冲突提示文案随语言。t 经 ref 取用——切换语言不重启保存引擎
+  // （notice 为一次性字符串，产生时即定语言）
+  const t = useT();
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
   useEffect(() => {
     const tabId = newTabId();
     const { setNotice, markSaved } = useAutosaveStore.getState();
@@ -116,7 +125,7 @@ export function useAutosave() {
       if (isForeignWrite(prev, tabId, snap.sig)) {
         setNotice({
           kind: 'conflict',
-          text: '其他标签页也在编辑此白板，已按本页最新内容保存',
+          text: tRef.current('autosave.conflict'),
           at: Date.now(),
         });
       }
@@ -170,7 +179,7 @@ export function useAutosave() {
           useStore.getState().loadDocument(doc);
           lastWrittenSig = documentSignature(doc); // 恢复内容已在盘上，不重写
           const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          setNotice({ kind: 'restored', text: `已恢复未保存的编辑内容（${time}）`, at: Date.now() });
+          setNotice({ kind: 'restored', text: tRef.current('autosave.restored', { time }), at: Date.now() });
         }
       }
       recoveryDone = true;

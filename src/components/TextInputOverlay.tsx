@@ -1,5 +1,7 @@
 'use client';
 
+import { useT } from '@/i18n/I18nProvider';
+
 /**
  * 画布内联文本输入浮层（ZOO-159，替换 window.prompt）：
  *
@@ -36,6 +38,7 @@ export default function TextInputOverlay({
   x, y, fontSizePx, color, value, maxWidth, onChange, onConfirm, onCancel,
 }: TextInputOverlayProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const t = useT();
 
   // 挂载即聚焦：光标置于末尾，并把输入卡滚入可视区（移动端软键盘避让）
   useLayoutEffect(() => {
@@ -89,7 +92,7 @@ export default function TextInputOverlay({
         }}
       />
       <div className="text-[10px] leading-none text-gray-400 select-none whitespace-nowrap">
-        Enter 确认 · Shift+Enter 换行 · Esc 取消
+        {t('textOverlay.hint')}
       </div>
     </div>
   );

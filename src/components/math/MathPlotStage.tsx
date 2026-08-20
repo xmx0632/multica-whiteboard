@@ -14,11 +14,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { useT } from '@/i18n/I18nProvider';
 import EquationEditor from './EquationEditor';
 import MathPlotParams, { type MathPlotParamsValue } from './MathPlotParams';
 import { beautifyEquation } from '@/lib/math/label';
 import { parseEquation } from '@/lib/math/parse';
 import { drawMathPlot, resolvePlotRender, type PlotFrame, type PlotSpec } from '@/lib/math/plot';
+import type { LibT } from '@/i18n/lib';
 import { sampleGeometry } from '@/lib/math/sample';
 import type { EquationDraftPayload } from '@/lib/math/types';
 import type { Viewport } from '@/lib/types';
@@ -107,6 +109,7 @@ function specOf(item: PlotItem): PlotSpec {
 }
 
 export default function MathPlotStage() {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRectsRef = useRef<CardRect[]>([]);
@@ -175,6 +178,7 @@ export default function MathPlotStage() {
         showGrid: item.showGrid,
         showLabel: item.showLabel,
         equation: item.equation,
+        t,
       });
       if (item.id === selectedId) {
         // 选中态：同款蓝色虚线框 + 角点手柄（参照 renderSelection）
@@ -197,7 +201,7 @@ export default function MathPlotStage() {
       ctx.restore();
     });
     cardRectsRef.current = rects;
-  }, [items, selectedId, stageViewport, size]);
+  }, [items, selectedId, stageViewport, size, t]);
 
   // —— 画布交互：拖拽平移 / 滚轮缩放 / 点击卡片选中 ——
   const dragStateRef = useRef<{ startX: number; startY: number; offsetX: number; offsetY: number; moved: boolean } | null>(null);
@@ -305,11 +309,11 @@ export default function MathPlotStage() {
     setItems((prev) =>
       prev.map((i) => {
         if (i.id !== selectedId) return i;
-        const outcome = validateForItem(i.equation);
+        const outcome = validateForItem(i.equation, t);
         return { ...i, kind: outcome.kind, errorMessage: outcome.errorMessage };
       })
     );
-  }, [selectedId]);
+  }, [selectedId, t]);
 
   const handleDelete = useCallback(() => {
     if (!selectedId) return;
@@ -333,15 +337,15 @@ export default function MathPlotStage() {
 
       {/* 顶部说明条 */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-white/90 backdrop-blur-sm rounded-full shadow border border-gray-200 text-xs text-gray-500 select-none">
-        选中方程 → 自动出图 ｜ 拖拽平移 · 滚轮缩放 · 点击卡片选中/取消
+        {t('demo.hint')}
       </div>
 
       {/* 左侧方程列表：点选即出图 */}
       <div className="absolute left-3 top-1/2 -translate-y-1/2 w-[232px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-2">
         <div className="text-[13px] font-semibold text-gray-700 flex items-center gap-1.5">
           <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
-          方程列表
-          <span className="ml-auto text-[10px] text-gray-400 font-normal">{items.length} 个图形</span>
+          {t('demo.listTitle')}
+          <span className="ml-auto text-[10px] text-gray-400 font-normal">{t('demo.count', { count: items.length })}</span>
         </div>
         <div className="flex flex-col gap-1 max-h-[46vh] overflow-y-auto">
           {items.map((item) => (
@@ -362,7 +366,7 @@ export default function MathPlotStage() {
               </span>
             </button>
           ))}
-          {items.length === 0 && <div className="text-[11px] text-gray-400 py-2 text-center">暂无方程，从右侧编辑器添加</div>}
+          {items.length === 0 && <div className="text-[11px] text-gray-400 py-2 text-center">{t('demo.empty')}</div>}
         </div>
         <button
           type="button"
@@ -372,9 +376,9 @@ export default function MathPlotStage() {
           }}
           className="py-1.5 border border-dashed border-gray-300 rounded-lg bg-white text-gray-500 text-xs cursor-pointer hover:border-blue-500 hover:text-blue-500 transition-colors"
         >
-          ＋ 新建方程
+          {t('demo.newEq')}
         </button>
-        <div className="text-[10px] text-gray-400 leading-relaxed">平移/缩放不触发重采样（Path2D 缓存命中）。</div>
+        <div className="text-[10px] text-gray-400 leading-relaxed">{t('demo.perfNote')}</div>
       </div>
 
       {/* 右侧面板：无选中 = 编辑器（新建/重编辑）；有选中 = 参数面板（实时调样式） */}
@@ -396,8 +400,8 @@ export default function MathPlotStage() {
   );
 }
 
-/** 条目方程的重新校验（kind/errorMessage 收敛，避免引入编辑器内部状态）。 */
-function validateForItem(equation: string): { kind: PlotItem['kind']; errorMessage?: string } {
-  const r = parseEquation(equation);
+/** 条目方程的重新校验（kind/errorMessage 收敛，避免引入编辑器内部状态；文案随语言）。 */
+function validateForItem(equation: string, t: LibT): { kind: PlotItem['kind']; errorMessage?: string } {
+  const r = parseEquation(equation, t);
   return r.kind === 'error' ? { kind: 'error', errorMessage: r.message } : { kind: r.kind };
 }

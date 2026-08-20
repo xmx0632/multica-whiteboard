@@ -9,6 +9,7 @@ import {
   MIN_ZOOM_PERCENT,
   MAX_ZOOM_PERCENT,
 } from '@/lib/gestures';
+import { useT } from '@/i18n/I18nProvider';
 
 /**
  * 顶部缩放控件（ZOO-161）：− / 百分比 / + 步进器 + 同步滑杆。
@@ -17,6 +18,7 @@ import {
  */
 export default function ZoomControl() {
   const { viewport, setViewport } = useStore();
+  const t = useT();
   const pct = zoomPercentage(viewport.scale);
 
   const applyScale = useCallback((nextScale: number) => {
@@ -44,13 +46,17 @@ export default function ZoomControl() {
   }, [step]);
 
   return (
-    <div role="group" aria-label="画布缩放" className="flex items-center gap-1 px-1">
+    <div role="group" aria-label={t('zoom.groupAria')} className="flex items-center gap-1 px-1">
       <button
         type="button"
         onClick={(e) => step(-1, e.shiftKey)}
         disabled={pct <= MIN_ZOOM_PERCENT}
-        aria-label={`缩小（${pct > MIN_ZOOM_PERCENT ? `${pct}% → ${Math.max(MIN_ZOOM_PERCENT, pct - 10)}%` : '已达最小'}）`}
-        title="缩小 10%（Shift+点击 微调 1%）"
+        aria-label={
+          pct > MIN_ZOOM_PERCENT
+            ? t('zoom.outAria', { from: pct, to: Math.max(MIN_ZOOM_PERCENT, pct - 10) })
+            : t('zoom.outAriaMin')
+        }
+        title={t('zoom.outTitle')}
         className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30"
       >
         −
@@ -59,7 +65,7 @@ export default function ZoomControl() {
       <span
         role="spinbutton"
         tabIndex={0}
-        aria-label="缩放百分比（↑↓ 调节 10%，Shift+↑↓ 微调 1%）"
+        aria-label={t('zoom.pctAria')}
         aria-valuenow={pct}
         aria-valuemin={MIN_ZOOM_PERCENT}
         aria-valuemax={MAX_ZOOM_PERCENT}
@@ -74,8 +80,12 @@ export default function ZoomControl() {
         type="button"
         onClick={(e) => step(1, e.shiftKey)}
         disabled={pct >= MAX_ZOOM_PERCENT}
-        aria-label={`放大（${pct < MAX_ZOOM_PERCENT ? `${pct}% → ${Math.min(MAX_ZOOM_PERCENT, pct + 10)}%` : '已达最大'}）`}
-        title="放大 10%（Shift+点击 微调 1%）"
+        aria-label={
+          pct < MAX_ZOOM_PERCENT
+            ? t('zoom.inAria', { from: pct, to: Math.min(MAX_ZOOM_PERCENT, pct + 10) })
+            : t('zoom.inAriaMax')
+        }
+        title={t('zoom.inTitle')}
         className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-30"
       >
         +
@@ -89,8 +99,8 @@ export default function ZoomControl() {
         value={pct}
         onChange={(e) => applyScale(Number(e.target.value) / 100)}
         onKeyDown={onSliderKeyDown}
-        aria-label="缩放滑杆"
-        title="拖动快速缩放"
+        aria-label={t('zoom.sliderAria')}
+        title={t('zoom.sliderTitle')}
         className="touch-target w-20 accent-blue-500"
       />
     </div>

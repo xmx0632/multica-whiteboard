@@ -1,5 +1,6 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, Viewport, Point } from './types';
 import { drawMathPlot, resolvePlotRender } from './math/plot';
+import type { LibT } from '../i18n/lib';
 import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
 import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
@@ -221,7 +222,7 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextElement, viewport: View
  * resolvePlotRender 走按 id 的稳定键缓存（math/cache.ts plotTokenFor）——
  * 拖拽移动、改颜色线宽透明度、轴网显隐均命中缓存不重采样（§6.3）。
  */
-function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement, viewport: Viewport) {
+function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement, viewport: Viewport, t?: LibT) {
   if (!(el.width > 0) || !(el.height > 0)) return;
   const render = resolvePlotRender(
     {
@@ -250,11 +251,18 @@ function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement,
     showGrid: el.showGrid,
     showLabel: el.showLabel,
     equation: el.equation,
+    // ZOO-176：错误占位提示文案随语言（缺省中文）
+    t,
   });
   ctx.restore();
 }
 
-export function renderElement(ctx: CanvasRenderingContext2D, el: WhiteboardElement, viewport: Viewport) {
+export function renderElement(
+  ctx: CanvasRenderingContext2D,
+  el: WhiteboardElement,
+  viewport: Viewport,
+  t?: LibT,
+) {
   switch (el.type) {
     case 'path': drawPath(ctx, el, viewport); break;
     case 'rectangle': drawRectangle(ctx, el, viewport); break;
@@ -262,7 +270,7 @@ export function renderElement(ctx: CanvasRenderingContext2D, el: WhiteboardEleme
     case 'line': drawLine(ctx, el, viewport); break;
     case 'arrow': drawArrow(ctx, el, viewport); break;
     case 'text': drawText(ctx, el, viewport); break;
-    case 'mathPlot': drawMathPlotElement(ctx, el, viewport); break;
+    case 'mathPlot': drawMathPlotElement(ctx, el, viewport, t); break;
   }
 }
 
@@ -291,11 +299,11 @@ export function renderElements(
   ctx: CanvasRenderingContext2D,
   elements: WhiteboardElement[],
   viewport: Viewport,
-  viewSize?: { width: number; height: number }
+  viewSize?: { width: number; height: number; t?: LibT }
 ) {
   for (const el of elements) {
     if (viewSize && !elementIntersectsView(el, viewport, viewSize.width, viewSize.height)) continue;
-    renderElement(ctx, el, viewport);
+    renderElement(ctx, el, viewport, viewSize?.t);
   }
 }
 

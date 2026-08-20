@@ -13,6 +13,7 @@ import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { isEditableTarget } from '@/lib/keyboard';
 import TextInputOverlay from './TextInputOverlay';
 import { v4 as uuidv4 } from 'uuid';
+import { useT } from '@/i18n/I18nProvider';
 
 /** 活跃指针记录（ZOO-144 Pointer 输入层）：坐标为画布 rect 相对屏幕 px */
 interface ActivePointer {
@@ -32,6 +33,7 @@ interface TextDraft {
 }
 
 export default function Canvas() {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isPanningRef = useRef(false);
@@ -177,7 +179,7 @@ export default function Canvas() {
       ctx,
       hiddenTextId ? elements.filter((e) => e.id !== hiddenTextId) : elements,
       viewport,
-      { width: rect.width, height: rect.height }
+      { width: rect.width, height: rect.height, t }
     );
     if (tempElementRef.current) {
       renderElements(ctx, [tempElementRef.current], viewport);
@@ -190,7 +192,7 @@ export default function Canvas() {
         selectedVertex: polylineVertexIndex,
       });
     }
-  }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex]);
+  }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, t]);
 
   useEffect(() => {
     render();
@@ -829,7 +831,7 @@ export default function Canvas() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-[5]">
           <div className="px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow border border-gray-200 text-sm text-gray-500 flex items-center gap-1.5">
             <span className="font-serif italic text-blue-500">ƒ</span>
-            在右侧面板输入方程，回车插入图形
+            {t('canvas.equationHint')}
           </div>
         </div>
       )}

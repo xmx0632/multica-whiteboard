@@ -106,7 +106,8 @@ interface WhiteboardState {
 
   // Actions - Document
   loadDocument: (doc: WhiteboardDocument) => void;
-  newDocument: () => void;
+  /** ZOO-176：默认标题可由调用方按语言传入（缺省 'Untitled' 保持既有行为） */
+  newDocument: (title?: string) => void;
   setDocumentTitle: (title: string) => void;
   /** 列表侧重命名联动当前打开文档（ZOO-158）：写穿已持久化，不置 isDirty */
   applyDocumentRename: (id: string, title: string) => void;
@@ -421,10 +422,10 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     });
   },
 
-  newDocument: () => {
+  newDocument: (title) => {
     set({
       documentId: uuidv4(),
-      documentTitle: 'Untitled',
+      documentTitle: title ?? 'Untitled',
       elements: [],
       viewport: { offsetX: 0, offsetY: 0, scale: 1 },
       selectedId: null,

@@ -31,6 +31,7 @@ import type {
   LinePairParams,
   ParabolaParams,
 } from './types';
+import { zhT, type LibT } from '../../i18n/lib';
 
 /** F(x,y) 安全求值器（求值异常 / 非 number 一律 NaN，与 explicit 求值函数同约定）。 */
 export type BinaryFn = (x: number, y: number) => number;
@@ -109,8 +110,8 @@ export type ImplicitOutcome =
 /** 近零阈值（风险 R2 同源）：按系数量级取相对值，防浮点残值误判 a=b=0。 */
 const ZERO_EPS = 1e-12;
 
-/** 隐式分类入口：线性探针 → 二次探针（ZOO-147）→ 特例分流。 */
-export function classifyImplicit(f: BinaryFn): ImplicitOutcome {
+/** 隐式分类入口：线性探针 → 二次探针（ZOO-147）→ 特例分流（文案经 t 随语言，ZOO-176）。 */
+export function classifyImplicit(f: BinaryFn, t: LibT = zhT): ImplicitOutcome {
   const p = probeLinear(f);
   if (isLinear(f, p)) {
     const scale = Math.max(1, Math.abs(p.a), Math.abs(p.b), Math.abs(p.c));
@@ -119,13 +120,13 @@ export function classifyImplicit(f: BinaryFn): ImplicitOutcome {
     if (noX && noY) {
       // a=b=0：F(x,y)≡−c。c≈0 恒真（如 x−x=0），否则恒假（如 0=1）——均无图像
       return Math.abs(p.c) <= ZERO_EPS * scale
-        ? { kind: 'degenerate', message: '该等式恒成立（化简后为 0=0），不表示任何曲线' }
-        : { kind: 'degenerate', message: '该等式恒不成立（化简后左右两侧不相等），无图像' };
+        ? { kind: 'degenerate', message: t('math.degenerateAlwaysTrue') }
+        : { kind: 'degenerate', message: t('math.degenerateAlwaysFalse') };
     }
     return { kind: 'line', params: p };
   }
   const q = probeQuadratic(f);
-  if (q && isQuadratic(f, q)) return classifyQuadratic(q);
+  if (q && isQuadratic(f, q)) return classifyQuadratic(q, t);
   return { kind: 'nonlinear' };
 }
 
@@ -211,11 +212,12 @@ const LIN_TOL = 1e-9;
 /** 系数浮点尘埃归零（展示与参数输出防 −1e-17 之类的噪声）。 */
 const clean = (v: number) => (Math.abs(v) < 1e-9 ? 0 : v);
 
-/** 空集文案（ZOO-148，研究报告 §3.2：错误占位元素承载，教学可解释）。 */
-const EMPTY_VAR_MSG = (v: 'x' | 'y') => `该方程为空集：${v} 的二次式判别式小于 0、无实根，实数平面内无图像（如 ${v}²=−4）`;
-const EMPTY_ELLIPSE_MSG = '该方程为空集：左侧恒正（或恒负）、无法等于 0，实数平面内无图像（如 x²+y²=−1）';
+/** 空集文案（ZOO-148，研究报告 §3.2；ZOO-176 起经 t 随语言）。 */
+const EMPTY_VAR_MSG = (v: 'x' | 'y', t: LibT) =>
+  t('math.emptyVar', { v });
+const EMPTY_ELLIPSE_MSG = (t: LibT) => t('math.emptyEllipse');
 /** 旋转抛物线型空集文案（ZOO-149）：残留变量为旋转坐标 u，非裸 x/y。 */
-const EMPTY_ROTATED_VAR_MSG = '该方程为空集：旋转坐标 u 的二次式判别式小于 0、无实根，实数平面内无图像';
+const EMPTY_ROTATED_VAR_MSG = (t: LibT) => t('math.emptyRotatedVar');
 
 /**
  * 单变量二次 Av²+Pv+Q=0 的实根分解（判别式按各项量级取相对容差）：
@@ -269,7 +271,7 @@ function tidyLine(a: number, b: number, c: number): LineParams {
  * 中心化余项 K'=F₀−(Ah²+Bhk+Ck²)，K'≈0 退化为相交直线对 / 单点）/ δ≈0 抛物线
  * （旋转后一次项 D'u+E'v，E'≈0 判平行线族）。系数须先按二次部分归一。
  */
-function classifyRotated(A: number, B: number, C: number, D: number, E: number, F: number): ImplicitOutcome {
+function classifyRotated(A: number, B: number, C: number, D: number, E: number, F: number, t: LibT): ImplicitOutcome {
   const theta = 0.5 * Math.atan2(B, A - C);
   const r = Math.hypot((A - C) / 2, B / 2);
   const lambda1 = (A + C) / 2 + r; // u² 系数（|λ₁| ≥ |λ₂|）
@@ -285,7 +287,7 @@ function classifyRotated(A: number, B: number, C: number, D: number, E: number, 
     if (Math.abs(e1) <= LIN_TOL * Math.max(1, Math.abs(d1), Math.abs(e1), Math.abs(F))) {
       // 缺轴向项：λ₁u²+D'u+F₀=0 → 平行线族 u=root（⊥ u 轴，一般式 a=cosθ、b=sinθ）
       const solved = solveQuadratic1v(lambda1, d1, F);
-      if (!solved) return { kind: 'degenerate', message: EMPTY_ROTATED_VAR_MSG };
+      if (!solved) return { kind: 'degenerate', message: EMPTY_ROTATED_VAR_MSG(t) };
       const lineOf = (root: number): LineParams => tidyLine(cos, sin, root);
       if ('double' in solved) {
         return { kind: 'linePair', params: { lines: [lineOf(solved.double)], mode: 'coincident' } };
@@ -324,7 +326,7 @@ function classifyRotated(A: number, B: number, C: number, D: number, E: number, 
       // K'=0：平方和为零 ⟺ 退化单点 (h,k)
       return { kind: 'point', params: { x: clean(h), y: clean(k) } };
     }
-    if ((kRemain < 0) !== (lambda1 > 0)) return { kind: 'degenerate', message: EMPTY_ELLIPSE_MSG };
+    if ((kRemain < 0) !== (lambda1 > 0)) return { kind: 'degenerate', message: EMPTY_ELLIPSE_MSG(t) };
     return {
       kind: 'ellipse',
       params: {
@@ -379,7 +381,7 @@ function classifyRotated(A: number, B: number, C: number, D: number, E: number, 
  * δ<0 → 椭圆型：K≈0 退化为单点 (h,k)、K 与 A 异号为空集（ZOO-148），
  *       否则直接出椭圆 A(x−h)²+C(y−k)²=K（ZOO-149，轴对齐 rotation 缺省）。
  */
-export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
+export function classifyQuadratic(q: QuadParams, t: LibT = zhT): ImplicitOutcome {
   const quadScale = Math.max(Math.abs(q.A), Math.abs(q.B), Math.abs(q.C));
   if (!(quadScale > 0)) return { kind: 'nonlinear' };
   const A = q.A / quadScale;
@@ -389,7 +391,7 @@ export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
   const E = q.E / quadScale;
   const F = q.F / quadScale;
 
-  if (Math.abs(B) > B_TOL) return classifyRotated(A, B, C, D, E, F);
+  if (Math.abs(B) > B_TOL) return classifyRotated(A, B, C, D, E, F, t);
   const delta = -4 * A * C; // B≈0
 
   if (Math.abs(delta) <= DELTA_TOL) {
@@ -397,7 +399,7 @@ export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
     if (Math.abs(A) >= Math.abs(C)) {
       // A x²+Dx+Ey+F = 0 → (x−h)² = 4p(y−k)，要求 E≠0；E=0 时为 x 的二次式
       if (Math.abs(E) <= LIN_TOL * Math.max(1, Math.abs(D), Math.abs(E), Math.abs(F))) {
-        return classifyAxisAlignedQuadratic(A, D, F, 'x');
+        return classifyAxisAlignedQuadratic(A, D, F, 'x', t);
       }
       const h = -D / (2 * A);
       const k = (A * h * h - F) / E;
@@ -405,7 +407,7 @@ export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
     }
     // C y²+Ey+Dx+F = 0 → (y−k)² = 4p(x−h)，要求 D≠0；D=0 时为 y 的二次式
     if (Math.abs(D) <= LIN_TOL * Math.max(1, Math.abs(D), Math.abs(E), Math.abs(F))) {
-      return classifyAxisAlignedQuadratic(C, E, F, 'y');
+      return classifyAxisAlignedQuadratic(C, E, F, 'y', t);
     }
     const k = -E / (2 * C);
     const h = (C * k * k - F) / D;
@@ -424,7 +426,7 @@ export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
       // K=0：平方和为零 ⟺ 两平方同时为零 → 退化单点 (h,k)
       return { kind: 'point', params: { x: clean(h), y: clean(k) } };
     }
-    if (K > 0 !== A > 0) return { kind: 'degenerate', message: EMPTY_ELLIPSE_MSG };
+    if (K > 0 !== A > 0) return { kind: 'degenerate', message: EMPTY_ELLIPSE_MSG(t) };
     // ZOO-149：椭圆型一般式直接出图（半轴²=K/系数，符号已保证为正）
     return {
       kind: 'ellipse',
@@ -458,9 +460,9 @@ export function classifyQuadratic(q: QuadParams): ImplicitOutcome {
  * 抛物线型缺轴向项的退化拆解（ZOO-148）：A v²+Pv+Q=0（v 为残留二次变量）——
  * 两异根 → 一对平行直线 v=root₁ / v=root₂；重根 → 一条（重合）直线；无实根 → 空集。
  */
-function classifyAxisAlignedQuadratic(A: number, P: number, Q: number, v: 'x' | 'y'): ImplicitOutcome {
+function classifyAxisAlignedQuadratic(A: number, P: number, Q: number, v: 'x' | 'y', t: LibT): ImplicitOutcome {
   const solved = solveQuadratic1v(A, P, Q);
-  if (!solved) return { kind: 'degenerate', message: EMPTY_VAR_MSG(v) };
+  if (!solved) return { kind: 'degenerate', message: EMPTY_VAR_MSG(v, t) };
   const lineOf = (root: number): LineParams => (v === 'x' ? { a: 1, b: 0, c: clean(root) } : { a: 0, b: 1, c: clean(root) });
   if ('double' in solved) {
     return { kind: 'linePair', params: { lines: [lineOf(solved.double)], mode: 'coincident' } };
@@ -577,7 +579,7 @@ export interface ParabolaTeachingInfo {
   focus: string;
   /** 准线方程（`x = k` / `y = k`；旋转形为一般式） */
   directrix: string;
-  /** 开口方向：向右 / 向左 / 向上 / 向下；旋转形为方向角 */
+  /** 开口方向：向右 / 向左 / 向上 / 向下；旋转形为方向角（ZOO-176 起经 t 随语言） */
   opening: string;
   /** 旋转角（含 xy 交叉项时非空，如 `45°`）；轴对齐为 undefined */
   rotation?: string;
@@ -588,12 +590,15 @@ export interface ParabolaTeachingInfo {
  * （ZOO-149）：对称轴单位向量 e₁=(cos φ, sin φ)，标准形 Y'²=4pX' 在以顶点为
  * 原点、X' 轴沿 φ 方向的旋转坐标系中表述。
  */
-export function parabolaTeachingInfo(p: ParabolaParams): ParabolaTeachingInfo {
+export function parabolaTeachingInfo(p: ParabolaParams, t: LibT = zhT): ParabolaTeachingInfo {
   const rotation = p.rotation !== undefined && Math.abs(p.rotation) > 1e-9 ? p.rotation : null;
   if (rotation === null) {
     const focusX = p.axis === 'x' ? p.h + p.p : p.h;
     const focusY = p.axis === 'x' ? p.k : p.k + p.p;
-    const opening = p.axis === 'x' ? (p.p > 0 ? '向右' : '向左') : p.p > 0 ? '向上' : '向下';
+    const opening =
+      p.axis === 'x'
+        ? t(p.p > 0 ? 'math.openingRight' : 'math.openingLeft')
+        : t(p.p > 0 ? 'math.openingUp' : 'math.openingDown');
     const standardForm =
       p.axis === 'x'
         ? `${shiftTerm(p.k, 'y')}²=${coefTerm(4 * p.p)}${shiftTerm(p.h, 'x')}`
@@ -615,7 +620,7 @@ export function parabolaTeachingInfo(p: ParabolaParams): ParabolaTeachingInfo {
     focus: formatPoint(p.h + p.p * e1x, p.k + p.p * e1y),
     // 准线 ⊥ 对称轴、过顶点后方 p 处：e₁·X = e₁·V − p
     directrix: lineEquation(e1x, e1y, e1x * p.h + e1y * p.k - p.p),
-    opening: `沿 ${formatAngle(normalizeDirection(p.p > 0 ? rotation : rotation + Math.PI))} 方向`,
+    opening: t('math.openingAlong', { a: formatAngle(normalizeDirection(p.p > 0 ? rotation : rotation + Math.PI)) }),
     rotation: formatAngle(rotation),
   };
 }
@@ -642,7 +647,10 @@ export interface HyperbolaTeachingInfo {
  * 旋转形（ZOO-149）：实轴单位向量 e_t=(cos φ, sin φ)、虚轴 e_c ⊥ e_t，
  * 焦点沿 e_t、渐近线为过中心方向 a·e_t±b·e_c 的两条直线、准线 ⊥ 实轴。
  */
-export function hyperbolaTeachingInfo(p: HyperbolaParams): HyperbolaTeachingInfo {
+/** 两段文案按语言连接（zh：A 与 B；en：A and B）。 */
+const joinPair = (t: LibT, a: string, b: string) => t('math.join', { a, b });
+
+export function hyperbolaTeachingInfo(p: HyperbolaParams, t: LibT = zhT): HyperbolaTeachingInfo {
   const c = Math.hypot(p.a, p.b);
   const e = c / p.a;
   const dOffset = (p.a * p.a) / c; // 准线到中心的距离 a²/c
@@ -659,8 +667,8 @@ export function hyperbolaTeachingInfo(p: HyperbolaParams): HyperbolaTeachingInfo
       axes: `a = ${formatCoef(p.a)}, b = ${formatCoef(p.b)}, c = ${formatCoef(clean(c))}`,
       foci:
         p.axis === 'x'
-          ? `${formatPoint(p.h - c, p.k)} 与 ${formatPoint(p.h + c, p.k)}`
-          : `${formatPoint(p.h, p.k - c)} 与 ${formatPoint(p.h, p.k + c)}`,
+          ? joinPair(t, formatPoint(p.h - c, p.k), formatPoint(p.h + c, p.k))
+          : joinPair(t, formatPoint(p.h, p.k - c), formatPoint(p.h, p.k + c)),
       asymptotes:
         p.axis === 'x'
           ? `${shiftTerm(p.k, 'y')} = ±${coefTerm(cross)}${shiftTerm(p.h, 'x')}`
@@ -680,9 +688,9 @@ export function hyperbolaTeachingInfo(p: HyperbolaParams): HyperbolaTeachingInfo
     standardForm: `X'²${fracDen(p.a * p.a)}-Y'²${fracDen(p.b * p.b)}=1`,
     center: formatPoint(p.h, p.k),
     axes: `a = ${formatCoef(p.a)}, b = ${formatCoef(p.b)}, c = ${formatCoef(clean(c))}`,
-    foci: `${formatPoint(p.h - c * etx, p.k - c * ety)} 与 ${formatPoint(p.h + c * etx, p.k + c * ety)}`,
-    asymptotes: `${lineByDir(p.a * etx + p.b * ecx, p.a * ety + p.b * ecy)} 与 ${lineByDir(p.a * etx - p.b * ecx, p.a * ety - p.b * ecy)}`,
-    directrices: `${lineEquation(etx, ety, mid - dOffset)} 与 ${lineEquation(etx, ety, mid + dOffset)}`,
+    foci: joinPair(t, formatPoint(p.h - c * etx, p.k - c * ety), formatPoint(p.h + c * etx, p.k + c * ety)),
+    asymptotes: joinPair(t, lineByDir(p.a * etx + p.b * ecx, p.a * ety + p.b * ecy), lineByDir(p.a * etx - p.b * ecx, p.a * ety - p.b * ecy)),
+    directrices: joinPair(t, lineEquation(etx, ety, mid - dOffset), lineEquation(etx, ety, mid + dOffset)),
     eccentricity: formatCoef(clean(e)),
     rotation: formatAngle(rotation),
   };
@@ -705,7 +713,7 @@ export interface EllipseTeachingInfo {
  * 椭圆参数 → 教学参数（中心 / 长短半轴 / 焦点 / 离心率，ZOO-149 面板收益）。
  * rx 沿 X' 轴（角 rotation）、ry 沿 Y' 轴；焦点在长轴上（rx 与 ry 的较大者）。
  */
-export function ellipseTeachingInfo(p: EllipseParams): EllipseTeachingInfo {
+export function ellipseTeachingInfo(p: EllipseParams, t: LibT = zhT): EllipseTeachingInfo {
   const a = Math.max(p.rx, p.ry); // 长半轴
   const b = Math.min(p.rx, p.ry); // 短半轴
   const c = Math.sqrt(Math.max(a * a - b * b, 0)); // 半焦距（rx=ry 圆时为 0）
@@ -736,8 +744,8 @@ export function ellipseTeachingInfo(p: EllipseParams): EllipseTeachingInfo {
     axes: `a = ${formatCoef(a)}, b = ${formatCoef(b)}, c = ${formatCoef(clean(c))}`,
     foci:
       c < 1e-9
-        ? `${formatPoint(p.cx, p.cy)}（rx = ry：焦点重合于中心，为圆）`
-        : `${formatPoint(p.cx - c * ex, p.cy - c * ey)} 与 ${formatPoint(p.cx + c * ex, p.cy + c * ey)}`,
+        ? t('math.ellipseFociCircle', { point: formatPoint(p.cx, p.cy) })
+        : joinPair(t, formatPoint(p.cx - c * ex, p.cy - c * ey), formatPoint(p.cx + c * ex, p.cy + c * ey)),
     eccentricity: formatCoef(clean(c / a)),
     rotation: rotation === null ? undefined : formatAngle(rotation),
   };
@@ -758,22 +766,22 @@ export interface LinePairTeachingInfo {
  * 退化直线对 → 教学参数：相交给交点（两直线联立，即退化前的中心）；平行给
  * 间距 d=|c₁−c₂|/√(a²+b²)（两线已同 a,b）；重合说明两根相等。
  */
-export function linePairTeachingInfo(p: LinePairParams): LinePairTeachingInfo {
+export function linePairTeachingInfo(p: LinePairParams, t: LibT = zhT): LinePairTeachingInfo {
   const equations = p.lines.map(formatGeneralForm);
   if (p.mode === 'intersecting') {
     const [l1, l2] = p.lines;
     const det = l1.a * l2.b - l2.a * l1.b; // 相交 ⟹ 非零
-    if (det === 0) return { label: '两条相交直线', equations, detail: '' };
+    if (det === 0) return { label: t('math.lpIntersecting'), equations, detail: '' };
     const px = (l1.c * l2.b - l2.c * l1.b) / det;
     const py = (l1.a * l2.c - l2.a * l1.c) / det;
-    return { label: '两条相交直线', equations, detail: `交点 ${formatPoint(px, py)}` };
+    return { label: t('math.lpIntersecting'), equations, detail: t('math.lpIntersection', { p: formatPoint(px, py) }) };
   }
   if (p.mode === 'parallel') {
     const [l1, l2] = p.lines;
     const d = Math.abs(l1.c - l2.c) / Math.hypot(l1.a, l1.b);
-    return { label: '两条平行直线', equations, detail: `间距 d = ${formatCoef(d)}` };
+    return { label: t('math.lpParallel'), equations, detail: t('math.lpDistance', { d: formatCoef(d) }) };
   }
-  return { label: '一对重合直线', equations, detail: '判别式为 0，两根重合于同一条直线' };
+  return { label: t('math.lpCoincident'), equations, detail: t('math.lpCoincidentDetail') };
 }
 
 export interface DegeneratePointTeachingInfo {
