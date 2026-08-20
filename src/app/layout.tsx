@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -66,6 +67,8 @@ export default function RootLayout({
         {children}
         {/* ZOO-167 Vercel Web Analytics：开发环境自动 no-op，仅生产上报访问量 */}
         <Analytics />
+        {/* ZOO-175 Vercel Speed Insights：RUM 性能指标采集，开发环境 no-op，仅生产上报 */}
+        <SpeedInsights />
       </body>
     </html>
   );
