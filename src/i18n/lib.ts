@@ -8,6 +8,8 @@
  */
 import zhCN from '../../messages/zh-CN.json';
 import enUS from '../../messages/en-US.json';
+import jaJP from '../../messages/ja-JP.json';
+import koKR from '../../messages/ko-KR.json';
 import { DEFAULT_LOCALE, isLocale, type Locale } from './config';
 
 type Messages = Record<string, unknown>;
@@ -15,6 +17,8 @@ type Messages = Record<string, unknown>;
 const CATALOGS: Record<Locale, Messages> = {
   'zh-CN': zhCN as Messages,
   'en-US': enUS as Messages,
+  'ja-JP': jaJP as Messages,
+  'ko-KR': koKR as Messages,
 };
 
 export type LibT = (key: string, params?: Record<string, string | number>) => string;

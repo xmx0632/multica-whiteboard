@@ -8,8 +8,9 @@
     "description": "支持数学方程出图的在线教学白板：绘制、导出、多端同步"
   },
   "lang": {
-    "toggle": "EN",
-    "toggleAria": "切换到 English"
+    "nativeName": "中文",
+    "title": "语言",
+    "switchTo": "切换到 {lang}"
   },
   "toolbar": {
     "hand": "手型（平移）",
