@@ -6,6 +6,7 @@ import { cookies, headers } from "next/headers";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { LOCALE_COOKIE, resolveLocale } from "@/i18n/config";
 import { getLibT } from "@/i18n/lib";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,9 +35,42 @@ async function getLocale() {
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getLocale();
   const t = getLibT(locale);
+  const title = t("app.title");
+  const description = t("app.description");
+
   return {
-    title: t("app.title"),
-    description: t("app.description"),
+    title,
+    description,
+    /**
+     * ZOO-181 SEO：绝对地址前缀（og:url / canonical 等相对路径由此拼全），
+     * 解析优先级与自定义域名切换见 src/lib/site.ts。
+     */
+    metadataBase: new URL(SITE_URL),
+    /** ZOO-181 SEO：根路由 canonical（/mathplot-demo 在其 layout 覆写） */
+    alternates: { canonical: "/" },
+    /** ZOO-181 SEO：Open Graph / Twitter 分享卡片 + 1200×630 品牌分享图 */
+    openGraph: {
+      type: "website",
+      url: "/",
+      title,
+      description,
+      siteName: "MulticaBoard",
+      locale,
+      images: [
+        {
+          url: "/og-image.png",
+          width: 1200,
+          height: 630,
+          alt: t("app.ogImageAlt"),
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ["/og-image.png"],
+    },
     /**
      * ZOO-162 应用图标集：候选 A「蓝色画布 · 白色正弦」定稿
      * （SVG 源与备选方案见 docs/design/app-icon/）
