@@ -5,7 +5,8 @@
   },
   "app": {
     "title": "MulticaBoard - 在线教学白板",
-    "description": "支持数学方程出图的在线教学白板：绘制、导出、多端同步"
+    "description": "支持数学方程出图的在线教学白板：绘制、导出、多端同步",
+    "ogImageAlt": "MulticaBoard 教学白板——写下数学方程，自动生成矢量图形"
   },
   "lang": {
     "nativeName": "中文",
@@ -275,6 +276,8 @@
     "count": "{count} 个图形",
     "empty": "暂无方程，从右侧编辑器添加",
     "newEq": "＋ 新建方程",
-    "perfNote": "平移/缩放不触发重采样（Path2D 缓存命中）。"
+    "perfNote": "平移/缩放不触发重采样（Path2D 缓存命中）。",
+    "metaTitle": "方程出图演示 - MulticaBoard",
+    "metaDescription": "数学方程矢量出图在线演示：输入即解析、实时预览、参数可调——sin 曲线、抛物线、圆与椭圆"
   }
 }

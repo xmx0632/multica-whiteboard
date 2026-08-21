@@ -5,7 +5,8 @@
   },
   "app": {
     "title": "MulticaBoard - Online Teaching Whiteboard",
-    "description": "Online teaching whiteboard with equation plotting: draw, export, and sync across devices"
+    "description": "Online teaching whiteboard with equation plotting: draw, export, and sync across devices",
+    "ogImageAlt": "MulticaBoard teaching whiteboard — write equations, get vector plots"
   },
   "lang": {
     "nativeName": "English",
@@ -275,6 +276,8 @@
     "count": "{count} plots",
     "empty": "No equations yet — add one in the editor",
     "newEq": "＋ New equation",
-    "perfNote": "Pan/zoom never triggers resampling (Path2D cache hit)."
+    "perfNote": "Pan/zoom never triggers resampling (Path2D cache hit).",
+    "metaTitle": "Equation Plotting Demo - MulticaBoard",
+    "metaDescription": "Online demo of equation-to-vector-plot: instant parsing, live preview, adjustable parameters — sine curves, parabolas, circles and ellipses"
   }
 }

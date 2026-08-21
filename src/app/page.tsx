@@ -1,47 +1,49 @@
-'use client';
+import { cookies, headers } from 'next/headers';
+import WhiteboardApp from '@/components/WhiteboardApp';
+import { LOCALE_COOKIE, resolveLocale } from '@/i18n/config';
+import { getLibT } from '@/i18n/lib';
+import { SITE_URL } from '@/lib/site';
 
-import { useState } from 'react';
-import Canvas from '@/components/Canvas';
-import LeftToolbar from '@/components/LeftToolbar';
-import PropertyPanel from '@/components/PropertyPanel';
-import TopMenuBar from '@/components/TopMenuBar';
-import HistoryPanel from '@/components/HistoryPanel';
-import FullscreenToggle from '@/components/FullscreenToggle';
-import ImmersiveToggle from '@/components/ImmersiveToggle';
-import { useShortcuts } from '@/lib/useShortcuts';
-import { useAutosave } from '@/lib/useAutosave';
-import { usePhonePortrait } from '@/lib/usePhonePortrait';
+/**
+ * `/` 路由（ZOO-181 SEO 改为服务端组件）：界面仍是 WhiteboardApp 客户端应用、
+ * 行为零改动；本层新增 JSON-LD 结构化数据（WebApplication），向搜索引擎与
+ * AI 摘要说明产品形态——纯 canvas 应用对爬虫不可见的部分在这里补偿。
+ */
+async function getLocale() {
+  const [cookieStore, headerList] = await Promise.all([cookies(), headers()]);
+  return resolveLocale(
+    cookieStore.get(LOCALE_COOKIE)?.value,
+    headerList.get('accept-language'),
+  );
+}
 
-export default function Home() {
-  useShortcuts();
-  // 自动保存 + 刷新/崩溃恢复（ZOO-170）：挂在页面级，一次挂载全局生效
-  useAutosave();
+export default async function Home() {
+  const locale = await getLocale();
+  const t = getLibT(locale);
 
-  // 手机竖屏沉浸模式（ZOO-156）：隐藏全部浮层（whiteboard-chrome），画布铺满
-  const [immersive, setImmersive] = useState(false);
-  const phonePortrait = usePhonePortrait();
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: t('app.title'),
+    description: t('app.description'),
+    url: SITE_URL,
+    applicationCategory: 'EducationalApplication',
+    operatingSystem: 'Web',
+    browserRequirements: 'Requires JavaScript',
+    isAccessibleForFree: true,
+    inLanguage: locale,
+  };
 
   return (
-    <div className={`w-dvw h-dvh overflow-hidden relative bg-gray-50 flex flex-col${immersive ? ' immersive-mode' : ''}`}>
-      <Canvas />
-      <LeftToolbar />
-      <PropertyPanel />
-      <TopMenuBar />
-      <HistoryPanel />
-      {phonePortrait ? (
-        /* 手机竖屏（ZOO-152 追加）：右下角操作行——沉浸与横屏全屏同行，不再两行叠放；
-         * 沉浸中全屏钮随 whiteboard-chrome 隐藏，行内仅剩退出沉浸 */
-        <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5">
-          <ImmersiveToggle immersive={immersive} onChange={setImmersive} />
-          <FullscreenToggle inRow />
-        </div>
-      ) : (
-        <>
-          <FullscreenToggle />
-          {/* ImmersiveToggle 非竖屏渲染 null，但保留挂载以维持「旋转离开竖屏自动退出沉浸」副作用 */}
-          <ImmersiveToggle immersive={immersive} onChange={setImmersive} />
-        </>
-      )}
-    </div>
+    <>
+      <script
+        type="application/ld+json"
+        // JSON-LD 官方指南的 XSS 防护：转义 `<` 阻断标签注入
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c'),
+        }}
+      />
+      <WhiteboardApp />
+    </>
   );
 }
