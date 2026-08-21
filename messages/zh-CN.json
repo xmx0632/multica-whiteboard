@@ -104,7 +104,12 @@
     "collapseAria": "收起面板",
     "expandToolAria": "展开触笔颜色面板",
     "expandEquationAria": "展开方程面板",
-    "expandParamsAria": "展开参数面板"
+    "expandParamsAria": "展开参数面板",
+    "layer": "图层",
+    "bringToFront": "置顶",
+    "sendToBack": "置底",
+    "bringForward": "上移一层",
+    "sendBackward": "下移一层"
   },
   "equation": {
     "title": "方程",

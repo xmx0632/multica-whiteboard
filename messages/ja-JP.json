@@ -104,7 +104,12 @@
     "collapseAria": "パネルを閉じる",
     "expandToolAria": "ペン色パネルを開く",
     "expandEquationAria": "方程式パネルを開く",
-    "expandParamsAria": "パラメーターパネルを開く"
+    "expandParamsAria": "パラメーターパネルを開く",
+    "layer": "重ね順",
+    "bringToFront": "最前面へ",
+    "sendToBack": "最背面へ",
+    "bringForward": "前面へ",
+    "sendBackward": "背面へ"
   },
   "equation": {
     "title": "方程式",

@@ -16,6 +16,7 @@ import type { EquationDraftPayload } from './math/types';
 import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor } from './stroke';
 import { measureTextElement } from './textElement';
 import { isPolyline, removeVertexPatch } from './polyline';
+import { reorderElements, ZOrderAction } from './zorder';
 
 interface WhiteboardState {
   // Document
@@ -62,6 +63,18 @@ interface WhiteboardState {
 
   // Actions - Selection
   setSelected: (id: string | null) => void;
+
+  // Actions - 图层顺序（ZOO-183）：基于 selectedId 数组重排；边界空转不入撤销栈
+  /** 置于最上层（移到 elements 末位，renderer 最后绘制） */
+  bringToFront: () => void;
+  /** 置于最底层（移到 elements 首位，renderer 最先绘制） */
+  sendToBack: () => void;
+  /** 上移一层（与后一位交换；快捷键 ]） */
+  moveUp: () => void;
+  /** 下移一层（与前一位交换；快捷键 [） */
+  moveDown: () => void;
+  /** 四操作共用实现（内部；空转不压栈） */
+  applyZOrder: (action: ZOrderAction) => void;
 
   // 折线顶点编辑态（ZOO-168）：双击 line/arrow 中段进入；点空白 / Esc / 切工具退出
   polylineEditId: string | null;
@@ -235,6 +248,29 @@ export const useStore = create<WhiteboardState>((set, get) => ({
         : { selectedId: id, polylineEditId: null, polylineVertexIndex: null }
     ),
 
+  // 图层顺序（ZOO-183）：一次调整一条 reorder 快照（before/after 全量数组，
+  // 元素不可变仅持引用）；redoStack 清空同其他操作，与画笔 / 删除历史正确交错
+  bringToFront: () => get().applyZOrder('bringToFront'),
+  sendToBack: () => get().applyZOrder('sendToBack'),
+  moveUp: () => get().applyZOrder('bringForward'),
+  moveDown: () => get().applyZOrder('sendBackward'),
+
+  applyZOrder: (action: ZOrderAction) => {
+    const { elements, selectedId } = get();
+    const reordered = reorderElements(elements, selectedId, action);
+    if (!reordered) return; // 边界 / 无选中空转：不置脏、不压撤销栈
+    const ops: Operation[] = [{
+      type: 'reorder', elementId: selectedId!,
+      beforeElements: elements, afterElements: reordered,
+    }];
+    set((s) => ({
+      elements: reordered,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+    }));
+  },
+
   // 折线顶点编辑态（ZOO-168）
   beginPolylineEdit: (id) => set({ polylineEditId: id, polylineVertexIndex: null }),
   endPolylineEdit: () => set({ polylineEditId: null, polylineVertexIndex: null }),
@@ -361,6 +397,10 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       } else if (op.type === 'update' && op.before) {
         const idx = newElements.findIndex((e) => e.id === op.elementId);
         if (idx >= 0) newElements[idx] = op.before;
+      } else if (op.type === 'reorder' && op.beforeElements) {
+        // 数组序即层级（ZOO-183）：整体恢复快照——快照与当前态仅差这一次重排
+        newElements.length = 0;
+        newElements.push(...op.beforeElements);
       }
     }
 
@@ -391,6 +431,10 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       } else if (op.type === 'update' && op.after) {
         const idx = newElements.findIndex((e) => e.id === op.elementId);
         if (idx >= 0) newElements[idx] = op.after;
+      } else if (op.type === 'reorder' && op.afterElements) {
+        // 数组序即层级（ZOO-183）：整体恢复快照
+        newElements.length = 0;
+        newElements.push(...op.afterElements);
       }
     }
 

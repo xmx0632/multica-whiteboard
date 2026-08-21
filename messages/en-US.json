@@ -104,7 +104,12 @@
     "collapseAria": "Collapse panel",
     "expandToolAria": "Expand pen color panel",
     "expandEquationAria": "Expand equation panel",
-    "expandParamsAria": "Expand parameters panel"
+    "expandParamsAria": "Expand parameters panel",
+    "layer": "Arrange",
+    "bringToFront": "To Front",
+    "sendToBack": "To Back",
+    "bringForward": "Forward",
+    "sendBackward": "Backward"
   },
   "equation": {
     "title": "Equation",
