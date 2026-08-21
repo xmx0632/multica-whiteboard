@@ -21,6 +21,7 @@ import { useT } from '@/i18n/I18nProvider';
 import type { LibT } from '@/i18n/lib';
 import EquationEditor from './math/EquationEditor';
 import MathPlotParams, { type MathPlotParamsValue } from './math/MathPlotParams';
+import ArrangeGroup from './ArrangeGroup';
 
 /** 线型按钮组（ZOO-165）：顺序即面板展示序；文案 key 随语言（ZOO-176） */
 const DASH_STYLES: StrokeDashStyle[] = ['solid', 'dashed', 'dotted'];
@@ -244,6 +245,7 @@ export default function PropertyPanel() {
         onChange={handleParamsChange}
         onCommit={handleParamsCommit}
         equationError={equationError}
+        layerControls={<ArrangeGroup />}
         onDuplicate={() => {
           const clone: MathPlotElement = { ...el, id: uuidv4(), x: el.x + 24, y: el.y + 24 };
           addElement(clone);
@@ -393,6 +395,9 @@ export default function PropertyPanel() {
           />
         </div>
       )}
+
+      {/* 图层顺序（ZOO-183）：选中任一元素即出现（工具态与 mathPlot 态一视同仁） */}
+      {selectedEl && <ArrangeGroup />}
     </div>,
   );
 }

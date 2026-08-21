@@ -132,11 +132,20 @@ export interface WhiteboardDocument {
   schemaVersion?: number;
 }
 
+/**
+ * 撤销 / 重做操作（ZOO-183 扩展 reorder）。
+ * reorder 专用 beforeElements / afterElements 为完整元素数组快照——数组序即渲染
+ * 层级，undo / redo 整体恢复；元素对象不可变（改动一律换新对象），快照仅持引用。
+ */
 export interface Operation {
-  type: 'create' | 'update' | 'delete';
+  type: 'create' | 'update' | 'delete' | 'reorder';
   elementId: string;
   before?: WhiteboardElement;
   after?: WhiteboardElement;
+  /** reorder：调整前的元素数组（含全部元素，顺序即层级） */
+  beforeElements?: WhiteboardElement[];
+  /** reorder：调整后的元素数组（与 beforeElements 同元素集、异序） */
+  afterElements?: WhiteboardElement[];
 }
 
 export const COLORS = [

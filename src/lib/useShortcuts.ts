@@ -52,6 +52,19 @@ export function useShortcuts() {
         return;
       }
 
+      // 图层顺序（ZOO-183，主流工具习惯）：] 上移一层 / [ 下移一层——
+      // store 侧空转兜底（无选中 / 已在边界不动作、不压栈）
+      if (e.key === ']') {
+        e.preventDefault();
+        st.moveUp();
+        return;
+      }
+      if (e.key === '[') {
+        e.preventDefault();
+        st.moveDown();
+        return;
+      }
+
       const toolMap: Record<string, ToolType> = {
         h: 'hand', v: 'select', b: 'pen', r: 'rectangle', c: 'circle',
         l: 'line', a: 'arrow', t: 'text', e: 'eraser', f: 'equation',

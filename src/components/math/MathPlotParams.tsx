@@ -9,7 +9,7 @@
  * 松手/失焦触发 onCommit（压一条快照）；离散控件（色板/开关/预设）一次
  * onChange + onCommit。错误态走「重新编辑方程」回调（原位替换，原型决策）。
  */
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
 import { validateEquation } from '@/lib/math/validate';
@@ -76,6 +76,8 @@ export interface MathPlotParamsProps {
   onRequestEdit?: () => void;
   /** 方程提交非法时的提示（ZOO-155：元素保持原值，仅提示不改错误占位） */
   equationError?: string | null;
+  /** 图层顺序操作组插槽（ZOO-183：mathPlot 与其他元素一视同仁；由调用方注入自取 store 的 ArrangeGroup） */
+  layerControls?: ReactNode;
 }
 
 /** 徽章资源键（ZOO-176 随语言），样式沿用基线。 */
@@ -104,7 +106,7 @@ const SAMPLE_STEP_KEYS: { key: string; count: 160 | 320 | 640 }[] = [
   { key: 'params.sampleFine', count: 640 },
 ];
 
-export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit, equationError }: MathPlotParamsProps) {
+export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit, equationError, layerControls }: MathPlotParamsProps) {
   const t = useT();
   const isFn = value.kind === 'explicit';
   const isError = value.kind === 'error';
@@ -420,6 +422,9 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           </div>
         </>
       )}
+
+      {/* 图层顺序（ZOO-183）：错误态 / 正常态均可用（mathPlot 也是普通元素） */}
+      {layerControls}
 
       <div className="flex gap-1.5">
         <button

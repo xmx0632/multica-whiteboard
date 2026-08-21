@@ -104,7 +104,12 @@
     "collapseAria": "패널 접기",
     "expandToolAria": "펜 색상 패널 펼치기",
     "expandEquationAria": "방정식 패널 펼치기",
-    "expandParamsAria": "매개변수 패널 펼치기"
+    "expandParamsAria": "매개변수 패널 펼치기",
+    "layer": "레이어",
+    "bringToFront": "맨 앞으로",
+    "sendToBack": "맨 뒤로",
+    "bringForward": "앞으로",
+    "sendBackward": "뒤로"
   },
   "equation": {
     "title": "방정식",
