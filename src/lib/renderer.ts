@@ -232,6 +232,8 @@ function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement,
       xAxis: el.xAxis,
       equalRatio: el.equalRatio,
       sampleCount: el.sampleCount,
+      // ZOO-188（T1）：符号常量随元素进解析（缺省 = 无常量，与现状一致）
+      constants: el.constants,
     },
     { width: el.width, height: el.height },
     plotTokenFor(el.id)

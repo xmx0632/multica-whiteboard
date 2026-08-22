@@ -236,7 +236,16 @@
     "sectionConstants": "定数",
     "sectionConstantsDesc": "v₀ / θ / ω / A / φ 定数辞書の編集",
     "sectionParametric": "パラメータ表示",
-    "sectionParametricDesc": "x=f(t), y=g(t) と r=f(θ) の入力および t/θ の範囲"
+    "sectionParametricDesc": "x=f(t), y=g(t) と r=f(θ) の入力および t/θ の範囲",
+    "tplSineConstants": "パラメータ付き正弦",
+    "constantsEmpty": "まだ定数がありません — プリセット記号をタップするか、下でカスタム定数を追加してください",
+    "constantsInvalidName": "定数記号は英字で始まり英数字のみ（x/y/e/π は予約名、重複不可）",
+    "constantsNamePh": "記号（例：m、λ）",
+    "constantsValuePh": "値",
+    "constantsAdd": "追加",
+    "constantsRemoveAria": "定数 {name} を削除",
+    "constantsValueAria": "定数 {name} の値",
+    "constantsPresetAria": "定数 {name} を切り替え"
   },
   "math": {
     "join": "{a} と {b}",
@@ -279,6 +288,7 @@
     "badSymbolExplicit": "認識できない記号 \"{name}\"です — スペルを確認し、変数は 1 文字にしてください（例：y=2z）",
     "tooManyVarsImplicit": "二元方程式に使える変数は 2 文字までです（現在 {list}） — 簡約してから再試行してください",
     "multiVarExplicit": "方程式に複数の独立変数があります（{list}） — 変数は 1 文字だけにしてください（例：y=2x）",
+    "multiVarWithConstants": "方程式に未代入の記号が残っています（{list}） — 高度な数式パネルの定数エリアで値を割り当てるか、変数を 1 文字だけにしてください",
     "unsupportedImplicit": "この暗黙的方程式はまだ対応していません：現在対応しているのは y=f(x)、円・楕円の標準形と一般形、二元一次、二元二次方程式（放物線 / 双曲線 / xy 項を含む回転円錐曲線 / 退化 2 直線と 1 点。例：y²=4x、xy=1、5x²−6xy+5y²=8、x²−y²=0）です",
     "domainOrder": "定義域が無効です：xmin は xmax 未満にしてください",
     "domainWidth": "定義域が無効です：幅は 0.1〜1000 の範囲にしてください",

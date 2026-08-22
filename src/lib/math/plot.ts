@@ -59,12 +59,24 @@ export interface PlotSpec {
   /** x/y 单位等比（圆/椭圆强制 true）：y 视窗 = 定义域按宽高比推导 */
   equalRatio: boolean;
   sampleCount: number;
+  /** 符号常量绑定（ZOO-188 T1）：显式路径求值 scope 注入；缺省 = 无常量 */
+  constants?: Record<string, number>;
 }
 
 /** 元素外框（局部 px，语义同 rectangle 的 width/height）。 */
 export interface PlotFrame {
   width: number;
   height: number;
+}
+
+/** 常量绑定的稳定签名（ZOO-188）：键排序后序列化，同内容恒同签名（进渲染 sig）。 */
+function constantsSig(constants?: Record<string, number>): string {
+  if (!constants) return '';
+  return JSON.stringify(
+    Object.keys(constants)
+      .sort()
+      .map((k) => [k, constants[k]]),
+  );
 }
 
 /** 解析 + 采样 + Path2D 的缓存产物（错误态 error 非空、折线为空）。 */
@@ -508,6 +520,8 @@ export function resolvePlotRender(spec: PlotSpec, frame: PlotFrame, cacheKey: ob
     xMax: spec.xAxis.max,
     equalRatio: spec.equalRatio,
     sampleCount: spec.sampleCount,
+    // ZOO-188：常量是数学输入（改值必须重采样）；键序规范化，避免同内容异序误判失效
+    constants: constantsSig(spec.constants),
     width: frame.width,
     height: frame.height,
   });
@@ -532,7 +546,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
       })()
     : undefined;
 
-  const parsed = parseEquation(spec.equation);
+  const parsed = parseEquation(spec.equation, zhT, spec.constants);
   const sampled = sampleEquation(parsed, {
     xMin: spec.xAxis.min,
     xMax: spec.xAxis.max,

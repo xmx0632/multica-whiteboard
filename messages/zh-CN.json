@@ -236,7 +236,16 @@
     "sectionConstants": "常量",
     "sectionConstantsDesc": "v₀ / θ / ω / A / φ 常量字典编辑",
     "sectionParametric": "参数式",
-    "sectionParametricDesc": "x=f(t), y=g(t) 与 r=f(θ) 输入及 t/θ 取值范围"
+    "sectionParametricDesc": "x=f(t), y=g(t) 与 r=f(θ) 输入及 t/θ 取值范围",
+    "tplSineConstants": "正弦参数式",
+    "constantsEmpty": "尚未绑定常量——点预置符号添加，或在下方自定义",
+    "constantsInvalidName": "常量符号需以字母开头、仅含字母和数字（x/y/e/π 为保留名，且不可重复）",
+    "constantsNamePh": "符号（如 m、λ）",
+    "constantsValuePh": "数值",
+    "constantsAdd": "添加",
+    "constantsRemoveAria": "移除常量 {name}",
+    "constantsValueAria": "常量 {name} 的数值",
+    "constantsPresetAria": "切换常量 {name}"
   },
   "math": {
     "join": "{a} 与 {b}",
@@ -279,6 +288,7 @@
     "badSymbolExplicit": "无法识别符号 “{name}”——请检查拼写，变量请用单个字母（如 y=2z）",
     "tooManyVarsImplicit": "二元方程最多两个变量字母（当前 {list}）——请化简后重试",
     "multiVarExplicit": "方程包含多个自变量（{list}）——请只保留一个字母作为自变量（如 y=2x）",
+    "multiVarWithConstants": "方程仍有未赋值符号（{list}）——请在高级公式面板的常量区为其赋值，或只保留一个字母作为自变量",
     "unsupportedImplicit": "暂不支持该隐式方程：目前支持 y=f(x)、圆/椭圆标准形与一般形、二元一次、二元二次方程（抛物线 / 双曲线 / 含 xy 交叉项的旋转圆锥曲线 / 退化两直线与单点，如 y²=4x、xy=1、5x²−6xy+5y²=8、x²−y²=0）",
     "domainOrder": "定义域无效：xmin 需小于 xmax",
     "domainWidth": "定义域无效：宽度需在 0.1–1000 之间",

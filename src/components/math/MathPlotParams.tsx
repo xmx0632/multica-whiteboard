@@ -65,6 +65,12 @@ export interface MathPlotParamsValue {
     /** 已开启叠加数（入口徽标；非 overlays 信号为 0） */
     overlayCount: number;
   };
+  /**
+   * 符号常量绑定（ZOO-188 T1）：元素真实字段（非派生，落元素数据）——
+   * 高级公式面板常量区直改（onChange 直改实时重绘 / onBlur 提交一条，D5）。
+   * 键为存储层 ASCII 名，显示层经 constantDisplayName 还原（θ/ω/φ/v₀）。
+   */
+  constants?: Record<string, number>;
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -128,11 +134,12 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const isFn = value.kind === 'explicit';
   const isError = value.kind === 'error';
-  // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）
+  // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）。
+  // ZOO-188：常量参与裁决——y=A·sin(ωx+φ) 绑定常量后自变量解析为 x
   const variable = useMemo(() => {
-    const r = validateEquation(value.equation, t);
+    const r = validateEquation(value.equation, t, value.constants);
     return r.kind === 'explicit' && r.variable ? r.variable : 'x';
-  }, [value.equation, t]);
+  }, [value.equation, value.constants, t]);
   const badge = KIND_BADGE_KEYS[value.kind];
   // ZOO-176：教学参数文案随语言（t 注入；line/point 的产出为纯数学记号，无需 t）
   const line = value.kind === 'line' && value.lineParams ? lineTeachingInfo(value.lineParams) : null;
@@ -482,8 +489,22 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
 
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('params.hint')}</div>
 
-      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局） */}
-      {advancedOpen && <AdvancedFormulaPanel onClose={() => setAdvancedOpen(false)} />}
+      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
+          ZOO-188 T1：常量区直连元素——onChange 直改实时重绘（constants 为元素
+          真实字段，经 handleParamsChange 落元素，不在派生剥除清单）、onCommit 提交一条；
+          模板点选回填方程输入 */}
+      {advancedOpen && (
+        <AdvancedFormulaPanel
+          onClose={() => setAdvancedOpen(false)}
+          constants={{
+            equation: value.equation,
+            values: value.constants ?? {},
+            onChange: (next) => patch({ constants: next }),
+            onCommit: () => onCommit?.(),
+            onApplyTemplate: (equation) => patch({ equation }),
+          }}
+        />
+      )}
     </div>
   );
 }

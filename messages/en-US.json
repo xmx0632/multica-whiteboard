@@ -236,7 +236,16 @@
     "sectionConstants": "Constants",
     "sectionConstantsDesc": "v₀ / θ / ω / A / φ constant dictionary editing",
     "sectionParametric": "Parametric",
-    "sectionParametricDesc": "x=f(t), y=g(t) and r=f(θ) inputs with t/θ domain"
+    "sectionParametricDesc": "x=f(t), y=g(t) and r=f(θ) inputs with t/θ domain",
+    "tplSineConstants": "Parametric sine",
+    "constantsEmpty": "No constants bound yet — tap a preset symbol to add one, or add a custom one below",
+    "constantsInvalidName": "A constant symbol must start with a letter and contain only letters/digits (x/y/e/π reserved, no duplicates)",
+    "constantsNamePh": "Symbol (e.g. m, λ)",
+    "constantsValuePh": "Value",
+    "constantsAdd": "Add",
+    "constantsRemoveAria": "Remove constant {name}",
+    "constantsValueAria": "Value of constant {name}",
+    "constantsPresetAria": "Toggle constant {name}"
   },
   "math": {
     "join": "{a} and {b}",
@@ -279,6 +288,7 @@
     "badSymbolExplicit": "Unrecognized symbol \"{name}\" — check the spelling; use a single letter as the variable (e.g. y=2z)",
     "tooManyVarsImplicit": "A two-variable equation allows at most two letters (found {list}) — simplify and retry",
     "multiVarExplicit": "The equation contains multiple independent variables ({list}) — keep a single letter as the variable (e.g. y=2x)",
+    "multiVarWithConstants": "The equation still has unassigned symbols ({list}) — assign values in the constants section of the advanced formula panel, or keep a single letter as the variable",
     "unsupportedImplicit": "This implicit equation is not supported yet: supported are y=f(x), circle/ellipse standard and general forms, linear equations in two variables, and quadratic equations in two variables (parabola / hyperbola / rotated conics with an xy term / degenerate line pairs and single points, e.g. y²=4x, xy=1, 5x²−6xy+5y²=8, x²−y²=0)",
     "domainOrder": "Invalid domain: xmin must be less than xmax",
     "domainWidth": "Invalid domain: width must be between 0.1 and 1000",

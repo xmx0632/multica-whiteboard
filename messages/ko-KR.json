@@ -236,7 +236,16 @@
     "sectionConstants": "상수",
     "sectionConstantsDesc": "v₀ / θ / ω / A / φ 상수 사전 편집",
     "sectionParametric": "매개변수식",
-    "sectionParametricDesc": "x=f(t), y=g(t) 와 r=f(θ) 입력 및 t/θ 범위"
+    "sectionParametricDesc": "x=f(t), y=g(t) 와 r=f(θ) 입력 및 t/θ 범위",
+    "tplSineConstants": "매개변수 사인",
+    "constantsEmpty": "아직 바인딩된 상수가 없습니다 — 프리셋 기호를 누르거나 아래에서 직접 추가하세요",
+    "constantsInvalidName": "상수 기호는 영문자로 시작하고 영숫자만 포함해야 합니다(x/y/e/π 예약, 중복 불가)",
+    "constantsNamePh": "기호(예: m, λ)",
+    "constantsValuePh": "값",
+    "constantsAdd": "추가",
+    "constantsRemoveAria": "상수 {name} 제거",
+    "constantsValueAria": "상수 {name}의 값",
+    "constantsPresetAria": "상수 {name} 전환"
   },
   "math": {
     "join": "{a} 및 {b}",
@@ -279,6 +288,7 @@
     "badSymbolExplicit": "인식할 수 없는 기호 \"{name}\"입니다 — 철자를 확인하고 변수는 한 글자로 사용하세요(예: y=2z)",
     "tooManyVarsImplicit": "이원 방정식의 변수는 두 글자까지 가능합니다(현재 {list}) — 간단히 한 뒤 다시 시도하세요",
     "multiVarExplicit": "방정식에 여러 독립 변수가 있습니다({list}) — 변수를 한 글자만 남기세요(예: y=2x)",
+    "multiVarWithConstants": "방정식에 값을 할당하지 않은 기호가 남아 있습니다({list}) — 고급 수식 패널의 상수 영역에서 값을 할당하거나 변수를 한 글자만 남기세요",
     "unsupportedImplicit": "이 암시적 방정식은 아직 지원되지 않습니다: 현재 지원되는 것은 y=f(x), 원·타원의 표준형과 일반형, 이원 일차, 이원 이차 방정식(포물선 / 쌍곡선 / xy 항을 포함한 회전 원뿔 곡선 / 퇴화 두 직선과 한 점. 예: y²=4x, xy=1, 5x²−6xy+5y²=8, x²−y²=0)입니다",
     "domainOrder": "정의역이 잘못되었습니다: xmin은 xmax보다 작아야 합니다",
     "domainWidth": "정의역이 잘못되었습니다: 폭은 0.1–1000 사이여야 합니다",

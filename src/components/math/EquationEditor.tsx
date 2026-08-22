@@ -16,6 +16,9 @@
  * - ZOO-194 入口 1（创建侧）：模板分组区底部「微积分 / 物理公式…」入口项，
  *   点击展开高级公式二级面板——面板经 portal 独立挂载，开合为纯 UI 态；
  *   既有输入框 / 19 模板 / 符号按钮 / MiniPreview 一律不动（零回归硬约束）。
+ * - ZOO-188（T1 常量绑定）：常量草稿（面板常量区编辑）参与实时校验与预览，
+ *   确认载荷全量带出（EquationDraftPayload.constants）；重编辑流经
+ *   initialConstants 回填。含符号常量的公式绑定后即时出图。
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import AdvancedFormulaPanel from './AdvancedFormulaPanel';
@@ -48,21 +51,26 @@ function kindLabel(outcome: StructuralOutcome, t: (key: string, params?: Record<
 export interface EquationEditorProps {
   /** 载入初始方程（错误占位元素重编辑流程，4d 接线） */
   initialEquation?: string;
+  /** 载入初始常量绑定（ZOO-188：高级元素重编辑回填常量草稿；缺省空） */
+  initialConstants?: Record<string, number>;
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
   /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
   onCancel?: () => void;
   /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。 */
-  createPreviewPolylines?: (equation: string, outcome: StructuralOutcome) => PreviewData | null;
+  createPreviewPolylines?: (equation: string, outcome: StructuralOutcome, constants?: Record<string, number>) => PreviewData | null;
 }
 
 export default function EquationEditor({
   initialEquation = '',
+  initialConstants,
   onConfirm,
   onCancel,
   createPreviewPolylines = samplePreviewPolylines,
 }: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
+  // ZOO-188：常量草稿（高级公式面板常量区编辑；确认时随载荷全量带出，空字典 = 显式清空）
+  const [constantValues, setConstantValues] = useState<Record<string, number>>(initialConstants ?? {});
   // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,22 +86,23 @@ export default function EquationEditor({
   const templateGroups = useMemo(() => groupTemplates(), []);
 
   const trimmed = draft.trim();
-  const outcome = useMemo(() => validateEquation(draft, t), [draft, t]);
+  // ZOO-188：常量草稿参与裁决——绑定常量后 y=A·sin(ωx+φ) 实时转合法并出预览
+  const outcome = useMemo(() => validateEquation(draft, t, constantValues), [draft, t, constantValues]);
   const isError = trimmed.length > 0 && outcome.kind === 'error';
   const isValid = trimmed.length > 0 && !isError;
 
   const preview = useMemo(() => {
     if (!isValid || !createPreviewPolylines) return null;
-    return createPreviewPolylines(trimmed, outcome);
+    return createPreviewPolylines(trimmed, outcome, constantValues);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trimmed, isValid, createPreviewPolylines]);
+  }, [trimmed, isValid, createPreviewPolylines, constantValues]);
 
   const confirm = () => {
     if (!trimmed) {
       inputRef.current?.focus();
       return;
     }
-    onConfirm?.({ equation: trimmed, outcome });
+    onConfirm?.({ equation: trimmed, outcome, constants: constantValues });
   };
 
   const insertAtCursor = (text: string) => {
@@ -280,8 +289,19 @@ export default function EquationEditor({
 
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('equation.hint')}</div>
 
-      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局） */}
-      {advancedOpen && <AdvancedFormulaPanel onClose={() => setAdvancedOpen(false)} />}
+      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
+          ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框 */}
+      {advancedOpen && (
+        <AdvancedFormulaPanel
+          onClose={() => setAdvancedOpen(false)}
+          constants={{
+            equation: draft,
+            values: constantValues,
+            onChange: setConstantValues,
+            onApplyTemplate: applyTemplate,
+          }}
+        />
+      )}
     </div>
   );
 }

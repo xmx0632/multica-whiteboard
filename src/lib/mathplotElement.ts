@@ -47,6 +47,11 @@ export interface MathPlotPatch {
   error: string | null;
   xAxis?: { min: number; max: number };
   equalRatio?: boolean;
+  /**
+   * ZOO-188（T1）：仅当载荷携带常量草稿（payload.constants !== undefined）时出现——
+   * 非空字典为全量快照，空字典表示显式清空（原位替换流）；undefined 不触碰元素既有绑定。
+   */
+  constants?: Record<string, number>;
 }
 
 export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPlotPatch {
@@ -56,6 +61,11 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPl
     kind: outcome.kind,
     error: outcome.kind === 'error' ? outcome.message : null,
   };
+  if (payload.constants !== undefined && Object.keys(payload.constants).length > 0) {
+    base.constants = { ...payload.constants };
+  } else if (payload.constants !== undefined) {
+    base.constants = {};
+  }
   if (
     outcome.kind === 'line' ||
     outcome.kind === 'linePair' ||
@@ -82,9 +92,11 @@ export interface EquationCommitResult {
  * 非法方程返回 fields=null —— 调用方须回滚元素到手势前快照（保持原曲线），
  * 不得把 error 态写入既有元素（属性面板编辑路径，区别于编辑器建卡的错误占位流）。
  */
-/** ZOO-176：t 透传（错误文案随语言；缺省中文与历史行为一致）。 */
-export function convergeEquationCommit(equation: string, t: LibT = zhT): EquationCommitResult {
-  const outcome = validateEquation(equation, t);
+/** ZOO-176：t 透传（错误文案随语言；缺省中文与历史行为一致）。
+ *  ZOO-188（T1）：constants 透传——面板调参提交收敛须按元素当前常量绑定裁决，
+ *  否则含常量的合法方程（y=A·sin(ωx+φ)）会被误判非法而回滚。 */
+export function convergeEquationCommit(equation: string, t: LibT = zhT, constants?: Record<string, number>): EquationCommitResult {
+  const outcome = validateEquation(equation, t, constants);
   const trimmed = equation.trim();
   if (outcome.kind === 'error') return { fields: null, error: outcome.message };
   return { fields: mathPlotFieldsFromPayload({ equation: trimmed || equation, outcome }) };
@@ -118,5 +130,7 @@ export function createMathPlotElement(payload: EquationDraftPayload, place: Math
     equation: fields.equation,
     kind: fields.kind,
     error: fields.error,
+    // ZOO-188（T1）：常量绑定随载荷落元素；空字典 / 缺省不落键（旧文档零迁移、无空壳）
+    ...(fields.constants && Object.keys(fields.constants).length > 0 ? { constants: { ...fields.constants } } : {}),
   };
 }

@@ -381,15 +381,21 @@ export function sampleEquation(
  * 编辑器实时预览适配（EquationEditor 的 createPreviewPolylines 注入点实现）。
  * 显式函数用默认视窗 x∈[-10,10] + y 自适应；几何方程用参数化包围盒。
  * 返回 null 表示不出曲线（错误态 / 解析失败），预览仅显示坐标系或错误文案。
+ * ZOO-188（T1）：constants 透传 parseEquation——含符号常量的公式（y=A·sin(ωx+φ)）
+ * 绑定常量后预览实时出曲线。
  */
-export function createPreviewPolylines(equation: string, outcome: StructuralOutcome | ParseResult): PreviewData | null {
+export function createPreviewPolylines(
+  equation: string,
+  outcome: StructuralOutcome | ParseResult,
+  constants?: Record<string, number>,
+): PreviewData | null {
   if (outcome.kind === 'error') return null;
   if (outcome.kind !== 'explicit') {
     const sampled = sampleGeometry(outcome.kind, outcome.params);
     if ('error' in sampled) return null;
     return { polylines: sampled.polylines, xMin: sampled.xMin, xMax: sampled.xMax, yMin: sampled.yMin, yMax: sampled.yMax };
   }
-  const parsed = parseEquation(equation);
+  const parsed = parseEquation(equation, zhT, constants);
   if (parsed.kind !== 'explicit') return null;
   const sampled = sampleExplicit(parsed.fn, { xMin: -10, xMax: 10 }, DEFAULT_SAMPLE_COUNT);
   if ('error' in sampled) return null;

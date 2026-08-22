@@ -147,8 +147,11 @@ export interface PreviewData {
 }
 
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
- *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。 */
+ *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。
+ *  ZOO-188（T1）：constants 为编辑器常量草稿全量快照——undefined 表示本次流程
+ *  无常量参与（不触碰元素既有绑定）；空字典表示显式清空（原位替换时清掉元素常量）。 */
 export interface EquationDraftPayload {
   equation: string;
   outcome: StructuralOutcome;
+  constants?: Record<string, number>;
 }

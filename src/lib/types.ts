@@ -92,6 +92,13 @@ export interface MathPlotElement extends BaseElement {
   kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   error?: string | null;
+  /**
+   * 符号常量绑定（ZOO-188 T1）：键为存储层 ASCII 名（v0/theta/omega…），值参与
+   * 显式路径符号三分法与求值 scope 注入；显示层经 constantDisplayName 还原原貌
+   * （θ/ω/φ/v₀，见 math/normalize.ts）。缺省 = 无常量（行为与现状逐字节一致，
+   * 旧文档零迁移）；空字典视为未启用（advancedFormulaState 判定口径）。
+   */
+  constants?: Record<string, number>;
 
   // —— 数学视窗（局部坐标系定义，数学单位）——
   xAxis: { min: number; max: number };

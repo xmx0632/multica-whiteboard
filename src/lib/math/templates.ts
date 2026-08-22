@@ -92,6 +92,18 @@ export interface SymbolButton {
   id: string;
 }
 
+/**
+ * 高级公式面板模板（ZOO-188 T1）：只进 AdvancedFormulaPanel，不进
+ * EQUATION_TEMPLATES / TEMPLATE_GROUPS——19 模板面板零改动（零回归硬约束）。
+ * 方程原文保留书写原貌（希腊字母 / 下标），归一化层负责翻译（normalize.ts）。
+ */
+export const ADVANCED_TEMPLATES: EquationTemplate[] = [
+  { id: 'sineConstants', equation: 'y=A·sin(ωx+φ)' },
+];
+
+/** 高级面板模板显示名资源键（advFormula.tpl<Id>）。 */
+export const advancedTemplateNameKey = (id: string) => `advFormula.tpl${keySuffix(id)}`;
+
 /** 符号悬停提示资源键（equation.symbol<Id>）。 */
 export const symbolTitleKey = (id: string) => `equation.symbol${keySuffix(id)}`;
 

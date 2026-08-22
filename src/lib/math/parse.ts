@@ -17,6 +17,8 @@
  * 仅数学上欠定的输入（两个及以上自由字母）与多字母词仍拦截。
  * ZOO-176 i18n：文案经注入的翻译器 t 产出（LibT，默认 zhT 与历史行为逐字节
  * 一致），组件按当前语言传入，错误文案无硬编码语言。
+ * ZOO-188（T1 常量绑定）：parseEquation 第三参 constants——显式路径符号三分法
+ * （常量∪自变量∪报错），scope 多常量注入；缺省行为与现状逐字节一致。
  */
 import { parse } from 'mathjs/number';
 import type { MathNode } from 'mathjs/number';
@@ -126,10 +128,25 @@ function auditNode(node: MathNode, syms: Set<string>, t: LibT): string | null {
  * 自由变量裁决（ZOO-166 方案 A）：syms 剔除常数 pi/e 后的自由字母表。
  * 多字母词 → 报错（拼写/未知名）；超出路径容量（显式 1 个 / 隐式 2 个）→ 报错；
  * 其余即合法变量集，按出现顺序绑定（显式：该字母即自变量；隐式：补进 x/y 空缺位）。
+ *
+ * ZOO-188（T1 常量绑定，符号三分法）：constants 非空时自由符号集划分为
+ * {已赋值常量（剔除）} ∪ {恰 1 个自变量} ∪ {其余 → 报错}——已赋值的多字母名
+ * （theta/omega 等）不再视为拼写错误，未赋值符号沿用既有裁决分支；
+ * constants 缺省 / 空字典时与现状逐字节一致（withConstants=false）。
+ * 隐式路径不传 constants（T1 范围外，两元方程仍按 x/y 容量裁决）。
  */
-function freeSymbols(syms: Set<string>): { free: string[]; bad: string | undefined } {
+function freeSymbols(
+  syms: Set<string>,
+  constants?: Record<string, number>,
+): { free: string[]; bad: string | undefined; withConstants: boolean } {
   const free = [...syms].filter((s) => s !== 'pi' && s !== 'e');
-  return { free, bad: free.find((s) => s.length > 1) };
+  const keys = constants ? Object.keys(constants) : [];
+  if (keys.length === 0) {
+    return { free, bad: free.find((s) => s.length > 1), withConstants: false };
+  }
+  const assigned = new Set(keys);
+  const unassigned = free.filter((s) => !assigned.has(s));
+  return { free: unassigned, bad: unassigned.find((s) => s.length > 1), withConstants: true };
 }
 
 /** mathjs SyntaxError → 原型五类文案映射（ZOO-166：附「怎么办」指引；ZOO-176 随语言）。 */
@@ -219,8 +236,11 @@ function parseImplicit(src: string, t: LibT): ParseResult {
  *
  * 分类：explicit（含求值函数）/ line（二元一次，D7）/ circle / ellipse / error。
  * 安全：AST 白名单 + scope 只注入实际用到的变量字母（ZOO-166 方案 A 起不限于 x/y），无 eval，无属性访问。
+ * ZOO-188（T1 常量绑定）：constants 非空时显式路径走符号三分法——常量从自由
+ * 符号集剔除，求值 scope 同时注入自变量 + 常量（自变量后注入，同名时自变量优先）；
+ * 缺省 / 空字典与现状逐字节一致（既有单测零改动）。
  */
-export function parseEquation(raw: string, t: LibT = zhT): ParseResult {
+export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<string, number>): ParseResult {
   const src = normalizeEquation(raw);
   if (!src) return err(t('mathErr.empty'));
 
@@ -259,21 +279,26 @@ export function parseEquation(raw: string, t: LibT = zhT): ParseResult {
   const problem = auditNode(node, syms, t);
   if (problem) return err(problem);
 
-  // ZOO-166 方案 A：自由变量裁决——恰一个自由字母即自变量（y=4z ⟂ y=4x 同一条直线），
-  // 多字母词是拼写/未知名，两个及以上自由字母数学上欠定
-  const { free, bad } = freeSymbols(syms);
+  // ZOO-166 方案 A + ZOO-188 三分法：自由符号剔除已赋值常量后，恰一个字母即自变量
+  // （y=4z ⟂ y=4x 同一条直线）；未赋值的多字母词是拼写/未知名，两个及以上未赋值
+  // 字母数学上欠定（带常量时引导去常量区赋值）
+  const { free, bad, withConstants } = freeSymbols(syms, constants);
   if (bad) return err(t('mathErr.badSymbolExplicit', { name: bad }));
   if (free.length > 1) {
-    return err(t('mathErr.multiVarExplicit', { list: free.join(t('common.listSep')) }));
+    const messageKey = withConstants ? 'mathErr.multiVarWithConstants' : 'mathErr.multiVarExplicit';
+    return err(t(messageKey, { list: free.join(t('common.listSep')) }));
   }
   const variable = free[0] ?? 'x';
 
   try {
     const compiled = compileCached(body, node);
-    // 求值函数：scope 只注入实际自变量字母；异常与非 number 结果一律 NaN（采样期按断笔处理）
+    // 求值函数：scope 注入自变量 + 常量（常量先行、自变量后注入，同名时自变量优先）；
+    // 无常量时 scope 形状与现状一致。异常与非 number 结果一律 NaN（采样期按断笔处理）
     const fn = (x: number): number => {
       try {
-        const v = compiled.evaluate({ [variable]: x });
+        const scope: Record<string, number> = withConstants ? { ...constants } : {};
+        scope[variable] = x;
+        const v = compiled.evaluate(scope);
         return typeof v === 'number' ? v : NaN;
       } catch {
         return NaN;

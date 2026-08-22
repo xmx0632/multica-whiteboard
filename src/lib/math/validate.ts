@@ -11,9 +11,11 @@ import { parseEquation } from './parse';
 import { zhT, type LibT } from '../../i18n/lib';
 import type { StructuralOutcome } from './types';
 
-/** ZOO-176：t 透传给 parseEquation（错误文案随语言；缺省中文与历史行为一致）。 */
-export function validateEquation(raw: string, t: LibT = zhT): StructuralOutcome {
-  const result = parseEquation(raw, t);
+/** ZOO-176：t 透传给 parseEquation（错误文案随语言；缺省中文与历史行为一致）。
+ *  ZOO-188（T1）：constants 透传——符号常量参与三分法裁决与求值 scope 注入；
+ *  缺省 / 空字典与历史行为逐字节一致。 */
+export function validateEquation(raw: string, t: LibT = zhT, constants?: Record<string, number>): StructuralOutcome {
+  const result = parseEquation(raw, t, constants);
   // ZOO-166 方案 A：透传自变量字母（缺省 x 不携带，旧消费方零感知）
   return result.kind === 'explicit'
     ? result.variable

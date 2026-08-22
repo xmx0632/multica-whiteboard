@@ -122,6 +122,8 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
       xAxis: el.xAxis,
       equalRatio: el.equalRatio,
       sampleCount: el.sampleCount,
+      // ZOO-188（T1）：符号常量随元素进解析（与主画布渲染同一份数据）
+      constants: el.constants,
     },
     { width: w, height: h },
     plotTokenFor(el.id)
