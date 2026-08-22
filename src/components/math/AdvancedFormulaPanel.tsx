@@ -36,14 +36,16 @@ import { ADVANCED_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/template
  * T1 常量编辑区绑定（两入口共用）：创建侧由 EquationEditor 持草稿态，
  * 编辑侧由 MathPlotParams 直连元素（onChange → updateElementTransient 直改、
  * onCommit → 提交一条历史）。onApplyTemplate 供模板点选回填方程输入。
+ * onChange 为函数式更新（prev → next）：同一批次内多次离散变更（连点预置槽）
+ * 不受渲染闭包过期影响，逐次叠加而非相互覆盖。
  */
 export interface AdvancedConstantsBinding {
   /** 当前方程文本（常量赋值后的解析状态行反馈） */
   equation: string;
   /** 常量绑定值（存储层 ASCII 键名） */
   values: Record<string, number>;
-  /** 值变更（直改实时预览，不上历史） */
-  onChange: (next: Record<string, number>) => void;
+  /** 值变更（函数式更新：入参为当前值，返回下一值；直改实时预览，不上历史） */
+  onChange: (update: (prev: Record<string, number>) => Record<string, number>) => void;
   /** 一次可撤销操作边界（离散变更即时 / 输入失焦时）；创建侧可缺省 */
   onCommit?: () => void;
   /** 模板点选出口（回填方程输入）；缺省（无方程输入侧）不渲染模板行 */
@@ -114,20 +116,21 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
   const outcome = validateEquation(binding.equation, t, binding.values);
   const entries = Object.entries(binding.values);
 
-  /** 离散变更（点选预置 / 移除 / 自定义添加）：一次 onChange + 一次 onCommit */
-  const applyDiscrete = (next: Record<string, number>) => {
-    binding.onChange(next);
+  /** 离散变更（点选预置 / 移除 / 自定义添加）：一次 onChange + 一次 onCommit（函数式更新） */
+  const applyDiscrete = (update: (prev: Record<string, number>) => Record<string, number>) => {
+    binding.onChange(update);
     binding.onCommit?.();
   };
 
   const togglePreset = (key: string, def: number) => {
-    if (key in binding.values) {
-      const next = { ...binding.values };
-      delete next[key];
-      applyDiscrete(next);
-    } else {
-      applyDiscrete({ ...binding.values, [key]: def });
-    }
+    applyDiscrete((prev) => {
+      if (key in prev) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: def };
+    });
   };
 
   const addCustom = () => {
@@ -138,7 +141,7 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
       return;
     }
     if (!Number.isFinite(value)) return;
-    applyDiscrete({ ...binding.values, [key]: value });
+    applyDiscrete((prev) => ({ ...prev, [key]: value }));
     setCustomName('');
     setCustomValue('');
     setNameError(null);
@@ -201,7 +204,7 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
               value={String(value)}
               onChange={(e) => {
                 const v = parseFloat(e.target.value);
-                if (Number.isFinite(v)) binding.onChange({ ...binding.values, [key]: v });
+                if (Number.isFinite(v)) binding.onChange((prev) => ({ ...prev, [key]: v }));
               }}
               onBlur={binding.onCommit}
               aria-label={t('advFormula.constantsValueAria', { name: constantDisplayName(key) })}
@@ -211,9 +214,11 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
             <button
               type="button"
               onClick={() => {
-                const next = { ...binding.values };
-                delete next[key];
-                applyDiscrete(next);
+                applyDiscrete((prev) => {
+                  const next = { ...prev };
+                  delete next[key];
+                  return next;
+                });
               }}
               aria-label={t('advFormula.constantsRemoveAria', { name: constantDisplayName(key) })}
               className="touch-target border-none bg-transparent text-gray-400 text-base leading-none cursor-pointer hover:text-red-500 active:text-red-600 transition-colors"
