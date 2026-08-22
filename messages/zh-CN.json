@@ -220,6 +220,24 @@
     "delete": "删除",
     "hint": "修改参数实时重绘；移动 / 缩放 / 删除均可用 Ctrl+Z 撤销。"
   },
+  "advFormula": {
+    "entryLabel": "微积分 / 物理公式…",
+    "entryTitle": "微积分与物理公式专用面板（常量、参数式、f′ 叠加、物理模板）",
+    "settingsLabel": "公式设置",
+    "settingsAria": "打开公式设置（已开启 {count} 项叠加）",
+    "title": "高级公式",
+    "closeAria": "关闭高级公式面板",
+    "hint": "微积分与物理公式能力分步开放中，不影响基础方程面板的现有功能。",
+    "comingSoon": "即将开放",
+    "sectionCalculus": "微积分",
+    "sectionCalculusDesc": "f′ 叠加、切线 x₀、积分区间 a/b",
+    "sectionPhysics": "物理模板",
+    "sectionPhysicsDesc": "抛体运动 / 简谐振动 / 圆周运动",
+    "sectionConstants": "常量",
+    "sectionConstantsDesc": "v₀ / θ / ω / A / φ 常量字典编辑",
+    "sectionParametric": "参数式",
+    "sectionParametricDesc": "x=f(t), y=g(t) 与 r=f(θ) 输入及 t/θ 取值范围"
+  },
   "math": {
     "join": "{a} 与 {b}",
     "openingRight": "向右",

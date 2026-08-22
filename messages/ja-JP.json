@@ -220,6 +220,24 @@
     "delete": "削除",
     "hint": "パラメーター変更は即座に再描画されます。移動・拡大縮小・削除は Ctrl+Z で元に戻せます。"
   },
+  "advFormula": {
+    "entryLabel": "微積分 / 物理公式…",
+    "entryTitle": "微積分・物理公式専用パネル（定数・パラメータ式・f′ 重ね合わせ・物理テンプレート）",
+    "settingsLabel": "数式設定",
+    "settingsAria": "数式設定を開く（{count} 件の重ね合わせが有効）",
+    "title": "高度な数式",
+    "closeAria": "高度な数式パネルを閉じる",
+    "hint": "微積分・物理機能は段階的に提供されます。基本の方程式パネルには影響しません。",
+    "comingSoon": "準備中",
+    "sectionCalculus": "微積分",
+    "sectionCalculusDesc": "f′ 重ね合わせ、x₀ 接線、積分区間 a/b",
+    "sectionPhysics": "物理テンプレート",
+    "sectionPhysicsDesc": "放物運動 / 単振動 / 円運動",
+    "sectionConstants": "定数",
+    "sectionConstantsDesc": "v₀ / θ / ω / A / φ 定数辞書の編集",
+    "sectionParametric": "パラメータ表示",
+    "sectionParametricDesc": "x=f(t), y=g(t) と r=f(θ) の入力および t/θ の範囲"
+  },
   "math": {
     "join": "{a} と {b}",
     "openingRight": "右",

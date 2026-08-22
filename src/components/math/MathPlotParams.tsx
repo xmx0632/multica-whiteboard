@@ -8,8 +8,14 @@
  * 历史语义（技术方案 D5 两段式）：滑杆拖动触发 onChange（直改实时预览），
  * 松手/失焦触发 onCommit（压一条快照）；离散控件（色板/开关/预设）一次
  * onChange + onCommit。错误态走「重新编辑方程」回调（原位替换，原型决策）。
+ *
+ * ZOO-194 入口 2（编辑侧）：仅当 value.advanced 存在（元素带 overlays /
+ * constants / 新 kind，PropertyPanel 经 advancedFormulaState 派生）时渲染
+ * 紧凑「公式设置」按钮（带已开启叠加徽标数），点开高级公式二级面板；
+ * 普通元素不出现任何新控件，面板与现状逐像素一致。开合为纯 UI 态。
  */
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
 import { validateEquation } from '@/lib/math/validate';
@@ -49,6 +55,16 @@ export interface MathPlotParamsValue {
   hyperbolaParams?: HyperbolaParams;
   /** kind === 'ellipse' 时的参数（中心/半轴/旋转角，ZOO-149 教学参数） */
   ellipseParams?: EllipseParams;
+  /**
+   * ZOO-194 T0 预留：高级公式入口信号（面板派生字段，元素不落盘——
+   * PropertyPanel 由元素经 advancedFormulaState 派生）。
+   * 缺省（普通元素）不渲染「公式设置」按钮；T1 constants / T2 overlays /
+   * T4 新 kind 上线后由调用方透传点亮。
+   */
+  advanced?: {
+    /** 已开启叠加数（入口徽标；非 overlays 信号为 0） */
+    overlayCount: number;
+  };
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -108,6 +124,8 @@ const SAMPLE_STEP_KEYS: { key: string; count: 160 | 320 | 640 }[] = [
 
 export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit, equationError, layerControls }: MathPlotParamsProps) {
   const t = useT();
+  // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const isFn = value.kind === 'explicit';
   const isError = value.kind === 'error';
   // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）
@@ -177,6 +195,25 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               </div>
             )}
           </div>
+
+          {/* ZOO-194 入口 2（编辑侧）：仅高级元素（overlays/constants/新 kind）渲染，
+              普通元素不出现任何新控件（value.advanced 缺省即不渲染） */}
+          {value.advanced && (
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(true)}
+              aria-label={t('advFormula.settingsAria', { count: value.advanced.overlayCount })}
+              className="touch-target w-full flex items-center justify-center gap-1.5 py-1.5 border border-blue-200 rounded-lg bg-blue-50/60 text-[12px] font-medium text-blue-600 cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="text-[13px] leading-none" aria-hidden="true">⚙</span>
+              {t('advFormula.settingsLabel')}
+              {value.advanced.overlayCount > 0 && (
+                <span className="min-w-4 h-4 px-1 rounded-full bg-blue-500 text-white text-[10px] font-semibold leading-4 text-center">
+                  {value.advanced.overlayCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {isFn && (
             <>
@@ -444,6 +481,9 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
       </div>
 
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('params.hint')}</div>
+
+      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局） */}
+      {advancedOpen && <AdvancedFormulaPanel onClose={() => setAdvancedOpen(false)} />}
     </div>
   );
 }

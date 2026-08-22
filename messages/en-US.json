@@ -220,6 +220,24 @@
     "delete": "Delete",
     "hint": "Parameter changes redraw instantly; move / resize / delete can be undone with Ctrl+Z."
   },
+  "advFormula": {
+    "entryLabel": "Calculus / Physics…",
+    "entryTitle": "Dedicated panel for calculus and physics formulas (constants, parametric, f′ overlays, physics templates)",
+    "settingsLabel": "Formula settings",
+    "settingsAria": "Open formula settings ({count} overlays enabled)",
+    "title": "Advanced formulas",
+    "closeAria": "Close advanced formula panel",
+    "hint": "Calculus and physics capabilities are rolling out step by step, without affecting the basic equation panel.",
+    "comingSoon": "Coming soon",
+    "sectionCalculus": "Calculus",
+    "sectionCalculusDesc": "f′ overlay, tangent at x₀, integral bounds a/b",
+    "sectionPhysics": "Physics templates",
+    "sectionPhysicsDesc": "Projectile / simple harmonic / circular motion",
+    "sectionConstants": "Constants",
+    "sectionConstantsDesc": "v₀ / θ / ω / A / φ constant dictionary editing",
+    "sectionParametric": "Parametric",
+    "sectionParametricDesc": "x=f(t), y=g(t) and r=f(θ) inputs with t/θ domain"
+  },
   "math": {
     "join": "{a} and {b}",
     "openingRight": "right",

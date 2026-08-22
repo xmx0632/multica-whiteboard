@@ -220,6 +220,24 @@
     "delete": "삭제",
     "hint": "매개변수 변경은 실시간으로 다시 그려집니다. 이동 / 확대·축소 / 삭제는 Ctrl+Z로 실행 취소할 수 있습니다."
   },
+  "advFormula": {
+    "entryLabel": "미적분 / 물리 공식…",
+    "entryTitle": "미적분·물리 공식 전용 패널 (상수, 매개변수식, f′ 겹침, 물리 템플릿)",
+    "settingsLabel": "수식 설정",
+    "settingsAria": "수식 설정 열기 (겹침 {count}개 활성화됨)",
+    "title": "고급 수식",
+    "closeAria": "고급 수식 패널 닫기",
+    "hint": "미적분·물리 기능은 단계적으로 제공되며 기본 방정식 패널에는 영향을 주지 않습니다.",
+    "comingSoon": "준비 중",
+    "sectionCalculus": "미적분",
+    "sectionCalculusDesc": "f′ 겹침, x₀ 접선, 적분 구간 a/b",
+    "sectionPhysics": "물리 템플릿",
+    "sectionPhysicsDesc": "포물선 운동 / 단진동 / 원운동",
+    "sectionConstants": "상수",
+    "sectionConstantsDesc": "v₀ / θ / ω / A / φ 상수 사전 편집",
+    "sectionParametric": "매개변수식",
+    "sectionParametricDesc": "x=f(t), y=g(t) 와 r=f(θ) 입력 및 t/θ 범위"
+  },
   "math": {
     "join": "{a} 및 {b}",
     "openingRight": "오른쪽",

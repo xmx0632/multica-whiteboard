@@ -13,8 +13,12 @@
  *   （src/lib/templateGroupCollapse.ts）；插入行为与平铺版零差异。
  * - ZOO-166 方案 A：任意单字母可作自变量——显式函数状态行按实际字母显示
  *   （y=f(z)），y=4z 直接出图不再报错。
+ * - ZOO-194 入口 1（创建侧）：模板分组区底部「微积分 / 物理公式…」入口项，
+ *   点击展开高级公式二级面板——面板经 portal 独立挂载，开合为纯 UI 态；
+ *   既有输入框 / 19 模板 / 符号按钮 / MiniPreview 一律不动（零回归硬约束）。
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import MiniPreview from './MiniPreview';
 import { useT } from '@/i18n/I18nProvider';
 import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey } from '@/lib/math/templates';
@@ -59,6 +63,8 @@ export default function EquationEditor({
   createPreviewPolylines = samplePreviewPolylines,
 }: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
+  // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const t = useT();
 
@@ -236,6 +242,17 @@ export default function EquationEditor({
               </div>
             );
           })}
+          {/* ZOO-194 入口 1（创建侧）：高级公式入口项，置于模板分组底部（分组本身不动） */}
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen(true)}
+            title={t('advFormula.entryTitle')}
+            className="touch-target w-full flex items-center gap-1.5 px-1.5 py-1.5 border border-dashed border-blue-300 bg-blue-50/40 rounded-md cursor-pointer hover:border-blue-500 hover:bg-blue-50/80 active:bg-blue-100 transition-colors"
+          >
+            <span className="font-serif italic text-blue-500 text-[13px] leading-none">∫</span>
+            <span className="text-[11px] font-medium text-blue-600">{t('advFormula.entryLabel')}</span>
+            <span className="ml-auto text-gray-400 text-[11px] leading-none" aria-hidden="true">›</span>
+          </button>
         </div>
       </div>
       </div>{/* /touch-scroll */}
@@ -262,6 +279,9 @@ export default function EquationEditor({
       </div>
 
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('equation.hint')}</div>
+
+      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局） */}
+      {advancedOpen && <AdvancedFormulaPanel onClose={() => setAdvancedOpen(false)} />}
     </div>
   );
 }

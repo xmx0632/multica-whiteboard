@@ -14,6 +14,7 @@ import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, TEXT_MIN_F
 import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
 import { validateEquation } from '@/lib/math/validate';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
+import { advancedFormulaState } from '@/lib/advancedFormula';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
 import { usePhoneLandscape } from '@/lib/usePhoneLandscape';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
@@ -162,6 +163,10 @@ export default function PropertyPanel() {
       el.kind === 'line' || el.kind === 'linePair' || el.kind === 'point' || el.kind === 'parabola' || el.kind === 'hyperbola' || el.kind === 'ellipse'
         ? validateEquation(el.equation, t)
         : null;
+    // ZOO-194：高级公式入口信号（overlays/constants/新 kind 才点亮；普通元素
+    // undefined → MathPlotParams 不渲染「公式设置」按钮，面板与现状逐像素一致。
+    // 结构化最小形状透传，T1/T2/T4 给元素增补可选字段后自动生效，无需改此处）
+    const advanced = advancedFormulaState(el);
     const value: MathPlotParamsValue = {
       equation: el.equation,
       kind: el.kind,
@@ -172,6 +177,7 @@ export default function PropertyPanel() {
       parabolaParams: revalidated?.kind === 'parabola' ? revalidated.params : undefined,
       hyperbolaParams: revalidated?.kind === 'hyperbola' ? revalidated.params : undefined,
       ellipseParams: revalidated?.kind === 'ellipse' ? revalidated.params : undefined,
+      advanced: advanced.visible ? { overlayCount: advanced.overlayCount } : undefined,
       xAxis: el.xAxis,
       sampleCount: el.sampleCount,
       equalRatio: el.equalRatio,
@@ -186,7 +192,7 @@ export default function PropertyPanel() {
     const handleParamsChange = (patch: Partial<MathPlotParamsValue>) => {
       if (!gestureStartRef.current) gestureStartRef.current = el;
       if (patch.equation !== undefined) setEquationError(null);
-      // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams / ellipseParams 为面板派生字段（元素不落盘），剥除后落元素
+      // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams / ellipseParams / advanced（ZOO-194）为面板派生字段（元素不落盘），剥除后落元素
       const rest: Partial<MathPlotParamsValue> = { ...patch };
       const errorMessage = rest.errorMessage;
       delete rest.errorMessage;
@@ -196,6 +202,7 @@ export default function PropertyPanel() {
       delete rest.parabolaParams;
       delete rest.hyperbolaParams;
       delete rest.ellipseParams;
+      delete rest.advanced;
       updateElementTransient(el.id, { ...rest, ...(errorMessage !== undefined ? { error: errorMessage } : {}) } as Partial<WhiteboardElement>);
     };
 
