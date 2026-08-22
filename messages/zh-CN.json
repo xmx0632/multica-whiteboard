@@ -249,7 +249,11 @@
     "calcDerivDesc": "导函数虚线叠加",
     "calcTangentDesc": "切线演示",
     "calcTangentX0": "切点 x₀",
-    "calcNotApplicable": "仅显式函数 y=f(x) 支持微积分叠加——当前方程不是显式函数"
+    "calcNotApplicable": "仅显式函数 y=f(x) 支持微积分叠加——当前方程不是显式函数",
+    "calcIntegralDesc": "定积分着色",
+    "calcIntegralRange": "积分区间需 a<b 且在定义域内",
+    "calcIntegralLower": "积分下限 a",
+    "calcIntegralUpper": "积分上限 b"
   },
   "math": {
     "join": "{a} 与 {b}",
@@ -301,7 +305,9 @@
     "notAParabola": "该方程不表示抛物线",
     "notAHyperbola": "该方程不表示双曲线",
     "invalidDomainOrder": "定义域无效：xmin 需小于 xmax",
-    "invalidDomainWidth": "定义域无效：宽度需在 0.1–1000 之间"
+    "invalidDomainWidth": "定义域无效：宽度需在 0.1–1000 之间",
+    "integralInvalid": "积分区间无效（需 a<b）——请调整区间端点 a/b",
+    "integralSingularity": "积分区间内存在无定义点——请调整 a/b 避开（如 1/x 需避开 x=0）"
   },
   "autosave": {
     "conflict": "其他标签页也在编辑此白板，已按本页最新内容保存",

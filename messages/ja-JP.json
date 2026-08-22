@@ -249,7 +249,11 @@
     "calcDerivDesc": "導関数を破線で重ね表示",
     "calcTangentDesc": "接線のデモ",
     "calcTangentX0": "接点 x₀",
-    "calcNotApplicable": "微積分オーバーレイは陽関数 y=f(x) 専用です——現在の方程式は対象外です"
+    "calcNotApplicable": "微積分オーバーレイは陽関数 y=f(x) 専用です——現在の方程式は対象外です",
+    "calcIntegralDesc": "定積分の塗り",
+    "calcIntegralRange": "積分区間は a<b かつ定義域内である必要があります",
+    "calcIntegralLower": "積分の下限 a",
+    "calcIntegralUpper": "積分の上限 b"
   },
   "math": {
     "join": "{a} と {b}",
@@ -301,7 +305,9 @@
     "notAParabola": "この方程式は放物線を表しません",
     "notAHyperbola": "この方程式は双曲線を表しません",
     "invalidDomainOrder": "定義域が無効です：xmin は xmax 未満にしてください",
-    "invalidDomainWidth": "定義域が無効です：幅は 0.1〜1000 の範囲にしてください"
+    "invalidDomainWidth": "定義域が無効です：幅は 0.1〜1000 の範囲にしてください",
+    "integralInvalid": "積分区間が無効です（a<b が必要）——区間の端点 a/b を調整してください",
+    "integralSingularity": "区間内に定義されない点があります——a/b を調整して避けてください（例：1/x は x=0 を避ける）"
   },
   "autosave": {
     "conflict": "別のタブでもこのホワイトボードを編集しています。このタブの最新内容で保存しました",

@@ -249,7 +249,11 @@
     "calcDerivDesc": "도함수 점선 겹쳐 보기",
     "calcTangentDesc": "접선 시연",
     "calcTangentX0": "접점 x₀",
-    "calcNotApplicable": "미적분 오버레이는 명시적 함수 y=f(x)에만 적용됩니다 — 현재 방정식은 해당하지 않습니다"
+    "calcNotApplicable": "미적분 오버레이는 명시적 함수 y=f(x)에만 적용됩니다 — 현재 방정식은 해당하지 않습니다",
+    "calcIntegralDesc": "정적분 음영",
+    "calcIntegralRange": "적분 구간은 a<b이며 정의역 안에 있어야 합니다",
+    "calcIntegralLower": "적분 하한 a",
+    "calcIntegralUpper": "적분 상한 b"
   },
   "math": {
     "join": "{a} 및 {b}",
@@ -301,7 +305,9 @@
     "notAParabola": "이 방정식은 포물선을 나타내지 않습니다",
     "notAHyperbola": "이 방정식은 쌍곡선을 나타내지 않습니다",
     "invalidDomainOrder": "정의역이 잘못되었습니다: xmin은 xmax보다 작아야 합니다",
-    "invalidDomainWidth": "정의역이 잘못되었습니다: 폭은 0.1–1000 사이여야 합니다"
+    "invalidDomainWidth": "정의역이 잘못되었습니다: 폭은 0.1–1000 사이여야 합니다",
+    "integralInvalid": "적분 구간이 잘못되었습니다(a<b이어야 함) — 구간 끝점 a/b를 조정하세요",
+    "integralSingularity": "구간 안에 정의되지 않는 점이 있습니다 — a/b를 조정해 피하세요(예: 1/x는 x=0 피하기)"
   },
   "autosave": {
     "conflict": "다른 탭에서도 이 화이트보드를 편집 중입니다. 이 탭의 최신 내용으로 저장했습니다",

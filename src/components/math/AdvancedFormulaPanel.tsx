@@ -19,7 +19,10 @@
  *   与 x₀ 数值输入。求导惰性——渲染管线仅 overlays 非空时求导（勿逐键求导）；
  *   x₀ 输入 onChange 实时预览 / onBlur 提交一条（D5 同款）；非显式函数时控件
  *   禁用并提示（叠加数据保留，方程改回显式即恢复生效）；
- * - T3 积分（a/b 归 T3）/ T4（参数式）/ T5（物理模板）分区仍为占位。
+ * - T3 积分区（ZOO-190，同微积分区）：定积分开关 + a/b 数值输入（a<b 且在
+ *   定义域内校验，编辑侧经 binding.domain 传入；区间内无定义点由渲染层
+ *   奇点防护报错 chip 兜底）；
+ * - T4（参数式）/ T5（物理模板）分区仍为占位。
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -61,16 +64,20 @@ export interface AdvancedFormulaPanelProps {
  * 元素 overlays（元素真实字段，onChange → updateElementTransient 直改、onCommit
  * → 提交一条历史）；创建侧由 EquationEditor 持草稿态、确认载荷全量带出。
  * 求导本身惰性——由渲染管线按 overlays 内容触发，面板只读写叠加开关。
+ * ZOO-190 T3：domain 供积分 a/b 的定义域内校验（编辑侧传元素 xAxis；创建侧
+ * 元素未建立、缺省只校验 a<b）。
  */
 export interface AdvancedCalculusBinding {
   /** 当前叠加列表（存储层形态） */
   values: readonly MathPlotOverlay[];
-  /** 叠加变更（开关离散变更即时提交；x₀ 输入实时预览） */
+  /** 叠加变更（开关离散变更即时提交；x₀ / a/b 输入实时预览） */
   onChange: (next: MathPlotOverlay[]) => void;
   /** 一次可撤销操作边界（编辑侧传入；创建侧缺省） */
   onCommit?: () => void;
   /** 是否显式函数（仅 y=f(x) 可叠加；false 时控件禁用并提示） */
   applicable: boolean;
+  /** x 定义域（a/b 越界校验；创建侧缺省 = 不校验定义域） */
+  domain?: { min: number; max: number };
 }
 
 /** 四分区骨架（组序即面板展示序）：字形为语言无关数学记号，名称 / 描述走资源键 */
@@ -286,11 +293,13 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
   );
 }
 
-/** T2 微积分编辑区（ZOO-189）：f′ 叠加开关 + 切线演示（开关 + x₀ 数值输入）。 */
+/** T2 微积分编辑区（ZOO-189）：f′ 叠加开关 + 切线演示（开关 + x₀ 数值输入）；
+ *  T3 积分区（ZOO-190）：定积分开关 + a/b 数值输入（a<b 且定义域内校验）。 */
 function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
   const t = useT();
   const hasDerivative = binding.values.some((o) => o.type === 'derivative');
   const tangent = binding.values.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
+  const integral = binding.values.find((o): o is { type: 'integral'; a: number; b: number } => o.type === 'integral');
   const disabled = !binding.applicable;
 
   /** 离散变更（开关切换）：一次 onChange + 一次 onCommit */
@@ -309,10 +318,29 @@ function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
     applyDiscrete(tangent ? rest : [...rest, { type: 'tangent', x0: 0 }]);
   };
 
-  /** x₀ 直改实时预览（切线随输入实时更新），失焦提交一条 */
+  const toggleIntegral = () => {
+    const rest = binding.values.filter((o) => o.type !== 'integral');
+    applyDiscrete(integral ? rest : [...rest, { type: 'integral', a: 0, b: 1 }]);
+  };
+
+  /** x₀ / a/b 直改实时预览（叠加随输入实时更新），失焦提交一条 */
   const setX0 = (x0: number) => {
     binding.onChange(binding.values.map((o) => (o.type === 'tangent' ? { type: 'tangent', x0 } : o)));
   };
+
+  const setIntegralBounds = (patch: Partial<{ a: number; b: number }>) => {
+    binding.onChange(
+      binding.values.map((o) => (o.type === 'integral' ? { type: 'integral' as const, a: o.a, b: o.b, ...patch } : o)),
+    );
+  };
+
+  // T3 校验（ZOO-190）：a<b 必检；编辑侧带定义域时加越界检查（渲染层另有
+  // 奇点防护兜底——区间内无定义点画报错 chip，不产出错误区域）
+  const integralInvalid =
+    integral !== undefined &&
+    (!(integral.a < integral.b) ||
+      (binding.domain !== undefined &&
+        (integral.a < binding.domain.min - 1e-9 || integral.b > binding.domain.max + 1e-9)));
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -364,6 +392,60 @@ function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
           </span>
         )}
       </div>
+
+      {/* 定积分区域着色开关（ZOO-190 T3） */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={Boolean(integral)}
+          onChange={toggleIntegral}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] text-blue-500 leading-none">∫</span>
+        <span className="text-[11px] text-gray-500">{t('advFormula.calcIntegralDesc')}</span>
+      </label>
+
+      {/* a/b 数值输入（积分开启时）：下限 a / 上限 b，实时预览、失焦提交 */}
+      {integral && !disabled && (
+        <div className="flex flex-col gap-1 pl-5">
+          <div className="flex items-center gap-1.5">
+            <span className="font-serif italic text-[12px] text-gray-700 w-3 text-center leading-none">a</span>
+            <input
+              type="number"
+              step="any"
+              value={String(integral.a)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setIntegralBounds({ a: v });
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.calcIntegralLower')}
+              autoComplete="off"
+              className="touch-target flex-1 min-w-0 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+            <span className="font-serif italic text-[12px] text-gray-700 w-3 text-center leading-none">b</span>
+            <input
+              type="number"
+              step="any"
+              value={String(integral.b)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setIntegralBounds({ b: v });
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.calcIntegralUpper')}
+              autoComplete="off"
+              className="touch-target flex-1 min-w-0 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+          </div>
+          {integralInvalid && (
+            <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
+              ⚠ {t('advFormula.calcIntegralRange')}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

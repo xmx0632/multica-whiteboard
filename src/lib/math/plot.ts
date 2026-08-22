@@ -15,7 +15,7 @@
  * （Node 单测环境无 Path2D → path2d 为 null，绘制自动回退逐点折线）。
  */
 import { getPlotRender, plotSignature, setPlotRender } from './cache';
-import { derivativeOf, tangentOf } from './calculus';
+import { derivativeOf, integralOf, tangentOf } from './calculus';
 import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
 import { sampleEquation, sampleExplicitMulti } from './sample';
@@ -39,6 +39,10 @@ export const PLOT_COLORS = {
   /** ZOO-189 T2 叠加层色：f′ 虚线橙 / 切线绿（与 12 色板同源，白底可读） */
   overlayDerivative: '#F97316',
   overlayTangent: '#22C55E',
+  /** ZOO-190 T3 定积分：着色区上面积 chip 的底色（元素色文字、白底可读） */
+  integralChipBg: 'rgba(255,255,255,0.92)',
+  /** ZOO-190 T3 定积分奇点报错 chip（红字白底，口径同错误占位） */
+  integralErrorText: '#ef4444',
 } as const;
 
 /** 网格线最小像素间距，低于此密度整层隐藏（亚像素网格，§6.1 第 2 层）。 */
@@ -57,11 +61,29 @@ export interface PlotStyle {
 export const OVERLAY_DERIVATIVE_DASH: readonly number[] = [8, 5];
 
 /**
+ * ZOO-190 T3 定积分着色透明度（元素色 × 0.18；颜色不进渲染缓存签名——
+ * 改颜色只重新 fill，不触发重采样，性能契约延续 §6.3）。
+ */
+export const OVERLAY_INTEGRAL_FILL_ALPHA = 0.18;
+
+/**
  * 叠加层数字标注格式（切线斜率 / 切点，ZOO-189）：≤2 位小数、去尾零——
  * canvas 与 SVG 导出共用，保证两渲染面文本一致。
  */
 export function formatOverlayNumber(v: number): string {
   let s = v.toFixed(2);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
+
+/**
+ * 面积值格式化（ZOO-190 T3，风格对齐 formatTickLabel：按数值量级定小数位
+ * 〔0.001 级 3 位、1/3 级 3 位、百级 0–2 位〕、去尾零、−0 归 0）——canvas 与
+ * SVG 导出共用，保证两渲染面文本一致。
+ */
+export function formatAreaValue(v: number): string {
+  const decimals = Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(Math.abs(v) || 1))));
+  let s = v.toFixed(decimals);
   if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
   return s === '-0' ? '0' : s;
 }
@@ -132,6 +154,14 @@ export interface OverlayRender {
   derivative?: { polylines: Polyline[]; path2d: Path2D | null };
   /** 切线：切点 / 斜率 / 贯穿定义域的直线折线（数学坐标） */
   tangent?: { x0: number; y0: number; slope: number; polyline: Polyline };
+  /**
+   * 定积分（ZOO-190 T3）：着色区闭合折线 + 面积值 + chip 锚点（数学坐标）
+   * 与缓存 Path2D；奇点 / 非法区间 → ok:false 携「现象 + 怎么办」文案
+   * （画 chip 报错，不产出错误区域，主曲线照常渲染）。
+   */
+  integral?:
+    | { ok: true; value: number; region: Polyline; anchor: { x: number; y: number }; path2d: Path2D | null }
+    | { ok: false; error: string };
 }
 
 /** 「好看刻度」步长（1/2/2.5/5×10^k，原型 niceStep 平移共享）。 */
@@ -239,6 +269,25 @@ export function buildPlotPath2D(polylines: Polyline[], t: PlotTransform): Path2D
       drawing = true;
     }
   }
+  return path;
+}
+
+/**
+ * 闭合折线 → 元素局部 px 的填充 Path2D（ZOO-190 T3 定积分着色区）：整段连续
+ * （无断笔语义——区域折线由 integralOf 预扫保证全有限），末尾 closePath 闭合。
+ */
+export function buildClosedPath2D(points: Polyline, t: PlotTransform): Path2D {
+  const path = new Path2D();
+  let started = false;
+  for (const p of points) {
+    const px = t.toPxX(p.x);
+    const py = t.toPxY(p.y);
+    if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+    if (started) path.lineTo(px, py);
+    else path.moveTo(px, py);
+    started = true;
+  }
+  path.closePath();
   return path;
 }
 
@@ -376,6 +425,30 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     }
   }
 
+  // —— ZOO-190 T3 定积分着色（主曲线之下、网格轴之上）：元素色半透明填充，
+  //    颜色不进渲染签名——改色仅重新 fill（缓存 Path2D 优先，回退逐点闭合折线）——
+  if (overlays?.integral?.ok) {
+    const ig = overlays.integral;
+    ctx.globalAlpha = style.opacity * OVERLAY_INTEGRAL_FILL_ALPHA;
+    ctx.fillStyle = style.strokeColor;
+    if (ig.path2d) {
+      ctx.fill(ig.path2d);
+    } else {
+      ctx.beginPath();
+      let started = false;
+      for (const p of ig.region) {
+        const px = t.toPxX(p.x);
+        const py = t.toPxY(p.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+        if (started) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+        started = true;
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
   // —— 曲线（缓存 Path2D 优先；颜色线宽不进签名，改样式仅重 stroke）——
   if (polylines.length > 0) {
     ctx.globalAlpha = style.opacity;
@@ -406,6 +479,59 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
         }
       }
       ctx.stroke();
+    }
+  }
+
+  // —— ZOO-190 T3 面积 chip（主曲线之上）：∫ = 面积值，锚在着色区中线附近、
+  //    越界时收拢回卡片内；奇点 / 非法区间 → 顶部报错 chip（现象 + 怎么办）——
+  if (overlays?.integral) {
+    const ig = overlays.integral;
+    ctx.globalAlpha = style.opacity;
+    if (ig.ok) {
+      const label = `∫ = ${formatAreaValue(ig.value)}`;
+      ctx.font = 'italic 11px serif';
+      const tw = ctx.measureText(label).width;
+      const ch = 16;
+      const cx = Math.min(Math.max(t.toPxX(ig.anchor.x), tw / 2 + 4), width - tw / 2 - 4);
+      const cy = Math.min(Math.max(t.toPxY(ig.anchor.y), ch / 2 + 4), height - ch / 2 - 4);
+      ctx.fillStyle = PLOT_COLORS.integralChipBg;
+      roundedRectPath(ctx, cx - tw / 2 - 5, cy - ch / 2, tw + 10, ch, 8);
+      ctx.fill();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = style.strokeColor;
+      ctx.fillText(label, cx, cy + 0.5);
+    } else {
+      const wrapChip = (text: string, maxWidth: number): string[] => {
+        const lines: string[] = [];
+        let line = '';
+        for (const ch of text) {
+          if (ctx.measureText(line + ch).width > maxWidth) {
+            lines.push(line);
+            line = ch;
+          } else {
+            line += ch;
+          }
+        }
+        if (line) lines.push(line);
+        return lines.slice(0, 2); // 与错误占位同款：至多两行，超长截断
+      };
+      ctx.font = '10px system-ui, sans-serif';
+      const lines = wrapChip(`⚠ ${ig.error}`, width - 16);
+      const lw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 10;
+      const lh = lines.length * 12 + 6;
+      const bx = Math.min(Math.max(width / 2 - lw / 2, 4), Math.max(width - lw - 4, 4));
+      ctx.fillStyle = PLOT_COLORS.integralChipBg;
+      roundedRectPath(ctx, bx, 6, lw, lh, 6);
+      ctx.fill();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = PLOT_COLORS.integralErrorText;
+      let ly = 6 + 3;
+      for (const l of lines) {
+        ctx.fillText(l, bx + lw / 2, ly);
+        ly += 12;
+      }
     }
   }
 
@@ -716,13 +842,15 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
   const parsed = parseEquation(spec.equation, zhT, spec.constants);
 
   // —— ZOO-189 T2 叠加路径：仅显式函数且 overlays 非空时进入（惰性求导——
-  //    无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用一次求导。
+  //    无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用一次求导；
+  //    ZOO-190 T3：定积分只依赖 f 本身（纯数值辛普森），积分-only 时不求导。
   if (parsed.kind === 'explicit' && spec.overlays && spec.overlays.length > 0) {
     const wantsDerivative = spec.overlays.some((o) => o.type === 'derivative');
     const tangentOverlay = spec.overlays.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
-    const deriv = derivativeOf(spec.equation, { constants: spec.constants });
-    const dfn = deriv.ok ? deriv.fn : null;
-    if (wantsDerivative || tangentOverlay) {
+    const integralOverlay = spec.overlays.find((o): o is { type: 'integral'; a: number; b: number } => o.type === 'integral');
+    const deriv = wantsDerivative || tangentOverlay ? derivativeOf(spec.equation, { constants: spec.constants }) : null;
+    const dfn = deriv && deriv.ok ? deriv.fn : null;
+    if (wantsDerivative || tangentOverlay || integralOverlay) {
       const sampled = sampleExplicitMulti(
         [parsed.fn, ...(wantsDerivative && dfn ? [dfn] : [])],
         {
@@ -753,6 +881,19 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
       if (tangentOverlay && dfn) {
         const tg = tangentOf(parsed.fn, dfn, tangentOverlay.x0, view.xMin, view.xMax);
         if (tg) overlays.tangent = tg;
+      }
+      // ZOO-190 T3：f 与积分带共窗（着色区跟随主曲线视窗）；奇点 → 错误 chip 载荷
+      if (integralOverlay) {
+        const ig = integralOf(parsed.fn, integralOverlay.a, integralOverlay.b);
+        overlays.integral = ig.ok
+          ? {
+              ok: true,
+              value: ig.value,
+              region: ig.region,
+              anchor: ig.anchor,
+              path2d: transform ? buildClosedPath2D(ig.region, transform) : null,
+            }
+          : { ok: false, error: ig.message };
       }
       return {
         polylines: sampled.series[0],

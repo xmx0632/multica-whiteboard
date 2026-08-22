@@ -500,7 +500,8 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           真实字段，经 handleParamsChange 落元素，不在派生剥除清单）、onCommit 提交一条；
           模板点选回填方程输入。
           ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
-          仅显式函数可叠加（几何/错误态禁用并提示） */}
+          仅显式函数可叠加（几何/错误态禁用并提示）。
+          ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验） */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -514,6 +515,8 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           calculus={{
             values: value.overlays ?? [],
             applicable: isFn,
+            // ZOO-190 T3：a/b 定义域内校验（元素 xAxis；创建侧无元素、缺省不校验）
+            domain: value.xAxis,
             onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
             onCommit: () => onCommit?.(),
           }}

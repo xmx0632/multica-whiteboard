@@ -16,8 +16,8 @@
  * 惰性契约：本模块零副作用、仅在被调用时求导（渲染管线 overlays 非空才进来），
  * 编译产物进 cache.ts LRU——同表达式重复叠加零成本。
  *
- * T3（定积分）将在本文件追加自适应辛普森：求导相关导出收敛于独立命名
- * （derivativeOf / tangentOf），与积分实现互不依赖，留出并列空间。
+ * T3（ZOO-190）已追加定积分：integralOf（自适应辛普森，纯数值、不依赖求导链，
+ * 与 derivativeOf / tangentOf 并列导出、互不依赖）。
  */
 import { derivative, parse, simplify } from 'mathjs/number';
 import { compileCached } from './cache';
@@ -116,4 +116,119 @@ export function tangentOf(
   const xb = xMax + reach;
   const lineY = (x: number) => y0 + slope * (x - x0);
   return { x0, y0, slope, polyline: [{ x: xa, y: lineY(xa) }, { x: xb, y: lineY(xb) }] };
+}
+
+/** 定积分产物（ZOO-190 T3）。 */
+export interface IntegralOf {
+  /** ∫ᵃᵇ f(x)dx（a>b 时交换端点取负——有符号面积） */
+  value: number;
+  /**
+   * 着色区闭合折线（数学坐标）：f 在 [lo,hi] 的采样段 + 基线 y=0 两端角点
+   * （末尾 (hi,0)、(lo,0)）——绘制层 closePath 成「曲线与 x 轴围成区域」。
+   */
+  region: Polyline;
+  /** 面积 chip 锚点（数学坐标）：区间中点、f(中点)/2 高度——恒落在着色区内 */
+  anchor: { x: number; y: number };
+}
+
+/**
+ * 定积分失败（ZOO-190 T3）：invalid = 端点非有限或零宽（a===b）；
+ * singularity = 区间内 f 存在无定义点（预扫或求积采样出 NaN/±Inf，如 ∫₋₁¹dx/x）。
+ * message 为「现象 + 怎么办」双段式文案（mathErr.integral*，随注入语言）。
+ */
+export type IntegralOutcome =
+  | ({ ok: true } & IntegralOf)
+  | { ok: false; reason: 'invalid' | 'singularity'; message: string };
+
+/**
+ * 着色区采样段数（偶数——中点 (lo+hi)/2 不落在网格上，与辛普森求积点互补，
+ * 一张网格同时服务预扫与折线，单次 ~130 求值）。
+ */
+const INTEGRAL_REGION_SEGMENTS = 128;
+/** 自适应辛普森递归深度上限（2^16 段封顶——陡峭函数的最坏情形护栏）。 */
+const INTEGRAL_MAX_DEPTH = 16;
+
+/** 单段辛普森公式（三点 [a,b]，b−a 为段宽）。 */
+function simpson3(a: number, b: number, fa: number, fm: number, fb: number): number {
+  return ((b - a) / 6) * (fa + 4 * fm + fb);
+}
+
+/**
+ * 自适应辛普森（ZOO-186 报告 §2.1 / PoC round2 同款）：二分子区间对比误差，
+ * 15ε 内收敛并做 Richardson 修正（delta/15），否则对半递归（eps 减半）。
+ * 光滑教学函数（sin/x²/exp）数层内收敛；深度上限护栏陡峭最坏情形。
+ */
+function adaptiveSimpson(
+  fn: (x: number) => number,
+  a: number,
+  b: number,
+  fa: number,
+  fm: number,
+  fb: number,
+  whole: number,
+  eps: number,
+  depth: number,
+): number {
+  const m = (a + b) / 2;
+  const lm = (a + m) / 2;
+  const rm = (m + b) / 2;
+  const flm = fn(lm);
+  const frm = fn(rm);
+  const left = simpson3(a, m, fa, flm, fm);
+  const right = simpson3(m, b, fm, frm, fb);
+  const delta = left + right - whole;
+  if (depth <= 0 || Math.abs(delta) <= 15 * eps) return left + right + delta / 15;
+  const half = eps / 2;
+  return (
+    adaptiveSimpson(fn, a, m, fa, flm, fm, left, half, depth - 1) +
+    adaptiveSimpson(fn, m, b, fm, frm, fb, right, half, depth - 1)
+  );
+}
+
+/**
+ * 定积分（ZOO-190 T3）：自适应辛普森求 ∫ᵃᵇ f(x)dx + 着色区折线 + chip 锚点。
+ * 奇点防护：求积前对 [a,b] 预扫采样点（与折线共用网格），任一 NaN/±Inf 即
+ * 判 singularity——不产出错误区域、不崩溃（∫₋₁¹ dx/x 类区间友好报错）。
+ */
+export function integralOf(
+  fn: (x: number) => number,
+  a: number,
+  b: number,
+  t: LibT = zhT,
+): IntegralOutcome {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !(Math.abs(b - a) > 0)) {
+    return { ok: false, reason: 'invalid', message: t('mathErr.integralInvalid') };
+  }
+  const signed = a > b ? -1 : 1; // a>b：有符号面积（∫₂¹ = −∫₁²），区域仍画 [lo,hi]
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+
+  // 奇点预扫 + 着色折线共用一张网格（预扫见函数头注释）
+  const n = INTEGRAL_REGION_SEGMENTS;
+  const region: Polyline = new Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    const x = lo + ((hi - lo) * i) / n;
+    const y = fn(x);
+    if (!Number.isFinite(y)) return { ok: false, reason: 'singularity', message: t('mathErr.integralSingularity') };
+    region[i] = { x, y };
+  }
+  region.push({ x: hi, y: 0 }, { x: lo, y: 0 });
+
+  const mid = (lo + hi) / 2;
+  const fMid = fn(mid);
+  const whole = simpson3(lo, hi, region[0].y, fMid, region[n].y);
+  const value = signed * adaptiveSimpson(
+    fn,
+    lo,
+    hi,
+    region[0].y,
+    fMid,
+    region[n].y,
+    whole,
+    1e-7 * Math.max(1, Math.abs(whole)),
+    INTEGRAL_MAX_DEPTH,
+  );
+  // 网格未命中而求积点命中的奇点（无理位置无定义点）：结果非有限 → 同口径报错
+  if (!Number.isFinite(value)) return { ok: false, reason: 'singularity', message: t('mathErr.integralSingularity') };
+  return { ok: true, value, region, anchor: { x: mid, y: fMid / 2 } };
 }

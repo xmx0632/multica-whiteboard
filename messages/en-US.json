@@ -249,7 +249,11 @@
     "calcDerivDesc": "Overlay derivative (dashed)",
     "calcTangentDesc": "Tangent line",
     "calcTangentX0": "Tangent point x₀",
-    "calcNotApplicable": "Calculus overlays apply to explicit functions y=f(x) only — the current equation is not one"
+    "calcNotApplicable": "Calculus overlays apply to explicit functions y=f(x) only — the current equation is not one",
+    "calcIntegralDesc": "Definite integral shading",
+    "calcIntegralRange": "The integral interval needs a<b and must stay within the domain",
+    "calcIntegralLower": "Integral lower bound a",
+    "calcIntegralUpper": "Integral upper bound b"
   },
   "math": {
     "join": "{a} and {b}",
@@ -301,7 +305,9 @@
     "notAParabola": "The equation does not represent a parabola",
     "notAHyperbola": "The equation does not represent a hyperbola",
     "invalidDomainOrder": "Invalid domain: xMin must be less than xMax",
-    "invalidDomainWidth": "Invalid domain: width must be between 0.1 and 1000"
+    "invalidDomainWidth": "Invalid domain: width must be between 0.1 and 1000",
+    "integralInvalid": "Invalid integral interval (a must be less than b) — adjust the a/b endpoints",
+    "integralSingularity": "The function is undefined somewhere in the interval — adjust a/b to avoid it (e.g. 1/x must avoid x=0)"
   },
   "autosave": {
     "conflict": "Another tab is also editing this whiteboard; this tab's latest content was saved",

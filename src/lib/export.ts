@@ -2,11 +2,13 @@ import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineEl
 import { renderElement, getAllElementsBounds } from './renderer';
 import { zhT, type LibT } from '../i18n/lib';
 import {
+  formatAreaValue,
   formatOverlayNumber,
   formatTickLabel,
   MIN_GRID_PX,
   MIN_TICK_LABEL_PX,
   OVERLAY_DERIVATIVE_DASH,
+  OVERLAY_INTEGRAL_FILL_ALPHA,
   PLOT_COLORS,
   resolvePlotRender,
   stepForAxis,
@@ -247,12 +249,24 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     }
     return d.trim();
   };
-  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent);
+  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent || render.overlays?.integral);
   const d = polylinesToD(render.polylines);
   if (d || hasOverlayDraw) {
     // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
     // canvas 有 ctx.clip 而 SVG 需显式 clipPath，否则导出的直线/双曲线溢出卡片
     parts.push(`<defs><clipPath id="mpc-${el.id}"><rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/></clipPath></defs>`);
+
+    // —— ZOO-190 T3 定积分着色区（主曲线之下，与 canvas 绘制序一致）：曲线
+    //    [a,b] 段 + 基线 y=0 闭合 → <polygon>；元素色 × fill-opacity 组合元素透明度——
+    if (render.overlays?.integral?.ok) {
+      const pts = render.overlays.integral.region
+        .map((p) => `${toX(p.x).toFixed(2)},${toY(p.y).toFixed(2)}`)
+        .join(' ');
+      parts.push(
+        `<polygon points="${pts}" fill="${el.strokeColor}" fill-opacity="${OVERLAY_INTEGRAL_FILL_ALPHA}" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+      );
+    }
+
     if (d) {
       parts.push(`<path d="${d}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
     }
@@ -288,6 +302,37 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
       parts.push(
         `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.overlayTangent}" text-anchor="start">${escapeXml(label)}</text>`,
       );
+    }
+
+    // —— ZOO-190 T3 面积 chip / 奇点报错 chip（与 canvas 同一套锚点与配色）——
+    if (render.overlays?.integral) {
+      const ig = render.overlays.integral;
+      if (ig.ok) {
+        const chip = `∫ = ${formatAreaValue(ig.value)}`;
+        const tw = chip.length * 6.2 + 10; // italic serif 11px 估宽（图例 chip 同款口径）
+        const ch = 16;
+        let cx = toX(ig.anchor.x);
+        let cy = toY(ig.anchor.y);
+        cx = Math.min(Math.max(cx, gx + tw / 2 + 4), gx + gw - tw / 2 - 4);
+        cy = Math.min(Math.max(cy, gy + ch / 2 + 4), gy + gh - ch / 2 - 4);
+        parts.push(
+          `<rect x="${(cx - tw / 2).toFixed(2)}" y="${(cy - ch / 2).toFixed(2)}" width="${tw.toFixed(2)}" height="${ch}" rx="8" fill="${PLOT_COLORS.integralChipBg}"${opacity}/>`,
+        );
+        parts.push(
+          `<text x="${cx.toFixed(2)}" y="${(cy + 4).toFixed(2)}" font-size="11" font-style="italic" font-family="serif" fill="${el.strokeColor}" text-anchor="middle"${opacity}>${escapeXml(chip)}</text>`,
+        );
+      } else {
+        // 奇点 / 非法区间：顶部报错 chip（截断到绘图区宽，红字白底）
+        const msg = `⚠ ${ig.error}`.slice(0, 44);
+        const tw = Math.min(msg.length * 5.4 + 10, gw - 8);
+        const lx = gx + (gw - tw) / 2;
+        parts.push(
+          `<rect x="${lx.toFixed(1)}" y="${(gy + 6).toFixed(1)}" width="${tw.toFixed(1)}" height="18" rx="6" fill="${PLOT_COLORS.integralChipBg}"${opacity}/>`,
+        );
+        parts.push(
+          `<text x="${(gx + gw / 2).toFixed(1)}" y="${(gy + 18).toFixed(1)}" font-size="10" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.integralErrorText}" text-anchor="middle" clip-path="url(#mpc-${el.id})"${opacity}>${escapeXml(msg)}</text>`,
+        );
+      }
     }
   }
 
