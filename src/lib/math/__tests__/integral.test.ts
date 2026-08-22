@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { plotRenderWriteCount } from '../cache';
 import { integralOf } from '../calculus';
 import { drawGraphCore, formatAreaValue, resolvePlotRender, type PlotFrame, type PlotSpec } from '../plot';
+import { parseEquation } from '../parse';
 import { zhT } from '../../../i18n/lib';
 import { exportToSvg } from '../../export';
 import type { MathPlotElement } from '../../types';
@@ -132,6 +133,73 @@ describe('formatAreaValue：风格对齐 formatTickLabel', () => {
   });
 });
 
+describe('integralOf：补充边界（ZOO-190 交付后加测）', () => {
+  it('负面积：∫₋₂⁰ x dx = −2（x 轴下方），区域在轴下方', () => {
+    const r = integralOf((x) => x, -2, 0);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toBeCloseTo(-2, 6);
+    // 区域中段点在负 y（x=−1 → y=−1）
+    const mid = r.region[Math.floor(r.region.length / 2)];
+    expect(mid.y).toBeLessThan(0);
+    // 锚点也在轴下方
+    expect(r.anchor.y).toBeLessThan(0);
+  });
+
+  it('正负抵消：∫₋₁¹ x³ dx = 0（奇函数，有符号面积为 0）', () => {
+    const r = integralOf((x) => x * x * x, -1, 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(Math.abs(r.value)).toBeLessThan(1e-6);
+  });
+
+  it('振荡函数：整周期 ∫₀^{2π} sin = ∫₀^{4π} sin = 0、∫₀^π cos = 0（自适应跨多周期）', () => {
+    for (const [lo, hi] of [[0, 4 * Math.PI], [0, 2 * Math.PI]] as const) {
+      const r = integralOf(Math.sin, lo, hi);
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      expect(Math.abs(r.value), `∫_${lo}^{${hi}} sin`).toBeLessThan(1e-6);
+    }
+    const c = integralOf(Math.cos, 0, Math.PI);
+    expect(c.ok).toBe(true);
+    if (c.ok) expect(Math.abs(c.value)).toBeLessThan(1e-6);
+  });
+
+  it('指数：∫₀¹ eˣdx = e−1', () => {
+    const r = integralOf(Math.exp, 0, 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(Math.abs(r.value - (Math.E - 1))).toBeLessThan(1e-7);
+  });
+
+  it('近奇点但不命中：∫₀.₀₀₁¹ dx/x = ln1000（无崩溃，精度 <1e-5）', () => {
+    const r = integralOf((x) => 1 / x, 0.001, 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(Math.abs(r.value - Math.log(1000))).toBeLessThan(1e-5);
+  });
+
+  it('零宽以外的大区间：∫₀¹⁰⁰ x²dx = 10⁶/3（深度护栏下收敛）', () => {
+    const r = integralOf((x) => x * x, 0, 100);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 相对误差口径（大数值绝对 1e-7 过苛）：0.01%
+    expect(Math.abs(r.value - 1e6 / 3) / (1e6 / 3)).toBeLessThan(1e-4);
+  });
+
+  it('常量注入链路：A·sin 区间积分随常量走（渲染同款 parse→fn）', () => {
+    for (const A of [1, 3]) {
+      const parsed = parseEquation('A*sin(x)', zhT, { a: A });
+      expect(parsed.kind).toBe('explicit');
+      if (parsed.kind !== 'explicit') continue;
+      const r = integralOf(parsed.fn, 0, Math.PI);
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      expect(Math.abs(r.value - 2 * A)).toBeLessThan(1e-6);
+    }
+  });
+});
+
 describe('resolvePlotRender：积分叠加分支', () => {
   it('∫₀^π sin：着色区产物 + 面积值 2；积分-only 不求导（无 f′ 产物）', () => {
     const r = resolvePlotRender(spec([{ type: 'integral', a: 0, b: Math.PI }]), frame, {});
@@ -214,6 +282,23 @@ describe('渲染缓存签名（性能契约：a/b 是数学输入，颜色不是
     const before = plotRenderWriteCount();
     resolvePlotRender(spec([]), frame, key);
     expect(plotRenderWriteCount()).toBe(before + 1);
+  });
+});
+
+describe('resolvePlotRender：负面积与视窗', () => {
+  it('∫₋₂⁰ x dx = −2：区域点全在 x 轴下方，chip 值为负（SVG 文本 −2）', () => {
+    const r = resolvePlotRender(
+      spec([{ type: 'integral', a: -2, b: 0 }], { equation: 'y=x' }),
+      frame,
+      {},
+    );
+    const ig = r.overlays?.integral;
+    expect(ig).toBeDefined();
+    if (!ig || !ig.ok) return;
+    expect(ig.value).toBeCloseTo(-2, 6);
+    // 采样段（除基线角点外）y < 0
+    const curvePts = ig.region.slice(0, -2);
+    for (const p of curvePts) expect(p.y).toBeLessThanOrEqual(0);
   });
 });
 
