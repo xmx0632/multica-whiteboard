@@ -28,7 +28,7 @@ import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, t
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
 import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
-import type { EquationDraftPayload, PreviewData, StructuralOutcome } from '@/lib/math/types';
+import type { EquationDraftPayload, MathPlotOverlay, PreviewData, StructuralOutcome } from '@/lib/math/types';
 
 /** 分类状态行文案资源键（ZOO-166 方案 A：显式函数按实际自变量字母显示；ZOO-176 随语言）。 */
 const KIND_LABEL_KEYS: Record<string, string> = {
@@ -53,6 +53,8 @@ export interface EquationEditorProps {
   initialEquation?: string;
   /** 载入初始常量绑定（ZOO-188：高级元素重编辑回填常量草稿；缺省空） */
   initialConstants?: Record<string, number>;
+  /** 载入初始叠加（ZOO-189：高级元素重编辑回填叠加草稿；缺省空） */
+  initialOverlays?: MathPlotOverlay[];
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
   /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
@@ -64,6 +66,7 @@ export interface EquationEditorProps {
 export default function EquationEditor({
   initialEquation = '',
   initialConstants,
+  initialOverlays,
   onConfirm,
   onCancel,
   createPreviewPolylines = samplePreviewPolylines,
@@ -71,6 +74,8 @@ export default function EquationEditor({
   const [draft, setDraft] = useState(initialEquation);
   // ZOO-188：常量草稿（高级公式面板常量区编辑；确认时随载荷全量带出，空字典 = 显式清空）
   const [constantValues, setConstantValues] = useState<Record<string, number>>(initialConstants ?? {});
+  // ZOO-189：叠加草稿（高级公式面板微积分区编辑；确认时随载荷全量带出，空数组 = 无叠加）
+  const [overlayDraft, setOverlayDraft] = useState<MathPlotOverlay[]>(initialOverlays ?? []);
   // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -102,7 +107,7 @@ export default function EquationEditor({
       inputRef.current?.focus();
       return;
     }
-    onConfirm?.({ equation: trimmed, outcome, constants: constantValues });
+    onConfirm?.({ equation: trimmed, outcome, constants: constantValues, overlays: overlayDraft });
   };
 
   const insertAtCursor = (text: string) => {
@@ -290,7 +295,8 @@ export default function EquationEditor({
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('equation.hint')}</div>
 
       {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
-          ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框 */}
+          ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框。
+          ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出） */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -299,6 +305,11 @@ export default function EquationEditor({
             values: constantValues,
             onChange: setConstantValues,
             onApplyTemplate: applyTemplate,
+          }}
+          calculus={{
+            values: overlayDraft,
+            applicable: outcome.kind === 'explicit',
+            onChange: setOverlayDraft,
           }}
         />
       )}

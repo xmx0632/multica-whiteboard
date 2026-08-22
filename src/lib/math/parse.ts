@@ -61,8 +61,12 @@ function detectGeometry(src: string, t: LibT): ParseResult | null {
   return null;
 }
 
-/** AST 函数白名单（原型 §6 函数族）。 */
-const ALLOWED_FUNCTIONS = new Set(['sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'exp', 'asin', 'acos', 'atan']);
+/**
+ * AST 函数白名单（原型 §6 函数族）。
+ * ZOO-189（T2）：补 sec/csc/cot——tan 求导输出 sec(x)^2（calculus.ts 求导链
+ * 产物需可回灌本解析管线），mathjs/number 原生可求值，此前仅被本白名单拦截。
+ */
+const ALLOWED_FUNCTIONS = new Set(['sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'exp', 'asin', 'acos', 'atan', 'sec', 'csc', 'cot']);
 /** 各函数允许的参数个数（log 支持带底 two-arg）。 */
 const FUNCTION_ARITY: Record<string, [number, number]> = {
   log: [1, 2],
@@ -308,4 +312,20 @@ export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<str
   } catch {
     return err(t('mathErr.generic'));
   }
+}
+
+/**
+ * 显式路径方程体（ZOO-189 T2）：normalize + 几何标准形排除 + y=/f(x)= 前缀剥离
+ * 后的右侧表达式。与 parseEquation 显式分支同款判定（单源，不复制剥离规则）：
+ * 几何标准形 / 隐式方程 / 含自由 y / 空 RHS 一律返回 null。
+ * calculus.ts 求导链复用——求导输入与解析主流程取同一份 body。
+ */
+export function explicitBody(raw: string): string | null {
+  const src = normalizeEquation(raw);
+  if (!src || src.includes('|') || src.includes('√')) return null;
+  if (detectGeometry(src, zhT)) return null;
+  const body = src.replace(/^y=/, '').replace(/^([a-z])\([a-z]\)=/, '');
+  if (!body || body.includes('=')) return null;
+  if (/(^|[^a-z])y([^a-z]|$)/.test(body)) return null;
+  return body;
 }

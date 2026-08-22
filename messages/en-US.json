@@ -245,7 +245,11 @@
     "constantsAdd": "Add",
     "constantsRemoveAria": "Remove constant {name}",
     "constantsValueAria": "Value of constant {name}",
-    "constantsPresetAria": "Toggle constant {name}"
+    "constantsPresetAria": "Toggle constant {name}",
+    "calcDerivDesc": "Overlay derivative (dashed)",
+    "calcTangentDesc": "Tangent line",
+    "calcTangentX0": "Tangent point x₀",
+    "calcNotApplicable": "Calculus overlays apply to explicit functions y=f(x) only — the current equation is not one"
   },
   "math": {
     "join": "{a} and {b}",

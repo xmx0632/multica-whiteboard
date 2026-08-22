@@ -1,3 +1,5 @@
+import type { MathPlotOverlay } from './math/types';
+
 export type ToolType = 'hand' | 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
 
 export interface Point {
@@ -99,6 +101,13 @@ export interface MathPlotElement extends BaseElement {
    * 旧文档零迁移）；空字典视为未启用（advancedFormulaState 判定口径）。
    */
   constants?: Record<string, number>;
+  /**
+   * 微积分叠加（ZOO-189 T2）：f′ 导函数叠加 / 切线演示（条目类型见
+   * math/types.ts 的 MathPlotOverlay，开放式联合——T3 定积分将复用本字段追加
+   * integral 形态）。缺省 / 空数组 = 无叠加（advancedFormulaState 判定口径，
+   * 旧文档零迁移）；渲染层仅对显式函数生效，几何 / 错误态静默忽略、数据保留。
+   */
+  overlays?: MathPlotOverlay[];
 
   // —— 数学视窗（局部坐标系定义，数学单位）——
   xAxis: { min: number; max: number };

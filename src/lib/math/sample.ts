@@ -63,7 +63,92 @@ function fitYWindow(finiteYs: number[]): { min: number; max: number } {
 }
 
 /**
- * 显式函数采样。
+ * 多序列显式采样结果（ZOO-189 T2）：每序列独立断笔折线，共用同一最终 y 视窗。
+ */
+export type MultiSampleResult =
+  | { series: Polyline[][]; yMin: number; yMax: number; xMin: number; xMax: number }
+  | { error: string };
+
+/**
+ * 多序列显式采样（ZOO-189 T2）：f 与 f′ 叠加时共用同一 y 视窗——**各序列独立
+ * 四分位自适应后取窗口并集**（每条曲线至少获得其单独渲染时的视窗，互不挤出；
+ * 不对合并点集拟合——集中分布的序列会把另一序列的摆幅当尾部裁掉），断笔对每
+ * 序列独立判定、使用同一最终视窗。单序列时与 sampleExplicit 既有行为一致
+ * （后者即本函数的单函数退化封装）。
+ *
+ * @param fns      求值函数列表（parseEquation / derivativeOf 产物，异常返回 NaN）
+ * @param view     x 定义域必填；y 视窗可选 —— 省略或非法时按各序列自适应取并集
+ * @param count    采样点数（内部 clamp 到 [2, 2000]，各序列同批 x 采样）
+ */
+export function sampleExplicitMulti(
+  fns: readonly ((x: number) => number)[],
+  view: Pick<MathViewport, 'xMin' | 'xMax'> & Partial<Pick<MathViewport, 'yMin' | 'yMax'>>,
+  count: number,
+  t: LibT = zhT,
+): MultiSampleResult {
+  const { xMin, xMax } = view;
+  if (!(xMin < xMax)) return { error: t('mathErr.domainOrder') };
+  const width = xMax - xMin;
+  if (width < MIN_DOMAIN_WIDTH - 1e-12 || width > MAX_DOMAIN_WIDTH + 1e-12) {
+    return { error: t('mathErr.domainWidth') };
+  }
+
+  const n = clampSampleCount(count);
+  const xs = new Array<number>(n);
+  for (let i = 0; i < n; i++) xs[i] = xMin + (width * i) / (n - 1);
+  const rows = fns.map((fn) => {
+    const ys = new Array<number>(n);
+    for (let i = 0; i < n; i++) ys[i] = fn(xs[i]);
+    return ys;
+  });
+  if (rows.every((ys) => ys.every((y) => !Number.isFinite(y)))) {
+    // ZOO-166：附「怎么办」指引（调整定义域或检查表达式）
+    return { error: t('mathErr.noValidValues') };
+  }
+
+  // 各序列独立稳健拟合 → 取窗口并集（min of mins / max of maxes）
+  let autoMin = Infinity;
+  let autoMax = -Infinity;
+  for (const ys of rows) {
+    const finiteYs = ys.filter((y) => Number.isFinite(y));
+    if (finiteYs.length === 0) continue; // 全 NaN 序列不参与（如 abs 在窄域外的导数）
+    const fit = fitYWindow(finiteYs);
+    autoMin = Math.min(autoMin, fit.min);
+    autoMax = Math.max(autoMax, fit.max);
+  }
+  const yMin = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMin : autoMin;
+  const yMax = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMax : autoMax;
+  const span = yMax - yMin;
+
+  const series = rows.map((ys) => {
+    const polylines: Polyline[] = [];
+    let current: Polyline = [];
+    const breakHere = () => {
+      if (current.length > 0) polylines.push(current);
+      current = [];
+    };
+    for (let i = 0; i < n; i++) {
+      const y = ys[i];
+      if (!Number.isFinite(y)) {
+        breakHere();
+        continue;
+      }
+      if (current.length > 0) {
+        const prevY = current[current.length - 1].y;
+        const jumpsAcrossWindow =
+          span > 0 && ((prevY > yMax && y < yMin) || (y > yMax && prevY < yMin));
+        if (jumpsAcrossWindow && Math.abs(y - prevY) > span) breakHere();
+      }
+      current.push({ x: xs[i], y });
+    }
+    breakHere();
+    return polylines;
+  });
+  return { series, yMin, yMax, xMin, xMax };
+}
+
+/**
+ * 显式函数采样（sampleExplicitMulti 的单函数封装，行为与历史逐字节一致）。
  *
  * @param fn        parseEquation 产出的求值函数（异常时返回 NaN）
  * @param view      x 定义域必填；y 视窗可选 —— 省略或非法时按数据四分位自适应，
@@ -76,54 +161,10 @@ export function sampleExplicit(
   count: number,
   t: LibT = zhT,
 ): SampleResult {
-  const { xMin, xMax } = view;
-  if (!(xMin < xMax)) return { error: t('mathErr.domainOrder') };
-  const width = xMax - xMin;
-  if (width < MIN_DOMAIN_WIDTH - 1e-12 || width > MAX_DOMAIN_WIDTH + 1e-12) {
-    return { error: t('mathErr.domainWidth') };
-  }
-
-  const n = clampSampleCount(count);
-  const xs = new Array<number>(n);
-  const ys = new Array<number>(n);
-  const finiteYs: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const x = xMin + (width * i) / (n - 1);
-    const y = fn(x);
-    xs[i] = x;
-    ys[i] = y;
-    if (Number.isFinite(y)) finiteYs.push(y);
-  }
-  // ZOO-166：附「怎么办」指引（调整定义域或检查表达式）
-  if (finiteYs.length === 0) return { error: t('mathErr.noValidValues') };
-
-  const auto = fitYWindow(finiteYs);
-  const yMin = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMin : auto.min;
-  const yMax = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMax : auto.max;
-  const span = yMax - yMin;
-
-  const polylines: Polyline[] = [];
-  let current: Polyline = [];
-  const breakHere = () => {
-    if (current.length > 0) polylines.push(current);
-    current = [];
-  };
-  for (let i = 0; i < n; i++) {
-    const y = ys[i];
-    if (!Number.isFinite(y)) {
-      breakHere();
-      continue;
-    }
-    if (current.length > 0) {
-      const prevY = current[current.length - 1].y;
-      const jumpsAcrossWindow =
-        span > 0 && ((prevY > yMax && y < yMin) || (y > yMax && prevY < yMin));
-      if (jumpsAcrossWindow && Math.abs(y - prevY) > span) breakHere();
-    }
-    current.push({ x: xs[i], y });
-  }
-  breakHere();
-  return { polylines, yMin, yMax, xMin, xMax };
+  const r = sampleExplicitMulti([fn], view, count, t);
+  if ('error' in r) return r;
+  const { series, ...rest } = r;
+  return { polylines: series[0], ...rest };
 }
 
 /** 直线视窗基准半径（数学单位）：原点居中视窗的最小半宽，量级对齐显式默认域 ±10。 */

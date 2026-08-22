@@ -15,12 +15,17 @@
  *   （g/v₀/θ/ω/A/φ）+ 自定义项，值变更走「静默直改 + 提交一条」调参历史
  *   （技术方案 D5，onChange 实时预览 / onBlur·离散点击 onCommit 压快照）；
  *   存储层键为 ASCII 名（theta/v0），显示层经 constantDisplayName 还原原貌；
- * - T2/T3（微积分）/ T4（参数式）/ T5（物理模板）分区仍为占位。
+ * - T2 微积分区（ZOO-189，calculus 绑定时渲染）：f′ 叠加开关 + 切线演示开关
+ *   与 x₀ 数值输入。求导惰性——渲染管线仅 overlays 非空时求导（勿逐键求导）；
+ *   x₀ 输入 onChange 实时预览 / onBlur 提交一条（D5 同款）；非显式函数时控件
+ *   禁用并提示（叠加数据保留，方程改回显式即恢复生效）；
+ * - T3 积分（a/b 归 T3）/ T4（参数式）/ T5（物理模板）分区仍为占位。
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '@/i18n/I18nProvider';
 import { constantDisplayName, normalizeConstantKey } from '@/lib/math/normalize';
+import type { MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
 import { ADVANCED_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/templates';
 
@@ -47,6 +52,25 @@ export interface AdvancedFormulaPanelProps {
   onClose: () => void;
   /** T1 常量编辑区绑定；缺省时常量分区保持 T0 占位（coming soon） */
   constants?: AdvancedConstantsBinding;
+  /** T2 微积分编辑区绑定（ZOO-189）；缺省时微积分分区保持 T0 占位 */
+  calculus?: AdvancedCalculusBinding;
+}
+
+/**
+ * T2 微积分编辑区绑定（ZOO-189，两入口共用）：编辑侧由 MathPlotParams 直连
+ * 元素 overlays（元素真实字段，onChange → updateElementTransient 直改、onCommit
+ * → 提交一条历史）；创建侧由 EquationEditor 持草稿态、确认载荷全量带出。
+ * 求导本身惰性——由渲染管线按 overlays 内容触发，面板只读写叠加开关。
+ */
+export interface AdvancedCalculusBinding {
+  /** 当前叠加列表（存储层形态） */
+  values: readonly MathPlotOverlay[];
+  /** 叠加变更（开关离散变更即时提交；x₀ 输入实时预览） */
+  onChange: (next: MathPlotOverlay[]) => void;
+  /** 一次可撤销操作边界（编辑侧传入；创建侧缺省） */
+  onCommit?: () => void;
+  /** 是否显式函数（仅 y=f(x) 可叠加；false 时控件禁用并提示） */
+  applicable: boolean;
 }
 
 /** 四分区骨架（组序即面板展示序）：字形为语言无关数学记号，名称 / 描述走资源键 */
@@ -262,7 +286,89 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
   );
 }
 
-export default function AdvancedFormulaPanel({ onClose, constants }: AdvancedFormulaPanelProps) {
+/** T2 微积分编辑区（ZOO-189）：f′ 叠加开关 + 切线演示（开关 + x₀ 数值输入）。 */
+function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
+  const t = useT();
+  const hasDerivative = binding.values.some((o) => o.type === 'derivative');
+  const tangent = binding.values.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
+  const disabled = !binding.applicable;
+
+  /** 离散变更（开关切换）：一次 onChange + 一次 onCommit */
+  const applyDiscrete = (next: MathPlotOverlay[]) => {
+    binding.onChange(next);
+    binding.onCommit?.();
+  };
+
+  const toggleDerivative = () => {
+    const rest = binding.values.filter((o) => o.type !== 'derivative');
+    applyDiscrete(hasDerivative ? rest : [...rest, { type: 'derivative' }]);
+  };
+
+  const toggleTangent = () => {
+    const rest = binding.values.filter((o) => o.type !== 'tangent');
+    applyDiscrete(tangent ? rest : [...rest, { type: 'tangent', x0: 0 }]);
+  };
+
+  /** x₀ 直改实时预览（切线随输入实时更新），失焦提交一条 */
+  const setX0 = (x0: number) => {
+    binding.onChange(binding.values.map((o) => (o.type === 'tangent' ? { type: 'tangent', x0 } : o)));
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {disabled && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.calcNotApplicable')}</div>
+      )}
+
+      {/* f′ 叠加开关 */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={hasDerivative}
+          onChange={toggleDerivative}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] leading-none">f′(x)</span>
+        <span className="text-[11px] text-gray-500">{t('advFormula.calcDerivDesc')}</span>
+      </label>
+
+      {/* 切线演示开关 + x₀ 数值输入 */}
+      <div className="flex items-center gap-1.5">
+        <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(tangent)}
+            onChange={toggleTangent}
+            disabled={disabled}
+            className="accent-blue-500"
+          />
+          <span className="text-[11px] text-gray-500">{t('advFormula.calcTangentDesc')}</span>
+        </label>
+        {tangent && !disabled && (
+          <span className="ml-auto flex items-center gap-1">
+            <span className="font-serif italic text-[12px] text-gray-700 leading-none">x₀</span>
+            <input
+              type="number"
+              step="any"
+              value={String(tangent.x0)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setX0(v);
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.calcTangentX0')}
+              autoComplete="off"
+              className="touch-target w-16 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AdvancedFormulaPanel({ onClose, constants, calculus }: AdvancedFormulaPanelProps) {
   const t = useT();
 
   // Esc 关闭（窗口级监听，LanguageSwitch 同款）。T1 起面板含文本输入（常量名/数值），
@@ -303,14 +409,16 @@ export default function AdvancedFormulaPanel({ onClose, constants }: AdvancedFor
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
           <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.hint')}</div>
           {SECTIONS.map((s) => {
-            // T1：常量分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
+            // T1/T2：常量、微积分分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
             const constantsLive = s.id === 'constants' && constants;
+            const calculusLive = s.id === 'calculus' && calculus;
+            const live = constantsLive || calculusLive;
             return (
               <section key={s.id} className="border border-gray-200 rounded-lg p-2.5 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5">
                   <span className="font-serif italic text-blue-500 text-sm leading-none">{s.glyph}</span>
                   <span className="text-[13px] font-semibold text-gray-700">{t(s.nameKey)}</span>
-                  {!constantsLive && (
+                  {!live && (
                     <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 font-medium">
                       {t('advFormula.comingSoon')}
                     </span>
@@ -319,8 +427,10 @@ export default function AdvancedFormulaPanel({ onClose, constants }: AdvancedFor
                 <div className="text-[11px] text-gray-500 leading-relaxed">{t(s.descKey)}</div>
                 {constantsLive ? (
                   <ConstantsArea binding={constants} />
+                ) : calculusLive ? (
+                  <CalculusArea binding={calculus} />
                 ) : (
-                  // T0 占位：分区控件由后续任务填充（f′·切线·积分 T2·T3 / 参数式 T4 / 物理模板 T5）
+                  // T0 占位：分区控件由后续任务填充（积分 T3 / 参数式 T4 / 物理模板 T5）
                   <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">
                     ▢ ▢ ▢
                   </div>

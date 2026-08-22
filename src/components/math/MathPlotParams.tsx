@@ -35,6 +35,7 @@ import type {
   HyperbolaParams,
   LineParams,
   LinePairParams,
+  MathPlotOverlay,
   ParabolaParams,
 } from '@/lib/math/types';
 
@@ -71,6 +72,11 @@ export interface MathPlotParamsValue {
    * 键为存储层 ASCII 名，显示层经 constantDisplayName 还原（θ/ω/φ/v₀）。
    */
   constants?: Record<string, number>;
+  /**
+   * 微积分叠加（ZOO-189 T2）：元素真实字段（f′ 叠加 / 切线 x₀）——高级公式
+   * 面板微积分区直改；清空全部叠加时归一为 undefined（元素不留空壳字段）。
+   */
+  overlays?: MathPlotOverlay[];
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -492,7 +498,9 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
       {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
           ZOO-188 T1：常量区直连元素——onChange 直改实时重绘（constants 为元素
           真实字段，经 handleParamsChange 落元素，不在派生剥除清单）、onCommit 提交一条；
-          模板点选回填方程输入 */}
+          模板点选回填方程输入。
+          ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
+          仅显式函数可叠加（几何/错误态禁用并提示） */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -502,6 +510,12 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             onChange: (next) => patch({ constants: next }),
             onCommit: () => onCommit?.(),
             onApplyTemplate: (equation) => patch({ equation }),
+          }}
+          calculus={{
+            values: value.overlays ?? [],
+            applicable: isFn,
+            onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
+            onCommit: () => onCommit?.(),
           }}
         />
       )}

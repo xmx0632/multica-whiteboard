@@ -145,6 +145,7 @@ export default function PropertyPanel() {
         key={editingEl.id}
         initialEquation={editingEl.equation}
         initialConstants={editingEl.constants}
+        initialOverlays={editingEl.overlays}
         onCancel={() => setEditingId(null)}
         onConfirm={(payload) => {
           updateElement(editingEl.id, mathPlotFieldsFromPayload(payload));
@@ -181,6 +182,8 @@ export default function PropertyPanel() {
       advanced: advanced.visible ? { overlayCount: advanced.overlayCount } : undefined,
       // ZOO-188（T1）：常量绑定是元素真实字段（经 onChange 落元素、参与解析裁决）
       constants: el.constants,
+      // ZOO-189（T2）：微积分叠加同为元素真实字段（不在派生剥除清单，直落元素）
+      overlays: el.overlays,
       xAxis: el.xAxis,
       sampleCount: el.sampleCount,
       equalRatio: el.equalRatio,

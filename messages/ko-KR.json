@@ -245,7 +245,11 @@
     "constantsAdd": "추가",
     "constantsRemoveAria": "상수 {name} 제거",
     "constantsValueAria": "상수 {name}의 값",
-    "constantsPresetAria": "상수 {name} 전환"
+    "constantsPresetAria": "상수 {name} 전환",
+    "calcDerivDesc": "도함수 점선 겹쳐 보기",
+    "calcTangentDesc": "접선 시연",
+    "calcTangentX0": "접점 x₀",
+    "calcNotApplicable": "미적분 오버레이는 명시적 함수 y=f(x)에만 적용됩니다 — 현재 방정식은 해당하지 않습니다"
   },
   "math": {
     "join": "{a} 및 {b}",

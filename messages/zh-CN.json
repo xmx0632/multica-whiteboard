@@ -245,7 +245,11 @@
     "constantsAdd": "添加",
     "constantsRemoveAria": "移除常量 {name}",
     "constantsValueAria": "常量 {name} 的数值",
-    "constantsPresetAria": "切换常量 {name}"
+    "constantsPresetAria": "切换常量 {name}",
+    "calcDerivDesc": "导函数虚线叠加",
+    "calcTangentDesc": "切线演示",
+    "calcTangentX0": "切点 x₀",
+    "calcNotApplicable": "仅显式函数 y=f(x) 支持微积分叠加——当前方程不是显式函数"
   },
   "math": {
     "join": "{a} 与 {b}",

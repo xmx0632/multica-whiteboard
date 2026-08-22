@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { zhT, type LibT } from '../i18n/lib';
 import { sampleGeometry } from './math/sample';
 import { validateEquation } from './math/validate';
-import type { EquationDraftPayload } from './math/types';
+import type { EquationDraftPayload, MathPlotOverlay } from './math/types';
 import { DEFAULT_MATHPLOT, MathPlotElement } from './types';
 
 export interface MathPlotPlacement {
@@ -52,6 +52,13 @@ export interface MathPlotPatch {
    * 非空字典为全量快照，空字典表示显式清空（原位替换流）；undefined 不触碰元素既有绑定。
    */
   constants?: Record<string, number>;
+  /**
+   * ZOO-189（T2）：语义与 constants 对齐——仅当载荷携带叠加草稿
+   * （payload.overlays !== undefined）时出现；非空数组为全量快照，空数组表示
+   * 显式清空（键显式置 undefined——Object.assign 会覆盖旧值，元素不留空壳
+   * 字段）；undefined 不触碰既有叠加。
+   */
+  overlays?: MathPlotOverlay[] | undefined;
 }
 
 export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPlotPatch {
@@ -65,6 +72,10 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPl
     base.constants = { ...payload.constants };
   } else if (payload.constants !== undefined) {
     base.constants = {};
+  }
+  if (payload.overlays !== undefined) {
+    // 空数组 = 显式清空（键置 undefined 覆盖旧值；非显式 undefined 不触碰既有叠加）
+    base.overlays = payload.overlays.length > 0 ? payload.overlays.map((o) => ({ ...o })) : undefined;
   }
   if (
     outcome.kind === 'line' ||

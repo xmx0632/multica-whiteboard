@@ -5,6 +5,7 @@
  * 这里固定编辑器/参数面板与未来解析层之间的类型边界：
  * - StructuralOutcome：4a 结构校验（validate.ts）的返回，explicit 暂无求值函数；
  * - ParseResult：4b mathjs 安全解析（parse.ts）须满足的完整契约（含 fn）；
+ * - MathPlotOverlay：T2 起的微积分叠加条目（calculus.ts / plot.ts / 面板共用）；
  * - Polyline / MathViewport：采样折线与数学视窗，MiniPreview 与 4c 采样（sample.ts）共用。
  */
 import type { Point } from '../types';
@@ -146,12 +147,25 @@ export interface PreviewData {
   yMax?: number;
 }
 
+/**
+ * 微积分叠加条目（ZOO-189 T2）：元素可选字段 overlays 的成员类型。
+ * type 联合为开放式——T3 定积分将追加 `{ type: 'integral'; a; b }` 形态、
+ * T4+ 按需扩展，均在本联合上并列增补，不改既有条目结构。
+ * 渲染层仅对显式函数（kind === 'explicit'）生效；几何 / 错误态静默忽略、数据保留。
+ */
+export type MathPlotOverlay =
+  | { type: 'derivative' }
+  | { type: 'tangent'; x0: number };
+
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
  *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。
  *  ZOO-188（T1）：constants 为编辑器常量草稿全量快照——undefined 表示本次流程
- *  无常量参与（不触碰元素既有绑定）；空字典表示显式清空（原位替换时清掉元素常量）。 */
+ *  无常量参与（不触碰元素既有绑定）；空字典表示显式清空（原位替换时清掉元素常量）。
+ *  ZOO-189（T2）：overlays 语义与 constants 对齐——undefined 不触碰、数组（含空）
+ *  为全量快照（空数组 = 显式清空，落元素前归一为 undefined）。 */
 export interface EquationDraftPayload {
   equation: string;
   outcome: StructuralOutcome;
   constants?: Record<string, number>;
+  overlays?: MathPlotOverlay[];
 }

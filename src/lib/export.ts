@@ -1,7 +1,16 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement } from './types';
 import { renderElement, getAllElementsBounds } from './renderer';
 import { zhT, type LibT } from '../i18n/lib';
-import { resolvePlotRender, stepForAxis, formatTickLabel, MIN_GRID_PX, MIN_TICK_LABEL_PX } from './math/plot';
+import {
+  formatOverlayNumber,
+  formatTickLabel,
+  MIN_GRID_PX,
+  MIN_TICK_LABEL_PX,
+  OVERLAY_DERIVATIVE_DASH,
+  PLOT_COLORS,
+  resolvePlotRender,
+  stepForAxis,
+} from './math/plot';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
@@ -124,6 +133,8 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
       sampleCount: el.sampleCount,
       // ZOO-188（T1）：符号常量随元素进解析（与主画布渲染同一份数据）
       constants: el.constants,
+      // ZOO-189（T2）：微积分叠加随元素进渲染管线（与主画布同一份数据）
+      overlays: el.overlays,
     },
     { width: w, height: h },
     plotTokenFor(el.id)
@@ -214,9 +225,10 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     parts.push(...labels);
   }
 
-  if (render.polylines.length > 0) {
+  // 折线 → path d（主曲线与 f′ 叠加共用；断笔 = M，与 canvas buildPlotPath2D 同款）
+  const polylinesToD = (polylines: { x: number; y: number }[][]) => {
     let d = '';
-    for (const pl of render.polylines) {
+    for (const pl of polylines) {
       let drawing = false;
       for (const p of pl) {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
@@ -233,11 +245,49 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
         drawing = true;
       }
     }
+    return d.trim();
+  };
+  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent);
+  const d = polylinesToD(render.polylines);
+  if (d || hasOverlayDraw) {
+    // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
+    // canvas 有 ctx.clip 而 SVG 需显式 clipPath，否则导出的直线/双曲线溢出卡片
+    parts.push(`<defs><clipPath id="mpc-${el.id}"><rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/></clipPath></defs>`);
     if (d) {
-      // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
-      // canvas 有 ctx.clip 而 SVG 需显式 clipPath，否则导出的直线/双曲线溢出卡片
-      parts.push(`<defs><clipPath id="mpc-${el.id}"><rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/></clipPath></defs>`);
-      parts.push(`<path d="${d.trim()}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
+      parts.push(`<path d="${d}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
+    }
+
+    // —— ZOO-189 T2 叠加层（与 drawGraphCore 同一套数据与配色）——
+    if (render.overlays?.derivative) {
+      const dd = polylinesToD(render.overlays.derivative.polylines);
+      if (dd) {
+        parts.push(
+          `<path d="${dd}" stroke="${PLOT_COLORS.overlayDerivative}" stroke-width="${el.strokeWidth}" stroke-dasharray="${OVERLAY_DERIVATIVE_DASH.join(',')}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+        );
+      }
+    }
+    if (render.overlays?.tangent) {
+      const tg = render.overlays.tangent;
+      const a = tg.polyline[0];
+      const b = tg.polyline[1];
+      parts.push(
+        `<line x1="${toX(a.x).toFixed(2)}" y1="${toY(a.y).toFixed(2)}" x2="${toX(b.x).toFixed(2)}" y2="${toY(b.y).toFixed(2)}" stroke="${PLOT_COLORS.overlayTangent}" stroke-width="${Math.max(el.strokeWidth * 0.75, 1)}" stroke-linecap="round" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+      );
+      const px = toX(tg.x0);
+      const py = toY(tg.y0);
+      parts.push(
+        `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="4" fill="${PLOT_COLORS.overlayTangent}" stroke="#ffffff" stroke-width="1.5"${opacity}/>`,
+      );
+      // 斜率标注（与 canvas 同格式；越界时向左翻转）
+      const label = `f′(${formatOverlayNumber(tg.x0)}) = ${formatOverlayNumber(tg.slope)}`;
+      const labelW = label.length * 5.4;
+      let lx = px + 9;
+      if (lx + labelW > gx + gw - 3) lx = px - 9 - labelW;
+      let ly = py - 3;
+      if (ly < gy + 10) ly = py + 14;
+      parts.push(
+        `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.overlayTangent}" text-anchor="start">${escapeXml(label)}</text>`,
+      );
     }
   }
 
@@ -246,6 +296,22 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     const cw = text.length * 6.6 + 14;
     parts.push(`<rect x="${x + 6}" y="${y + h - 22}" width="${cw.toFixed(0)}" height="18" rx="9" fill="rgba(59,130,246,0.08)"/>`);
     parts.push(`<text x="${x + 13}" y="${y + h - 9}" font-size="11" font-family="serif" fill="#3B82F6">${escapeXml(text)}</text>`);
+    // 双色图例 chip（ZOO-189）：f 实线（元素色）/ f′ 虚线橙，仅 f′ 叠加时出现
+    if (render.overlays?.derivative) {
+      const sw = 14;
+      const gap = 8;
+      const lw = 7 + sw + 3 + 5 + gap + sw + 3 + 10 + 5;
+      const lx = x + 6 + cw + 6;
+      const midY = y + h - 13;
+      const swLine = Math.min(Math.max(el.strokeWidth, 1.5), 3);
+      parts.push(`<rect x="${lx.toFixed(1)}" y="${y + h - 22}" width="${lw.toFixed(0)}" height="18" rx="9" fill="rgba(59,130,246,0.08)"/>`);
+      let cx0 = lx + 7;
+      parts.push(`<line x1="${cx0.toFixed(1)}" y1="${midY.toFixed(1)}" x2="${(cx0 + sw).toFixed(1)}" y2="${midY.toFixed(1)}" stroke="${el.strokeColor}" stroke-width="${swLine}"/>`);
+      parts.push(`<text x="${(cx0 + sw + 3).toFixed(1)}" y="${(midY + 4).toFixed(1)}" font-size="11" font-style="italic" font-family="serif" fill="${el.strokeColor}">f</text>`);
+      cx0 += sw + 3 + 5 + gap;
+      parts.push(`<line x1="${cx0.toFixed(1)}" y1="${midY.toFixed(1)}" x2="${(cx0 + sw).toFixed(1)}" y2="${midY.toFixed(1)}" stroke="${PLOT_COLORS.overlayDerivative}" stroke-width="${swLine}" stroke-dasharray="${OVERLAY_DERIVATIVE_DASH.join(',')}"/>`);
+      parts.push(`<text x="${(cx0 + sw + 3).toFixed(1)}" y="${(midY + 4).toFixed(1)}" font-size="11" font-style="italic" font-family="serif" fill="${PLOT_COLORS.overlayDerivative}">f′</text>`);
+    }
   }
 
   return parts.join('');

@@ -15,10 +15,11 @@
  * （Node 单测环境无 Path2D → path2d 为 null，绘制自动回退逐点折线）。
  */
 import { getPlotRender, plotSignature, setPlotRender } from './cache';
+import { derivativeOf, tangentOf } from './calculus';
 import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
-import { sampleEquation } from './sample';
-import type { MathViewport, Polyline } from './types';
+import { sampleEquation, sampleExplicitMulti } from './sample';
+import type { MathPlotOverlay, MathViewport, Polyline } from './types';
 import { zhT, type LibT } from '../../i18n/lib';
 
 /** §6.1 各层默认色（与 MiniPreview / 交互原型一致）。 */
@@ -35,6 +36,9 @@ export const PLOT_COLORS = {
   errorText: '#ef4444',
   errorSub: '#6b7280',
   errorHint: '#9ca3af',
+  /** ZOO-189 T2 叠加层色：f′ 虚线橙 / 切线绿（与 12 色板同源，白底可读） */
+  overlayDerivative: '#F97316',
+  overlayTangent: '#22C55E',
 } as const;
 
 /** 网格线最小像素间距，低于此密度整层隐藏（亚像素网格，§6.1 第 2 层）。 */
@@ -49,6 +53,19 @@ export interface PlotStyle {
   opacity: number;
 }
 
+/** f′ 叠加虚线节律（局部 px；SVG 导出 join(',') 同款）。 */
+export const OVERLAY_DERIVATIVE_DASH: readonly number[] = [8, 5];
+
+/**
+ * 叠加层数字标注格式（切线斜率 / 切点，ZOO-189）：≤2 位小数、去尾零——
+ * canvas 与 SVG 导出共用，保证两渲染面文本一致。
+ */
+export function formatOverlayNumber(v: number): string {
+  let s = v.toFixed(2);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
+
 /** 解析输入契约（4d 的 MathPlotElement 数学字段的子集）。 */
 export interface PlotSpec {
   equation: string;
@@ -61,6 +78,11 @@ export interface PlotSpec {
   sampleCount: number;
   /** 符号常量绑定（ZOO-188 T1）：显式路径求值 scope 注入；缺省 = 无常量 */
   constants?: Record<string, number>;
+  /**
+   * 微积分叠加（ZOO-189 T2）：仅显式函数生效（几何/错误态忽略）；缺省 / 空 =
+   * 无叠加，走既有渲染路径（零变化）。进渲染缓存签名（叠加参数是数学输入）。
+   */
+  overlays?: readonly MathPlotOverlay[];
 }
 
 /** 元素外框（局部 px，语义同 rectangle 的 width/height）。 */
@@ -79,12 +101,37 @@ function constantsSig(constants?: Record<string, number>): string {
   );
 }
 
+/**
+ * 叠加列表的稳定签名（ZOO-189）：条目字段键排序后序列化，同内容恒同签名
+ * （进渲染 sig——切线 x₀ 变化必须重采样，改颜色线宽不在此列、不触发重采样）。
+ */
+function overlaysSig(overlays?: readonly MathPlotOverlay[]): string {
+  if (!overlays || overlays.length === 0) return '';
+  return JSON.stringify(
+    overlays.map((o) =>
+      Object.keys(o)
+        .sort()
+        .map((k) => [k, (o as unknown as Record<string, unknown>)[k]]),
+    ),
+  );
+}
+
 /** 解析 + 采样 + Path2D 的缓存产物（错误态 error 非空、折线为空）。 */
 export interface PlotRender {
   polylines: Polyline[];
   view: MathViewport;
   error?: string;
   path2d: Path2D | null;
+  /** ZOO-189 T2 叠加层产物（无叠加时缺省——既有渲染路径零变化） */
+  overlays?: OverlayRender;
+}
+
+/** 叠加层渲染产物（ZOO-189 T2）：与主曲线同视窗的 f′ 折线 + 切线演示数据。 */
+export interface OverlayRender {
+  /** f′ 折线（数学坐标）与缓存 Path2D（Node 环境无 Path2D 时为 null） */
+  derivative?: { polylines: Polyline[]; path2d: Path2D | null };
+  /** 切线：切点 / 斜率 / 贯穿定义域的直线折线（数学坐标） */
+  tangent?: { x0: number; y0: number; slope: number; polyline: Polyline };
 }
 
 /** 「好看刻度」步长（1/2/2.5/5×10^k，原型 niceStep 平移共享）。 */
@@ -225,6 +272,8 @@ export interface DrawGraphCoreOptions {
   tickLabels?: boolean;
   /** 目标格宽：主画布 45px；MiniPreview 传 8 保持原密度 */
   gridTargetPx?: number;
+  /** ZOO-189 T2 叠加层（缺省 = 无叠加，绘制路径零变化） */
+  overlays?: OverlayRender;
 }
 
 /**
@@ -232,7 +281,7 @@ export interface DrawGraphCoreOptions {
  * MiniPreview 与 drawMathPlot 共用 —— 预览即真实渲染（D3）。
  */
 export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCoreOptions): void {
-  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45 } = opts;
+  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays } = opts;
   if (!(width > 0) || !(height > 0)) return;
 
   ctx.save();
@@ -360,6 +409,79 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     }
   }
 
+  // —— ZOO-189 T2 叠加层（主曲线之后）：f′ 虚线橙 → 切线绿（切点标记 + 斜率标注）——
+  if (overlays?.derivative) {
+    const d = overlays.derivative;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayDerivative;
+    ctx.lineWidth = style.strokeWidth;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash([...OVERLAY_DERIVATIVE_DASH]);
+    if (d.path2d) {
+      ctx.stroke(d.path2d);
+    } else {
+      ctx.beginPath();
+      for (const pl of d.polylines) {
+        let drawing = false;
+        for (const p of pl) {
+          if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+            drawing = false;
+            continue;
+          }
+          const px = t.toPxX(p.x);
+          const py = t.toPxY(p.y);
+          if (!Number.isFinite(px) || !Number.isFinite(py) || Math.abs(py) > 1e6) {
+            drawing = false;
+            continue;
+          }
+          if (drawing) ctx.lineTo(px, py);
+          else ctx.moveTo(px, py);
+          drawing = true;
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  if (overlays?.tangent) {
+    const tg = overlays.tangent;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayTangent;
+    ctx.lineWidth = Math.max(style.strokeWidth * 0.75, 1);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(t.toPxX(tg.polyline[0].x), t.toPxY(tg.polyline[0].y));
+    ctx.lineTo(t.toPxX(tg.polyline[1].x), t.toPxY(tg.polyline[1].y));
+    ctx.stroke();
+
+    // 切点标记：绿底白边圆点
+    const px = t.toPxX(tg.x0);
+    const py = t.toPxY(tg.y0);
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = PLOT_COLORS.overlayTangent;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+
+    // 斜率标注（数学记号，语言无关）：f′(x₀) = k，越界时向左翻转
+    const label = `f′(${formatOverlayNumber(tg.x0)}) = ${formatOverlayNumber(tg.slope)}`;
+    ctx.font = 'italic 10px system-ui, sans-serif';
+    const tw = ctx.measureText(label).width;
+    let lx = px + 9;
+    if (lx + tw > width - 3) lx = px - 9 - tw;
+    let ly = py - 8;
+    if (ly < 10) ly = py + 14;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = PLOT_COLORS.overlayTangent;
+    ctx.fillText(label, lx, ly);
+  }
+
   ctx.restore();
 }
 
@@ -419,6 +541,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     showGrid: opts.showGrid,
     showAxis: opts.showAxis,
     tickLabels: true,
+    overlays: render.overlays,
   });
   ctx.translate(-x - pad, -y - pad);
 
@@ -437,6 +560,47 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     ctx.fill();
     ctx.fillStyle = PLOT_COLORS.chipText;
     ctx.fillText(text, x + 13, cy - 4);
+
+    // 双色图例 chip（ZOO-189）：f 实线（元素色）/ f′ 虚线橙，紧随方程 chip，
+    // 仅 f′ 叠加时出现。先量宽 → chip 底 → 样本线 → 标签（底在下、线在上）。
+    if (render.overlays?.derivative) {
+      const sw = 14; // 样本线长
+      ctx.font = 'italic 11px serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const fW = ctx.measureText('f').width;
+      const fdW = ctx.measureText('f′').width;
+      const swLine = Math.min(Math.max(style.strokeWidth, 1.5), 3);
+      const gap = 8;
+      const lw = 7 + sw + 3 + fW + gap + sw + 3 + fdW + 5;
+      const lx = x + 6 + cw + 6;
+      const midY = cy - ch / 2;
+      ctx.fillStyle = PLOT_COLORS.chipBg;
+      roundedRectPath(ctx, lx, cy - ch, lw, ch, 9);
+      ctx.fill();
+
+      let cx0 = lx + 7;
+      ctx.lineWidth = swLine;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = style.strokeColor;
+      ctx.beginPath();
+      ctx.moveTo(cx0, midY);
+      ctx.lineTo(cx0 + sw, midY);
+      ctx.stroke();
+      ctx.fillStyle = style.strokeColor;
+      ctx.fillText('f', cx0 + sw + 3, midY + 0.5);
+      cx0 += sw + 3 + fW + gap;
+
+      ctx.strokeStyle = PLOT_COLORS.overlayDerivative;
+      ctx.setLineDash([...OVERLAY_DERIVATIVE_DASH]);
+      ctx.beginPath();
+      ctx.moveTo(cx0, midY);
+      ctx.lineTo(cx0 + sw, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = PLOT_COLORS.overlayDerivative;
+      ctx.fillText('f′', cx0 + sw + 3, midY + 0.5);
+    }
   }
   ctx.restore();
 }
@@ -522,6 +686,9 @@ export function resolvePlotRender(spec: PlotSpec, frame: PlotFrame, cacheKey: ob
     sampleCount: spec.sampleCount,
     // ZOO-188：常量是数学输入（改值必须重采样）；键序规范化，避免同内容异序误判失效
     constants: constantsSig(spec.constants),
+    // ZOO-189：叠加参数是数学输入（f′ 开关 / 切线 x₀ 变化必须重算）；改颜色
+    // 线宽不在 sig——不触发重采样（性能契约延续 §6.3）
+    overlays: overlaysSig(spec.overlays),
     width: frame.width,
     height: frame.height,
   });
@@ -547,6 +714,55 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
     : undefined;
 
   const parsed = parseEquation(spec.equation, zhT, spec.constants);
+
+  // —— ZOO-189 T2 叠加路径：仅显式函数且 overlays 非空时进入（惰性求导——
+  //    无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用一次求导。
+  if (parsed.kind === 'explicit' && spec.overlays && spec.overlays.length > 0) {
+    const wantsDerivative = spec.overlays.some((o) => o.type === 'derivative');
+    const tangentOverlay = spec.overlays.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
+    const deriv = derivativeOf(spec.equation, { constants: spec.constants });
+    const dfn = deriv.ok ? deriv.fn : null;
+    if (wantsDerivative || tangentOverlay) {
+      const sampled = sampleExplicitMulti(
+        [parsed.fn, ...(wantsDerivative && dfn ? [dfn] : [])],
+        {
+          xMin: spec.xAxis.min,
+          xMax: spec.xAxis.max,
+          ...(yWindow ?? {}),
+        },
+        spec.sampleCount,
+      );
+      if ('error' in sampled) {
+        return { polylines: [], view: nominal, error: sampled.error, path2d: null };
+      }
+      const view: MathViewport = {
+        xMin: sampled.xMin ?? spec.xAxis.min,
+        xMax: sampled.xMax ?? spec.xAxis.max,
+        yMin: sampled.yMin,
+        yMax: sampled.yMax,
+      };
+      const transform =
+        typeof Path2D !== 'undefined' ? createPlotTransform(view, frame.width, frame.height) : null;
+      const overlays: OverlayRender = {};
+      if (wantsDerivative && dfn && sampled.series[1]) {
+        overlays.derivative = {
+          polylines: sampled.series[1],
+          path2d: transform ? buildPlotPath2D(sampled.series[1], transform) : null,
+        };
+      }
+      if (tangentOverlay && dfn) {
+        const tg = tangentOf(parsed.fn, dfn, tangentOverlay.x0, view.xMin, view.xMax);
+        if (tg) overlays.tangent = tg;
+      }
+      return {
+        polylines: sampled.series[0],
+        view,
+        path2d: transform ? buildPlotPath2D(sampled.series[0], transform) : null,
+        ...(Object.keys(overlays).length > 0 ? { overlays } : {}),
+      };
+    }
+  }
+
   const sampled = sampleEquation(parsed, {
     xMin: spec.xAxis.min,
     xMax: spec.xAxis.max,

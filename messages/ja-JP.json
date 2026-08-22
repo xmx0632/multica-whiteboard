@@ -245,7 +245,11 @@
     "constantsAdd": "追加",
     "constantsRemoveAria": "定数 {name} を削除",
     "constantsValueAria": "定数 {name} の値",
-    "constantsPresetAria": "定数 {name} を切り替え"
+    "constantsPresetAria": "定数 {name} を切り替え",
+    "calcDerivDesc": "導関数を破線で重ね表示",
+    "calcTangentDesc": "接線のデモ",
+    "calcTangentX0": "接点 x₀",
+    "calcNotApplicable": "微積分オーバーレイは陽関数 y=f(x) 専用です——現在の方程式は対象外です"
   },
   "math": {
     "join": "{a} と {b}",
