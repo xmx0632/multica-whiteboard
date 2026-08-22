@@ -114,10 +114,23 @@ describe('parseEquation 符号三分法（ZOO-188）', () => {
     expect(msg).toContain('常量');
   });
 
-  it('未赋值多字母 → 拼写拦截；已赋值多字母（omega/theta）放行', () => {
-    expect(errorMessage('y=omega*x', { a: 1 })).toBe('无法识别符号 “omega”——请检查拼写，变量请用单个字母（如 y=2z）');
+  it('未赋值希腊名 → 常量赋值引导（非拼写错误、不抢自变量位）', () => {
+    // 模板未赋值初始态：不是「无法识别符号 omega」
+    expect(errorMessage('y=A·sin(ωx+φ)')).toContain('方程仍有未赋值符号（a、omega、x、phi）');
+    expect(errorMessage('y=A·sin(ωx+φ)').endsWith('常量区为其赋值，或只保留一个字母作为自变量')).toBe(true);
+    // 即使希腊名是唯一"多余"符号（自变量位另有 x），同样引导赋值
+    expect(errorMessage('y=sin(omega*x)')).toContain('方程仍有未赋值符号（omega、x）');
+    // 孤立希腊名不作自变量（y=ω ≠ 恒等线，而是缺常量赋值）
+    expect(errorMessage('y=ω')).toContain('方程仍有未赋值符号（omega）');
+    expect(errorMessage('y=omega*x', { a: 1 })).toContain('方程仍有未赋值符号（omega、x）');
+  });
+
+  it('未赋值非希腊多字母 → 拼写拦截；已赋值多字母（omega/theta）放行', () => {
+    expect(errorMessage('y=foo')).toBe('无法识别符号 “foo”——请检查拼写，变量请用单个字母（如 y=2z）');
+    expect(errorMessage('y=omega+foo', { omega: 1 })).toBe('无法识别符号 “foo”——请检查拼写，变量请用单个字母（如 y=2z）');
     expect(explicitFn('y=omega*x', { omega: 3 }).fn(2)).toBeCloseTo(6);
     expect(explicitFn('y=theta', { theta: 0.5 }).fn(9)).toBeCloseTo(0.5);
+    expect(explicitFn('y=ω*x', { omega: 3 }).fn(2)).toBeCloseTo(6);
   });
 
   it('全部字母已赋值 → 常数函数；自变量与常量同名 → 自变量优先', () => {
@@ -129,6 +142,8 @@ describe('parseEquation 符号三分法（ZOO-188）', () => {
   it('隐式路径不受常量影响（两元方程仍按 x/y 容量裁决）', () => {
     expect(parseEquation('x+t=3').kind).toBe('line');
     expect(parseEquation('x+t=3', zhT, { t: 5 }).kind).toBe('line');
+    // 隐式路径不参与常量：希腊名按多字母词拦截（T1 范围外，干净报错优于误分类）
+    expect(parseEquation('omega*x+t=3', zhT, { omega: 2 }).kind).toBe('error');
   });
 });
 
