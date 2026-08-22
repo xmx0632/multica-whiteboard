@@ -195,6 +195,12 @@ const ASCII_TO_GREEK: Record<string, string> = {
   phi: 'φ',
 };
 
+/**
+ * 希腊名 ASCII 集（ZOO-188）：这些名字由希腊字母归一产生，属常量命名空间——
+ * 未赋值时引导去常量区赋值（不作拼写错误、不作自变量候选）；已赋值即常量。
+ */
+export const GREEK_CONSTANT_NAMES: ReadonlySet<string> = new Set(Object.keys(ASCII_TO_GREEK));
+
 /** 普通数字 → 下标（v0 → v₀ 的显示还原）。 */
 const DIGIT_TO_SUBSCRIPT = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
 

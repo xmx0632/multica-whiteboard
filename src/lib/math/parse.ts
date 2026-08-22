@@ -19,10 +19,12 @@
  * 一致），组件按当前语言传入，错误文案无硬编码语言。
  * ZOO-188（T1 常量绑定）：parseEquation 第三参 constants——显式路径符号三分法
  * （常量∪自变量∪报错），scope 多常量注入；缺省行为与现状逐字节一致。
+ * 未赋值希腊名（theta/omega/phi，源自 ω/θ/φ 归一）属常量命名空间：不作拼写
+ * 错误、不抢自变量位，未赋值即报「常量区赋值」引导（见 splitFreeSymbols）。
  */
 import { parse } from 'mathjs/number';
 import type { MathNode } from 'mathjs/number';
-import { normalizeEquation } from './normalize';
+import { GREEK_CONSTANT_NAMES, normalizeEquation } from './normalize';
 import { buildImplicitExpression, classifyImplicit, splitTopLevelEquals, type BinaryFn } from './conic';
 import { compileCached } from './cache';
 import { zhT, type LibT } from '../../i18n/lib';
@@ -128,25 +130,37 @@ function auditNode(node: MathNode, syms: Set<string>, t: LibT): string | null {
  * 自由变量裁决（ZOO-166 方案 A）：syms 剔除常数 pi/e 后的自由字母表。
  * 多字母词 → 报错（拼写/未知名）；超出路径容量（显式 1 个 / 隐式 2 个）→ 报错；
  * 其余即合法变量集，按出现顺序绑定（显式：该字母即自变量；隐式：补进 x/y 空缺位）。
- *
- * ZOO-188（T1 常量绑定，符号三分法）：constants 非空时自由符号集划分为
- * {已赋值常量（剔除）} ∪ {恰 1 个自变量} ∪ {其余 → 报错}——已赋值的多字母名
- * （theta/omega 等）不再视为拼写错误，未赋值符号沿用既有裁决分支；
- * constants 缺省 / 空字典时与现状逐字节一致（withConstants=false）。
- * 隐式路径不传 constants（T1 范围外，两元方程仍按 x/y 容量裁决）。
+ * 隐式路径沿用本裁决（不参与常量，希腊名按多字母词报错）。
  */
-function freeSymbols(
+function freeSymbolsImplicit(syms: Set<string>): { free: string[]; bad: string | undefined } {
+  const free = [...syms].filter((s) => s !== 'pi' && s !== 'e');
+  return { free, bad: free.find((s) => s.length > 1) };
+}
+
+/**
+ * ZOO-188（T1 常量绑定，符号三分法）：显式路径自由符号集划分为
+ * {已赋值常量（剔除）} ∪ {希腊名（常量命名空间——未赋值即引导赋值，不作拼写
+ * 错误、不作自变量候选）} ∪ {其余未赋值字母（candidates）}：
+ * - bad：未赋值的非希腊多字母词 → 拼写错误（现状语义）；
+ * - hasUnassignedGreek：存在未赋值希腊名 → 一律报「常量区赋值」引导
+ *   （即使只剩它一个符号也不抢自变量位——y=ω 不是恒等线，是缺常量赋值）；
+ * - dictActive：常量字典非空 → 多符号欠定文案同样用常量引导。
+ * constants 缺省 / 空字典且无希腊名时 candidates/bad 与现状逐字节一致。
+ */
+function splitFreeSymbols(
   syms: Set<string>,
   constants?: Record<string, number>,
-): { free: string[]; bad: string | undefined; withConstants: boolean } {
+): { candidates: string[]; unassigned: string[]; bad: string | undefined; hasUnassignedGreek: boolean; dictActive: boolean } {
   const free = [...syms].filter((s) => s !== 'pi' && s !== 'e');
-  const keys = constants ? Object.keys(constants) : [];
-  if (keys.length === 0) {
-    return { free, bad: free.find((s) => s.length > 1), withConstants: false };
-  }
-  const assigned = new Set(keys);
+  const assigned = new Set(constants ? Object.keys(constants) : []);
   const unassigned = free.filter((s) => !assigned.has(s));
-  return { free: unassigned, bad: unassigned.find((s) => s.length > 1), withConstants: true };
+  return {
+    candidates: unassigned.filter((s) => !GREEK_CONSTANT_NAMES.has(s)),
+    unassigned,
+    bad: unassigned.find((s) => s.length > 1 && !GREEK_CONSTANT_NAMES.has(s)),
+    hasUnassignedGreek: unassigned.some((s) => GREEK_CONSTANT_NAMES.has(s)),
+    dictActive: assigned.size > 0,
+  };
 }
 
 /** mathjs SyntaxError → 原型五类文案映射（ZOO-166：附「怎么办」指引；ZOO-176 随语言）。 */
@@ -193,7 +207,7 @@ function parseImplicit(src: string, t: LibT): ParseResult {
   if (problem) return err(problem);
 
   // ZOO-166 方案 A：自由变量裁决——二元方程最多两个字母，未知字母补进 x/y 空缺位
-  const { free, bad } = freeSymbols(syms);
+  const { free, bad } = freeSymbolsImplicit(syms);
   if (bad) return err(t('mathErr.badSymbolImplicit', { name: bad }));
   if (free.length > 2) {
     return err(t('mathErr.tooManyVarsImplicit', { list: free.join(t('common.listSep')) }));
@@ -280,15 +294,19 @@ export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<str
   if (problem) return err(problem);
 
   // ZOO-166 方案 A + ZOO-188 三分法：自由符号剔除已赋值常量后，恰一个字母即自变量
-  // （y=4z ⟂ y=4x 同一条直线）；未赋值的多字母词是拼写/未知名，两个及以上未赋值
-  // 字母数学上欠定（带常量时引导去常量区赋值）
-  const { free, bad, withConstants } = freeSymbols(syms, constants);
+  // （y=4z ⟂ y=4x 同一条直线）；未赋值的非希腊多字母词是拼写/未知名；存在未赋值
+  // 希腊名或已启用常量字典时，多符号欠定一律引导去常量区赋值（含模板
+  // y=A·sin(ωx+φ) 未赋值的初始态——不是拼写错误）
+  const { candidates, unassigned, bad, hasUnassignedGreek, dictActive } = splitFreeSymbols(syms, constants);
   if (bad) return err(t('mathErr.badSymbolExplicit', { name: bad }));
-  if (free.length > 1) {
-    const messageKey = withConstants ? 'mathErr.multiVarWithConstants' : 'mathErr.multiVarExplicit';
-    return err(t(messageKey, { list: free.join(t('common.listSep')) }));
+  if (hasUnassignedGreek) {
+    return err(t('mathErr.multiVarWithConstants', { list: unassigned.join(t('common.listSep')) }));
   }
-  const variable = free[0] ?? 'x';
+  if (candidates.length > 1) {
+    const messageKey = dictActive ? 'mathErr.multiVarWithConstants' : 'mathErr.multiVarExplicit';
+    return err(t(messageKey, { list: candidates.join(t('common.listSep')) }));
+  }
+  const variable = candidates[0] ?? 'x';
 
   try {
     const compiled = compileCached(body, node);
@@ -296,7 +314,7 @@ export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<str
     // 无常量时 scope 形状与现状一致。异常与非 number 结果一律 NaN（采样期按断笔处理）
     const fn = (x: number): number => {
       try {
-        const scope: Record<string, number> = withConstants ? { ...constants } : {};
+        const scope: Record<string, number> = dictActive ? { ...constants } : {};
         scope[variable] = x;
         const v = compiled.evaluate(scope);
         return typeof v === 'number' ? v : NaN;

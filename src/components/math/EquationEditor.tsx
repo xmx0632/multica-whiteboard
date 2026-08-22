@@ -297,7 +297,7 @@ export default function EquationEditor({
           constants={{
             equation: draft,
             values: constantValues,
-            onChange: setConstantValues,
+            onChange: setConstantValues, // 函数式更新直连（ZOO-188 修复：连点预置槽逐次叠加）
             onApplyTemplate: applyTemplate,
           }}
         />

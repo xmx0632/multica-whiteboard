@@ -499,7 +499,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           constants={{
             equation: value.equation,
             values: value.constants ?? {},
-            onChange: (next) => patch({ constants: next }),
+            onChange: (update) => patch({ constants: update(value.constants ?? {}) }),
             onCommit: () => onCommit?.(),
             onApplyTemplate: (equation) => patch({ equation }),
           }}
