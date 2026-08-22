@@ -143,5 +143,9 @@ export function createMathPlotElement(payload: EquationDraftPayload, place: Math
     error: fields.error,
     // ZOO-188（T1）：常量绑定随载荷落元素；空字典 / 缺省不落键（旧文档零迁移、无空壳）
     ...(fields.constants && Object.keys(fields.constants).length > 0 ? { constants: { ...fields.constants } } : {}),
+    // ZOO-190 修复（T2 遗留）：叠加同样须随载荷落元素——createMathPlotElement 此前
+    // 漏套 fields.overlays，创建侧微积分叠加（f′/切线/定积分）静默丢失；与 constants
+    // 同口径：非空数组才落键（空数组 = 显式清空 → 不落键，元素无空壳字段）
+    ...(fields.overlays && fields.overlays.length > 0 ? { overlays: fields.overlays.map((o) => ({ ...o })) } : {}),
   };
 }

@@ -116,6 +116,26 @@ describe('元素工厂（创建落点与分类）', () => {
     expect(el.height).toBeCloseTo(180);
   });
 
+  it('创建侧叠加随载荷落元素（ZOO-190 修复 T2 遗留：fields.overlays 漏套）', () => {
+    // f′ + 定积分叠加的创建流载荷（EquationEditor 草稿全量快照）
+    const withOverlays: EquationDraftPayload = {
+      equation: 'y=sin(x)',
+      outcome: { kind: 'explicit' },
+      overlays: [{ type: 'derivative' }, { type: 'integral', a: 0, b: Math.PI }],
+    };
+    const el = createMathPlotElement(withOverlays, { centerX: 0, centerY: 0 });
+    expect(el.overlays).toEqual([{ type: 'derivative' }, { type: 'integral', a: 0, b: Math.PI }]);
+    // 无叠加载荷：不落键（旧文档零迁移、无空壳字段）
+    const plain = createMathPlotElement(explicit, { centerX: 0, centerY: 0 });
+    expect(plain.overlays).toBeUndefined();
+    // 空数组 = 显式清空 → 同样不落键
+    const cleared = createMathPlotElement(
+      { ...explicit, overlays: [] },
+      { centerX: 0, centerY: 0 },
+    );
+    expect(cleared.overlays).toBeUndefined();
+  });
+
   it('几何方程：equalRatio 强制 true、定义域取采样包围盒', () => {
     const circle: EquationDraftPayload = {
       equation: '(x-1)²+(y-2)²=9',
