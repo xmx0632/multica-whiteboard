@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import {
   WhiteboardElement,
+  FrameElement,
   ToolType,
   Viewport,
   Operation,
@@ -11,17 +12,21 @@ import {
   DEFAULT_STROKE_WIDTH,
   DEFAULT_STROKE_DASH,
   DEFAULT_FONT_SIZE,
+  CURRENT_SCHEMA_VERSION,
 } from './types';
 import type { EquationDraftPayload } from './math/types';
 import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor } from './stroke';
 import { measureTextElement } from './textElement';
 import { isPolyline, removeVertexPatch } from './polyline';
 import { reorderElements, ZOrderAction } from './zorder';
+import { framesOf, nextFrameRect, frameContents, duplicateFrameBundle } from './frame';
 
 interface WhiteboardState {
   // Document
   documentId: string;
   documentTitle: string;
+  /** 数据模型版本（ZOO-198）：新建 = CURRENT；载入旧文档缺省 1（无帧，行为零变化） */
+  schemaVersion: number;
 
   // Elements
   elements: WhiteboardElement[];
@@ -117,6 +122,22 @@ interface WhiteboardState {
   redo: () => void;
   pushOperations: (ops: Operation[]) => void;
 
+  // Actions - 分页帧（ZOO-198）：页序 = elements 中帧的相对顺序
+  /** 新增一页（帧）：无帧 → 视口中心，有帧 → 最右帧右侧；页名由调用方按语言传入 */
+  addFrame: (name: string, viewSize?: { width: number; height: number }) => string;
+  /** 页重命名（空名忽略；单条可撤销快照） */
+  renameFrame: (id: string, name: string) => void;
+  /** 复制页：帧 + 页内内容整体换新 id，落位源帧右侧，页序插在源页之后（单快照可撤销） */
+  duplicateFrame: (id: string, copyName: string) => void;
+  /** 删除页：帧 + 页内内容一并删除（单快照可撤销）；活动页自动落到邻页 */
+  deleteFrame: (id: string) => void;
+  /** 页序重排（帧槽位重排，内容层级不动；reorder 快照可撤销；同位 / 越界空转） */
+  moveFrameTo: (fromIndex: number, toIndex: number) => void;
+  /** 页条点击跳转时标记当前页（会话态，不置脏、不持久化） */
+  setActiveFrame: (id: string | null) => void;
+  /** 当前页 id（撤销 / 删除后可能悬空，消费方按 framesOf 自行兜底） */
+  activeFrameId: string | null;
+
   // Actions - Document
   loadDocument: (doc: WhiteboardDocument) => void;
   /** ZOO-176：默认标题可由调用方按语言传入（缺省 'Untitled' 保持既有行为） */
@@ -139,6 +160,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   // Document defaults
   documentId: uuidv4(),
   documentTitle: 'Untitled',
+  schemaVersion: CURRENT_SCHEMA_VERSION,
 
   // Elements
   elements: [],
@@ -169,6 +191,9 @@ export const useStore = create<WhiteboardState>((set, get) => ({
 
   // MathPlot 插入握手
   pendingMathPlot: null,
+
+  // 分页帧（ZOO-198）
+  activeFrameId: null,
 
   // 选中样式连续手势快照（取色器 / 线宽滑杆共用）
   strokeGestureBefore: null,
@@ -371,6 +396,110 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   })),
   consumeMathPlotInsert: () => set({ pendingMathPlot: null }),
 
+  // 分页帧（ZOO-198）
+  addFrame: (name, viewSize) => {
+    const st = get();
+    const rect = nextFrameRect(framesOf(st.elements), st.viewport, viewSize);
+    const frame: FrameElement = {
+      id: uuidv4(), type: 'frame',
+      x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+      name,
+      strokeColor: '#94a3b8', strokeWidth: 2, opacity: 1,
+    };
+    const ops: Operation[] = [{ type: 'create', elementId: frame.id, after: frame }];
+    set((s) => ({
+      elements: [...s.elements, frame], // 帧槽位末尾 = 页序末尾
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+      activeFrameId: frame.id,
+    }));
+    return frame.id;
+  },
+
+  renameFrame: (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    get().updateElement(id, { name: trimmed });
+  },
+
+  duplicateFrame: (id, copyName) => {
+    const st = get();
+    const source = st.elements.find((e): e is FrameElement => e.type === 'frame' && e.id === id);
+    if (!source) return;
+    const name = copyName.trim() || source.name;
+    const { frame, contents } = duplicateFrameBundle(source, frameContents(st.elements, source), name);
+    // 页序：新帧插在源帧之后；内容 append 到末尾（层级在顶，视觉等价）
+    const srcIdx = st.elements.findIndex((e) => e.id === source.id);
+    const elements = [...st.elements];
+    elements.splice(srcIdx + 1, 0, frame);
+    elements.push(...contents);
+    const ops: Operation[] = [
+      { type: 'create', elementId: frame.id, after: frame },
+      ...contents.map((c) => ({ type: 'create' as const, elementId: c.id, after: c })),
+    ];
+    set((s) => ({
+      elements,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+      activeFrameId: frame.id,
+    }));
+  },
+
+  deleteFrame: (id) => {
+    const st = get();
+    const frame = st.elements.find((e): e is FrameElement => e.type === 'frame' && e.id === id);
+    if (!frame) return;
+    const contents = frameContents(st.elements, frame);
+    const removedIds = new Set([id, ...contents.map((c) => c.id)]);
+    const elements = st.elements.filter((e) => !removedIds.has(e.id));
+    // 数组快照 op（reorder 机制，ZOO-183）：undo / redo 整体恢复数组——
+    // 页序与内容层级精确回退（delete op 逐条回插会翻页序）
+    const ops: Operation[] = [{
+      type: 'reorder', elementId: frame.id,
+      beforeElements: st.elements, afterElements: elements,
+    }];
+    // 活动页兜底：删除后落到原位次的最邻近页（末页删除落到前一页）
+    const rest = framesOf(elements);
+    const idx = framesOf(st.elements).findIndex((f) => f.id === id);
+    const fallback = rest[Math.min(idx, rest.length - 1)]?.id ?? null;
+    set((s) => ({
+      elements,
+      selectedId: s.selectedId != null && removedIds.has(s.selectedId) ? null : s.selectedId,
+      polylineEditId: s.polylineEditId != null && removedIds.has(s.polylineEditId) ? null : s.polylineEditId,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+      activeFrameId: s.activeFrameId === id ? fallback : s.activeFrameId,
+    }));
+  },
+
+  moveFrameTo: (fromIndex, toIndex) => {
+    const st = get();
+    const frames = framesOf(st.elements);
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= frames.length || toIndex < 0 || toIndex >= frames.length) return;
+    // 帧槽位重排：elements 中每个帧位置按序换成重排后的帧，内容元素原地不动
+    const reordered = [...frames];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    let fi = 0;
+    const elements = st.elements.map((el) => (el.type === 'frame' ? reordered[fi++] : el));
+    const ops: Operation[] = [{
+      type: 'reorder', elementId: moved.id,
+      beforeElements: st.elements, afterElements: elements,
+    }];
+    set((s) => ({
+      elements,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+    }));
+  },
+
+  setActiveFrame: (id) => set({ activeFrameId: id }),
+
   // Viewport
   setViewport: (vp) => set((s) => ({ viewport: { ...s.viewport, ...vp } })),
 
@@ -454,6 +583,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set({
       documentId: doc.id,
       documentTitle: doc.title,
+      schemaVersion: doc.schemaVersion ?? 1, // 旧文档缺省 v1：无帧，行为零变化（ZOO-198）
       elements: doc.elements,
       viewport: doc.viewport,
       selectedId: null,
@@ -463,6 +593,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       redoStack: [],
       isDirty: false,
       lastSavedAt: Date.now(),
+      activeFrameId: null,
     });
   },
 
@@ -470,6 +601,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set({
       documentId: uuidv4(),
       documentTitle: title ?? 'Untitled',
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       elements: [],
       viewport: { offsetX: 0, offsetY: 0, scale: 1 },
       selectedId: null,
@@ -479,6 +611,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       redoStack: [],
       isDirty: false,
       lastSavedAt: null,
+      activeFrameId: null,
     });
   },
 

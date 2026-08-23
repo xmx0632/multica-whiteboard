@@ -46,7 +46,9 @@
     "closeMenuAria": "收起菜单面板",
     "autosaved": "✓ 已自动保存 {time}",
     "autosavedTip": "内容已自动保存到本地，刷新/崩溃可恢复",
-    "dirtyTip": "有未保存修改"
+    "dirtyTip": "有未保存修改",
+    "exportPagePng": "导出当前页 PNG",
+    "exportPageSvg": "导出当前页 SVG"
   },
   "zoom": {
     "groupAria": "画布缩放",
@@ -345,5 +347,16 @@
     "perfNote": "平移/缩放不触发重采样（Path2D 缓存命中）。",
     "metaTitle": "方程出图演示 - MulticaBoard",
     "metaDescription": "数学方程矢量出图在线演示：输入即解析、实时预览、参数可调——sin 曲线、抛物线、圆与椭圆"
+  },
+  "pages": {
+    "add": "新页",
+    "defaultName": "第 {n} 页",
+    "copyName": "{name}（副本）",
+    "confirmDelete": "删除「{name}」及页内全部板书？",
+    "duplicate": "复制此页",
+    "delete": "删除此页",
+    "renameTip": "双击重命名",
+    "jumpTip": "跳转到「{name}」",
+    "exportDisabledTip": "先在页条选中一页"
   }
 }

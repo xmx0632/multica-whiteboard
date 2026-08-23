@@ -1,4 +1,4 @@
-import { WhiteboardDocument } from './types';
+import { WhiteboardDocument, CURRENT_SCHEMA_VERSION } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_PREFIX = 'whiteboard_';
@@ -169,6 +169,7 @@ export function createNewDocument(title: string = 'Untitled'): WhiteboardDocumen
     title,
     elements: [],
     viewport: { offsetX: 0, offsetY: 0, scale: 1 },
+    schemaVersion: CURRENT_SCHEMA_VERSION, // v2 起含分页帧（ZOO-198）
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

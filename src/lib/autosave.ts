@@ -31,6 +31,8 @@ export interface AutosaveSnapshot {
   tabId: string;
   /** 内容指纹（autosaveSignature）：恢复后回填 lastSignature，避免「恢复即重写」 */
   sig: string;
+  /** 数据模型版本透传（ZOO-198）：不进指纹（版本号变化不是内容冲突） */
+  schemaVersion?: number;
 }
 
 /** 降级存储的 per-doc 键与索引（IndexedDB 不可用时才使用） */
@@ -71,6 +73,9 @@ export function elementSignature(el: WhiteboardElement): string {
     case 'rectangle':
     case 'circle':
       return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}`;
+    case 'frame':
+      // 分页帧（ZOO-198）：页名 / 外框进指纹——改名、缩放页都要触发自动保存
+      return `${base}|f:${el.name}|${Math.round(el.width)}x${Math.round(el.height)}`;
   }
 }
 
@@ -134,6 +139,7 @@ function snapshotToDocument(snap: AutosaveSnapshot): WhiteboardDocument {
     title: snap.documentTitle,
     elements: snap.elements,
     viewport: snap.viewport,
+    schemaVersion: snap.schemaVersion,
     createdAt: snap.updatedAt,
     updatedAt: snap.updatedAt,
   };
