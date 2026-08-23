@@ -543,17 +543,24 @@ export function sampleEquation(
  * ZOO-188（T1）：constants 透传 parseEquation——含符号常量的公式（y=A·sin(ωx+φ)）
  * 绑定常量后预览实时出曲线。
  * ZOO-191（T4）：parametric / polar 预览用默认参数域 [0,2π]（四类模板的整周期）。
+ * ZOO-192（T5）：domain 透传草稿 t/θ 域（物理模板预置落地时间等）——缺省 /
+ * 非法（倒序 / 非有限）回落默认 [0,2π]，注入方无需预校验。
  */
 export function createPreviewPolylines(
   equation: string,
   outcome: StructuralOutcome | ParseResult,
   constants?: Record<string, number>,
+  domain?: { min: number; max: number },
 ): PreviewData | null {
   if (outcome.kind === 'error') return null;
   if (outcome.kind === 'parametric' || outcome.kind === 'polar') {
     const parsed = parseEquation(equation, zhT, constants);
     if (parsed.kind !== 'parametric' && parsed.kind !== 'polar') return null;
-    const sampled = sampleEquation(parsed, { xMin: DEFAULT_PARAMETER_DOMAIN.min, xMax: DEFAULT_PARAMETER_DOMAIN.max, sampleCount: DEFAULT_SAMPLE_COUNT });
+    const dom =
+      domain !== undefined && Number.isFinite(domain.min) && Number.isFinite(domain.max) && domain.min < domain.max
+        ? domain
+        : { min: DEFAULT_PARAMETER_DOMAIN.min, max: DEFAULT_PARAMETER_DOMAIN.max };
+    const sampled = sampleEquation(parsed, { xMin: dom.min, xMax: dom.max, sampleCount: DEFAULT_SAMPLE_COUNT });
     if ('error' in sampled) return null;
     return { polylines: sampled.polylines, xMin: sampled.xMin, xMax: sampled.xMax, yMin: sampled.yMin, yMax: sampled.yMax };
   }

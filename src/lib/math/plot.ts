@@ -18,6 +18,12 @@ import { getPlotRender, plotSignature, setPlotRender } from './cache';
 import { derivativeOf, integralOf, tangentOf } from './calculus';
 import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
+import {
+  PHYSICS_GUIDE_DASH,
+  PHYSICS_MARK_RADIUS_PX,
+  trajectoryMarks,
+  type TrajectoryMarks,
+} from './physics';
 import { sampleEquation, sampleExplicitMulti } from './sample';
 import type { MathPlotOverlay, MathViewport, Polyline } from './types';
 import { zhT, type LibT } from '../../i18n/lib';
@@ -39,6 +45,8 @@ export const PLOT_COLORS = {
   /** ZOO-189 T2 叠加层色：f′ 虚线橙 / 切线绿（与 12 色板同源，白底可读） */
   overlayDerivative: '#F97316',
   overlayTangent: '#22C55E',
+  /** ZOO-192 T5 物理标注层色：紫（导引虚线 / 标注点 / H·R 文字，白底可读） */
+  overlayPhysics: '#A855F7',
   /** ZOO-190 T3 定积分：着色区上面积 chip 的底色（元素色文字、白底可读） */
   integralChipBg: 'rgba(255,255,255,0.92)',
   /** ZOO-190 T3 定积分奇点报错 chip（红字白底，口径同错误占位） */
@@ -103,7 +111,9 @@ export interface PlotSpec {
   /**
    * 微积分叠加（ZOO-189 T2）：仅显式函数生效（几何/错误态忽略——parametric /
    * polar 同口径静默忽略、数据保留，方程改回显式即恢复生效〔ZOO-191 T4〕）；
-   * 缺省 / 空 = 无叠加，走既有渲染路径（零变化）。进渲染缓存签名（叠加参数是数学输入）。
+   * physics 条目（ZOO-192 T5）反之——仅 parametric 轨迹生效，其余 kind 静默
+   * 忽略、数据保留。缺省 / 空 = 无叠加，走既有渲染路径（零变化）。
+   * 进渲染缓存签名（叠加参数是数学输入）。
    */
   overlays?: readonly MathPlotOverlay[];
 }
@@ -149,7 +159,8 @@ export interface PlotRender {
   overlays?: OverlayRender;
 }
 
-/** 叠加层渲染产物（ZOO-189 T2）：与主曲线同视窗的 f′ 折线 + 切线演示数据。 */
+/** 叠加层渲染产物（ZOO-189 T2）：与主曲线同视窗的 f′ 折线 + 切线演示数据；
+ *  ZOO-190 T3 定积分着色区 / ZOO-192 T5 物理标注数据并列增补。 */
 export interface OverlayRender {
   /** f′ 折线（数学坐标）与缓存 Path2D（Node 环境无 Path2D 时为 null） */
   derivative?: { polylines: Polyline[]; path2d: Path2D | null };
@@ -163,6 +174,12 @@ export interface OverlayRender {
   integral?:
     | { ok: true; value: number; region: Polyline; anchor: { x: number; y: number }; path2d: Path2D | null }
     | { ok: false; error: string };
+  /**
+   * 物理标注（ZOO-192 T5）：抛体参数轨迹的落地/峰值数据（数学坐标，纯数据无
+   * Path2D——标注是点/文字，无需折线缓存）；数值随常量 / t 域改值经渲染签名
+   * 失效自动重算。仅 parametric kind 生效，其余 kind（含显式简谐）静默忽略。
+   */
+  physics?: TrajectoryMarks;
 }
 
 /** 「好看刻度」步长（1/2/2.5/5×10^k，原型 niceStep 平移共享）。 */
@@ -609,6 +626,75 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     ctx.fillText(label, lx, ly);
   }
 
+  // —— ZOO-192 T5 物理标注（叠加层末位）：导引虚线（峰值垂线 / 射程水平线）→
+  //    峰值点标记 + H 标注 → 落地点标记 + R 标注。数字不带单位（不做量纲运算，
+  //    单位仅面板显示）；文字越界翻转口径与切线斜率标注同款 ——
+  if (overlays?.physics) {
+    const ph = overlays.physics;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayPhysics;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([...PHYSICS_GUIDE_DASH]);
+    ctx.beginPath();
+    // 峰值垂线：峰点 → 抛出高度基准线
+    ctx.moveTo(t.toPxX(ph.peak.x), t.toPxY(ph.peak.y));
+    ctx.lineTo(t.toPxX(ph.peak.x), t.toPxY(ph.launch.y));
+    // 射程水平线：抛出点 → 落地点（沿抛出高度）
+    if (ph.landing) {
+      ctx.moveTo(t.toPxX(ph.launch.x), t.toPxY(ph.launch.y));
+      ctx.lineTo(t.toPxX(ph.landing.x), t.toPxY(ph.landing.y));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 峰值点标记（紫底白边圆点，切点标记同规格）+ H 标注
+    const peakPx = t.toPxX(ph.peak.x);
+    const peakPy = t.toPxY(ph.peak.y);
+    ctx.beginPath();
+    ctx.arc(peakPx, peakPy, PHYSICS_MARK_RADIUS_PX, 0, Math.PI * 2);
+    ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+
+    const hLabel = `H = ${formatOverlayNumber(ph.peak.height)}`;
+    ctx.font = 'italic 10px system-ui, sans-serif';
+    const hTw = ctx.measureText(hLabel).width;
+    let hx = peakPx + 9;
+    if (hx + hTw > width - 3) hx = peakPx - 9 - hTw;
+    let hy = peakPy - 8;
+    if (hy < 10) hy = peakPy + 14;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+    ctx.fillText(hLabel, hx, hy);
+
+    // 落地点标记 + R 标注（落点常在卡片右缘，标注默认放左上侧）
+    if (ph.landing) {
+      const landPx = t.toPxX(ph.landing.x);
+      const landPy = t.toPxY(ph.landing.y);
+      ctx.beginPath();
+      ctx.arc(landPx, landPy, PHYSICS_MARK_RADIUS_PX, 0, Math.PI * 2);
+      ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      const rLabel = `R = ${formatOverlayNumber(ph.landing.range)}`;
+      const rTw = ctx.measureText(rLabel).width;
+      let rx = landPx - 9 - rTw;
+      if (rx < 3) rx = landPx + 9;
+      let ry = landPy - 8;
+      if (ry < 10) ry = landPy + 14;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+      ctx.fillText(rLabel, rx, ry);
+    }
+  }
+
   ctx.restore();
 }
 
@@ -924,5 +1010,11 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
   };
   const path2d =
     typeof Path2D !== 'undefined' ? buildPlotPath2D(sampled.polylines, createPlotTransform(view, frame.width, frame.height)) : null;
-  return { polylines: sampled.polylines, view, path2d };
+  // —— ZOO-192 T5 物理标注：仅参数式轨迹生效（physics 叠加条目 + parametric
+  //    kind 双条件）——显式（简谐）/几何/极坐标/错误态静默忽略、数据保留；
+  //    轨迹非抛体形（无域内峰值 / 无落地越零）时 marks 为 null，同样不产出。
+  //    常量 / t 域 / 叠加开关均进渲染签名——改值即重算（实时联动）。
+  const physicsWanted = spec.overlays?.some((o) => o.type === 'physics');
+  const marks = physicsWanted && parsed.kind === 'parametric' ? trajectoryMarks(parsed.fx, parsed.fy, spec.xAxis) : null;
+  return marks ? { polylines: sampled.polylines, view, path2d, overlays: { physics: marks } } : { polylines: sampled.polylines, view, path2d };
 }

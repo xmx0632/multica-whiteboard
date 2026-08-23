@@ -267,6 +267,13 @@
     "parametricInactive": "현재 방정식은 매개변수 / 극좌표 형식이 아닙니다——위 템플릿을 선택하거나 x=f(t),y=g(t) / r=f(θ)를 입력하세요",
     "paramDomainOrder": "범위는 하한이 상한보다 작아야 합니다"
   },
+  "phys": {
+    "tplProjectile": "발사체 운동",
+    "tplShm": "단순 조화 진동",
+    "tplCircular": "등속 원 운동",
+    "marksDesc": "착지·최고점 표시(사거리 R, 높이 H)",
+    "marksNotApplicable": "표시는 매개변수 궤적(x=f(t),y=g(t))에만 적용됩니다. 단순 조화 진동은 기존 곡선 렌더링을 사용합니다."
+  },
   "math": {
     "join": "{a} 및 {b}",
     "openingRight": "오른쪽",

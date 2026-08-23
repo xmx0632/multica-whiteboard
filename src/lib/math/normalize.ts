@@ -211,3 +211,21 @@ const DIGIT_TO_SUBSCRIPT = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '�
 export function constantDisplayName(key: string): string {
   return (ASCII_TO_GREEK[key] ?? key).replace(/[0-9]/g, (d) => DIGIT_TO_SUBSCRIPT[Number(d)]);
 }
+
+/** 数值前缀（含符号 / 小数 / 科学计数）；余下非空白部分即单位后缀。 */
+const NUMBER_PREFIX_RE = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/;
+
+/**
+ * 常量值输入解析（ZOO-192 T5）：剥离单位后缀后取数值——`9.8 m/s²` →
+ * { value: 9.8, unit: 'm/s²' }、`20` → { value: 20, unit: '' }。
+ * 单位字符串仅作显示（面板单位行 / 轴标签），**不做量纲运算**：存储与求值
+ * 恒为纯数值，unit 由调用方决定去留。无数值前缀（如 'abc'）返回 null。
+ */
+export function parseConstantValue(raw: string): { value: number; unit: string } | null {
+  const s = String(raw).trim();
+  const m = s.match(NUMBER_PREFIX_RE);
+  if (!m) return null;
+  const value = parseFloat(m[0]);
+  if (!Number.isFinite(value)) return null;
+  return { value, unit: s.slice(m[0].length).trim() };
+}

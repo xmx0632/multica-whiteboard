@@ -224,12 +224,16 @@ export default function PropertyPanel() {
       // 方程文本收敛：重新校验分类与错误信息（几何方程同步推导定义域）。
       // ZOO-188：按元素当前常量绑定裁决——含常量的合法方程（y=A·sin(ωx+φ)）不会
       // 被误判非法而回滚；常量变化使 kind 翻转（欠定 → explicit）也在此收敛。
-      // ZOO-191（T4）：参数式 / 极坐标元素以现 t/θ 域兜底——方程微调不重置参数域
+      // ZOO-191（T4）：参数式 / 极坐标元素以现 t/θ 域兜底——方程微调不重置参数域。
+      // ZOO-192（T5）：fallback 域改按「收敛后」的方程判定——物理模板把显式元素
+      // 切到参数式时，模板预置 t 域（瞬态已落 xAxis）不被默认 [0,2π] 覆盖
+      const outcomeNow = validateEquation(cur.equation, t, cur.constants);
+      const paramAfter = outcomeNow.kind === 'parametric' || outcomeNow.kind === 'polar';
       const converged = convergeEquationCommit(
         cur.equation,
         t,
         cur.constants,
-        cur.kind === 'parametric' || cur.kind === 'polar' ? cur.xAxis : undefined,
+        cur.kind === 'parametric' || cur.kind === 'polar' || paramAfter ? cur.xAxis : undefined,
       );
       if (!converged.fields) {
         // ZOO-155：非法方程不落错误占位 —— 元素回滚到手势前快照（曲线保持原样），面板提示原因

@@ -19,12 +19,15 @@
  * - ZOO-188（T1 常量绑定）：常量草稿（面板常量区编辑）参与实时校验与预览，
  *   确认载荷全量带出（EquationDraftPayload.constants）；重编辑流经
  *   initialConstants 回填。含符号常量的公式绑定后即时出图。
+ * - ZOO-192（T5 物理模板）：物理区模板点选整包回填草稿（方程 + 常量预置 +
+ *   t 域预置 + 标注预置），插入即出图；参数式 / 极坐标预览按草稿 t/θ 域采样
+ *   （未触碰时默认 [0,2π]）。
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import MiniPreview from './MiniPreview';
 import { useT } from '@/i18n/I18nProvider';
-import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey } from '@/lib/math/templates';
+import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey, type PhysicsTemplate } from '@/lib/math/templates';
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
 import { DEFAULT_PARAMETER_DOMAIN, createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
@@ -64,8 +67,14 @@ export interface EquationEditorProps {
   onConfirm?: (payload: EquationDraftPayload) => void;
   /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
   onCancel?: () => void;
-  /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。 */
-  createPreviewPolylines?: (equation: string, outcome: StructuralOutcome, constants?: Record<string, number>) => PreviewData | null;
+  /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。
+   *  ZOO-192（T5）：第四参 domain 为参数式 / 极坐标的草稿 t/θ 域（缺省 [0,2π]）。 */
+  createPreviewPolylines?: (
+    equation: string,
+    outcome: StructuralOutcome,
+    constants?: Record<string, number>,
+    domain?: { min: number; max: number },
+  ) => PreviewData | null;
 }
 
 export default function EquationEditor({
@@ -107,9 +116,10 @@ export default function EquationEditor({
 
   const preview = useMemo(() => {
     if (!isValid || !createPreviewPolylines) return null;
-    return createPreviewPolylines(trimmed, outcome, constantValues);
+    // ZOO-192：参数式 / 极坐标预览按草稿 t/θ 域采样（未触碰传 undefined 落默认 [0,2π]）
+    return createPreviewPolylines(trimmed, outcome, constantValues, paramDomain ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trimmed, isValid, createPreviewPolylines, constantValues]);
+  }, [trimmed, isValid, createPreviewPolylines, constantValues, paramDomain]);
 
   const confirm = () => {
     if (!trimmed) {
@@ -142,6 +152,18 @@ export default function EquationEditor({
   const applyParametricTemplate = (equation: string) => {
     setParamDomain(null);
     applyTemplate(equation);
+  };
+
+  // ZOO-192 T5：物理模板点选——整包回填草稿（方程 + 常量预置 + t 域预置 +
+  // 标注预置），确认载荷全量带出——插入即出图（抛体预置 v₀/θ/g 与落地时间域）
+  const applyPhysicsTemplate = (tpl: PhysicsTemplate) => {
+    setConstantValues({ ...tpl.constants });
+    setParamDomain({ ...tpl.domain });
+    setOverlayDraft((prev) => {
+      const rest = prev.filter((o) => o.type !== 'physics');
+      return tpl.marks ? [...rest, { type: 'physics' }] : rest;
+    });
+    applyTemplate(tpl.equation);
   };
 
   const statusLine = () => {
@@ -312,7 +334,8 @@ export default function EquationEditor({
       {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
           ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框。
           ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出）。
-          ZOO-191 T4：参数式区连参数域草稿（未触碰显示默认 [0,2π]，确认时随载荷带出）。 */}
+          ZOO-191 T4：参数式区连参数域草稿（未触碰显示默认 [0,2π]，确认时随载荷带出）。
+          ZOO-192 T5：物理区连常量 / 叠加 / 参数域三草稿，模板点选整包回填（插入即出图）。 */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -333,6 +356,13 @@ export default function EquationEditor({
             domain: paramDomain ?? { min: DEFAULT_PARAMETER_DOMAIN.min, max: DEFAULT_PARAMETER_DOMAIN.max },
             onDomainChange: setParamDomain,
             onApplyTemplate: applyParametricTemplate,
+          }}
+          physics={{
+            equation: draft,
+            constants: constantValues,
+            values: overlayDraft,
+            onChange: setOverlayDraft,
+            onApplyTemplate: applyPhysicsTemplate,
           }}
         />
       )}

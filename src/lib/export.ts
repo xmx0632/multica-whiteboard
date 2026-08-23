@@ -13,6 +13,7 @@ import {
   resolvePlotRender,
   stepForAxis,
 } from './math/plot';
+import { PHYSICS_GUIDE_DASH, PHYSICS_MARK_RADIUS_PX } from './math/physics';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
@@ -249,7 +250,7 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     }
     return d.trim();
   };
-  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent || render.overlays?.integral);
+  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent || render.overlays?.integral || render.overlays?.physics);
   const d = polylinesToD(render.polylines);
   if (d || hasOverlayDraw) {
     // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
@@ -332,6 +333,46 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
         parts.push(
           `<text x="${(gx + gw / 2).toFixed(1)}" y="${(gy + 18).toFixed(1)}" font-size="10" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.integralErrorText}" text-anchor="middle" clip-path="url(#mpc-${el.id})"${opacity}>${escapeXml(msg)}</text>`,
         );
+      }
+    }
+
+    // —— ZOO-192 T5 物理标注（与 drawGraphCore 同一套数据 / 配色 / 越界翻转口径）：
+    //    导引虚线（峰值垂线 + 射程水平线）→ 峰值点 + H 标注 → 落地点 + R 标注 ——
+    if (render.overlays?.physics) {
+      const ph = render.overlays.physics;
+      const guide = (x1: number, y1: number, x2: number, y2: number) =>
+        `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${PLOT_COLORS.overlayPhysics}" stroke-width="1" stroke-dasharray="${PHYSICS_GUIDE_DASH.join(',')}" clip-path="url(#mpc-${el.id})"${opacity}/>`;
+      parts.push(guide(toX(ph.peak.x), toY(ph.peak.y), toX(ph.peak.x), toY(ph.launch.y)));
+      if (ph.landing) {
+        parts.push(guide(toX(ph.launch.x), toY(ph.launch.y), toX(ph.landing.x), toY(ph.landing.y)));
+      }
+      const mark = (mx: number, my: number) =>
+        `<circle cx="${mx.toFixed(2)}" cy="${my.toFixed(2)}" r="${PHYSICS_MARK_RADIUS_PX}" fill="${PLOT_COLORS.overlayPhysics}" stroke="#ffffff" stroke-width="1.5"${opacity}/>`;
+      const markLabel = (text: string, px2: number, py2: number) =>
+        `<text x="${px2.toFixed(2)}" y="${py2.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.overlayPhysics}" text-anchor="start"${opacity}>${escapeXml(text)}</text>`;
+
+      const peakPx = toX(ph.peak.x);
+      const peakPy = toY(ph.peak.y);
+      parts.push(mark(peakPx, peakPy));
+      const hLabel = `H = ${formatOverlayNumber(ph.peak.height)}`;
+      const hW = hLabel.length * 5.4;
+      let hx = peakPx + 9;
+      if (hx + hW > gx + gw - 3) hx = peakPx - 9 - hW;
+      let hy = peakPy - 3;
+      if (hy < gy + 10) hy = peakPy + 14;
+      parts.push(markLabel(hLabel, hx, hy));
+
+      if (ph.landing) {
+        const landPx = toX(ph.landing.x);
+        const landPy = toY(ph.landing.y);
+        parts.push(mark(landPx, landPy));
+        const rLabel = `R = ${formatOverlayNumber(ph.landing.range)}`;
+        const rW = rLabel.length * 5.4;
+        let rx = landPx - 9 - rW;
+        if (rx < gx + 3) rx = landPx + 9;
+        let ry = landPy - 3;
+        if (ry < gy + 10) ry = landPy + 14;
+        parts.push(markLabel(rLabel, rx, ry));
       }
     }
   }

@@ -267,6 +267,13 @@
     "parametricInactive": "当前方程不是参数式 / 极坐标方程——点选上方模板，或输入 x=f(t),y=g(t) / r=f(θ)",
     "paramDomainOrder": "取值范围需下限小于上限"
   },
+  "phys": {
+    "tplProjectile": "抛体运动",
+    "tplShm": "简谐振动",
+    "tplCircular": "匀速圆周运动",
+    "marksDesc": "落地/峰值标注（射程 R、峰高 H）",
+    "marksNotApplicable": "标注仅对参数式轨迹（x=f(t),y=g(t)）生效；简谐振动走常规曲线渲染，改常量即实时联动。"
+  },
   "math": {
     "join": "{a} 与 {b}",
     "openingRight": "向右",

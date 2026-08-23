@@ -25,15 +25,27 @@
  * - T4 参数式区（ZOO-191，parametric 绑定时渲染）：参数圆 / 心形线 / 摆线 /
  *   李萨如模板行（点选回填方程输入）+ t/θ 取值范围数值输入（当前方程是
  *   参数式 / 极坐标时激活，直改实时预览、失焦提交一条，D5 同款）；
- * - T5（物理模板）分区仍为占位。
+ * - T5 物理区（ZOO-192，physics 绑定时渲染）：抛体 / 简谐 / 圆周模板行（点选
+ *   回填方程 + 常量预置 + t 域预置 + 标注预置，插入即出图）+ 落地/峰值标注
+ *   开关（仅参数式轨迹生效，标注数值随常量改值实时联动）+ 常量单位显示行
+ *   （单位仅显示，不做量纲运算）。
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '@/i18n/I18nProvider';
-import { constantDisplayName, normalizeConstantKey } from '@/lib/math/normalize';
+import { PHYSICS_CONSTANT_UNITS } from '@/lib/math/physics';
+import { PLOT_COLORS } from '@/lib/math/plot';
+import { constantDisplayName, normalizeConstantKey, parseConstantValue } from '@/lib/math/normalize';
 import type { MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
-import { ADVANCED_TEMPLATES, PARAMETRIC_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/templates';
+import {
+  ADVANCED_TEMPLATES,
+  PARAMETRIC_TEMPLATES,
+  PHYSICS_TEMPLATES,
+  advancedTemplateNameKey,
+  physicsTemplateNameKey,
+  type PhysicsTemplate,
+} from '@/lib/math/templates';
 
 /**
  * T1 常量编辑区绑定（两入口共用）：创建侧由 EquationEditor 持草稿态，
@@ -64,6 +76,30 @@ export interface AdvancedFormulaPanelProps {
   calculus?: AdvancedCalculusBinding;
   /** T4 参数式编辑区绑定（ZOO-191）；缺省时参数式分区保持 T0 占位 */
   parametric?: AdvancedParametricBinding;
+  /** T5 物理编辑区绑定（ZOO-192）；缺省时物理分区保持 T0 占位 */
+  physics?: AdvancedPhysicsBinding;
+}
+
+/**
+ * T5 物理编辑区绑定（ZOO-192，两入口共用）：标注开关读写元素 overlays 的
+ * physics 条目（与微积分区共用同一数组——双方过滤各自类型、互不覆盖）；
+ * 编辑侧直连元素（onChange → 直改实时重绘、onCommit → 提交一条历史），创建侧
+ * 由 EquationEditor 持草稿态。模板点选出口携带「方程 + 常量预置 + t 域预置 +
+ * 标注预置」整包（onApplyTemplate），由调用侧落各草稿位——插入即出图。
+ */
+export interface AdvancedPhysicsBinding {
+  /** 当前方程文本（判定参数式轨迹态——标注仅对 x=f(t),y=g(t) 生效） */
+  equation: string;
+  /** 常量绑定（裁决参与；单位行显示数据源） */
+  constants?: Record<string, number>;
+  /** 当前叠加列表（physics 条目读写） */
+  values: readonly MathPlotOverlay[];
+  /** 叠加变更（开关离散变更即时提交） */
+  onChange: (next: MathPlotOverlay[]) => void;
+  /** 一次可撤销操作边界（编辑侧传入；创建侧缺省） */
+  onCommit?: () => void;
+  /** 模板点选出口（整包预置回填）；缺省不渲染模板行 */
+  onApplyTemplate?: (template: PhysicsTemplate) => void;
 }
 
 /**
@@ -161,13 +197,15 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
 
   const addCustom = () => {
     const key = normalizeConstantKey(customName);
-    const value = parseFloat(customValue);
+    // ZOO-192 T5：值输入容忍单位后缀（'9.8 m/s²' → 9.8）——单位仅显示、不参与
+    // 运算，存储恒为纯数值（见 normalize.ts parseConstantValue）
+    const parsed = parseConstantValue(customValue);
     if (!CONSTANT_KEY_RE.test(key) || RESERVED_CONSTANT_KEYS.has(key) || key in binding.values) {
       setNameError(t('advFormula.constantsInvalidName'));
       return;
     }
-    if (!Number.isFinite(value)) return;
-    applyDiscrete((prev) => ({ ...prev, [key]: value }));
+    if (!parsed) return;
+    applyDiscrete((prev) => ({ ...prev, [key]: parsed.value }));
     setCustomName('');
     setCustomValue('');
     setNameError(null);
@@ -296,7 +334,7 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
         <button
           type="button"
           onClick={addCustom}
-          disabled={!customName.trim() || !Number.isFinite(parseFloat(customValue))}
+          disabled={!customName.trim() || !parseConstantValue(customValue)}
           className="touch-target px-2.5 py-1 border border-blue-200 rounded-md bg-blue-50/60 text-[11px] font-medium text-blue-600 cursor-pointer hover:bg-blue-50 active:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {t('advFormula.constantsAdd')}
@@ -563,7 +601,86 @@ function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
   );
 }
 
-export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric }: AdvancedFormulaPanelProps) {
+/** T5 物理编辑区（ZOO-192）：物理模板行（抛体/简谐/圆周——点选整包回填：
+ *  方程 + 常量预置 + t 域预置 + 标注预置）+ 落地/峰值标注开关（仅参数式轨迹
+ *  生效；标注数值随常量改值经渲染签名失效实时联动）+ 常量单位显示行。 */
+function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
+  const t = useT();
+  const outcome = validateEquation(binding.equation, t, binding.constants);
+  // 标注仅对参数式轨迹（x=f(t),y=g(t)）生效：简谐振动走显式渲染（零新渲染），
+  // 极坐标 / 几何 / 错误态同口径静默禁用（叠加数据保留，方程换回参数式即恢复）
+  const applicable = outcome.kind === 'parametric';
+  const hasMarks = binding.values.some((o) => o.type === 'physics');
+  const disabled = !applicable;
+
+  /** 离散变更（开关切换 / 模板点选）：一次 onChange + 一次 onCommit */
+  const applyDiscrete = (next: MathPlotOverlay[]) => {
+    binding.onChange(next);
+    binding.onCommit?.();
+  };
+
+  const toggleMarks = () => {
+    const rest = binding.values.filter((o) => o.type !== 'physics');
+    applyDiscrete(hasMarks ? rest : [...rest, { type: 'physics' }]);
+  };
+
+  // 单位显示行（只读）：当前绑定常量 × 物理单位表——单位字符串仅作显示，
+  // 不参与运算（数值恒以纯数存储与求值）；无已绑定物理常量时不渲染
+  const unitEntries = Object.entries(binding.constants ?? {}).flatMap(([key, value]) => {
+    const unit = PHYSICS_CONSTANT_UNITS[key];
+    return unit ? [{ label: `${constantDisplayName(key)} = ${value} ${unit}` }] : [];
+  });
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* 物理模板行：点选整包回填（方程 + 常量预置 + t 域预置 + 标注预置） */}
+      {binding.onApplyTemplate && (
+        <div className="flex flex-wrap gap-1">
+          {PHYSICS_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => binding.onApplyTemplate?.(tpl)}
+              title={tpl.equation}
+              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="block text-[10px] text-gray-400 leading-tight">{t(physicsTemplateNameKey(tpl.id))}</span>
+              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 落地/峰值标注开关：数值（射程 R / 峰高 H）由渲染管线随常量重算 */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={hasMarks}
+          onChange={toggleMarks}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] leading-none" style={{ color: disabled ? undefined : PLOT_COLORS.overlayPhysics }}>
+          R·H
+        </span>
+        <span className="text-[11px] text-gray-500">{t('phys.marksDesc')}</span>
+      </label>
+
+      {disabled && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('phys.marksNotApplicable')}</div>
+      )}
+
+      {/* 常量单位显示行：随常量改值实时更新（数值来自常量绑定，单位仅显示） */}
+      {unitEntries.length > 0 && (
+        <div className="font-serif text-[11px] text-gray-500 leading-relaxed break-all">
+          {unitEntries.map((e) => e.label).join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric, physics }: AdvancedFormulaPanelProps) {
   const t = useT();
 
   // Esc 关闭（窗口级监听，LanguageSwitch 同款）。T1 起面板含文本输入（常量名/数值），
@@ -604,11 +721,12 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
           <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.hint')}</div>
           {SECTIONS.map((s) => {
-            // T1/T2/T4：常量、微积分、参数式分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
+            // T1/T2/T4/T5：常量、微积分、参数式、物理分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
             const constantsLive = s.id === 'constants' && constants;
             const calculusLive = s.id === 'calculus' && calculus;
             const parametricLive = s.id === 'parametric' && parametric;
-            const live = constantsLive || calculusLive || parametricLive;
+            const physicsLive = s.id === 'physics' && physics;
+            const live = constantsLive || calculusLive || parametricLive || physicsLive;
             return (
               <section key={s.id} className="border border-gray-200 rounded-lg p-2.5 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5">
@@ -627,8 +745,10 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
                   <CalculusArea binding={calculus} />
                 ) : parametricLive ? (
                   <ParametricArea binding={parametric} />
+                ) : physicsLive ? (
+                  <PhysicsArea binding={physics} />
                 ) : (
-                  // T0 占位：分区控件由后续任务填充（物理模板 T5）
+                  // T0 占位：分区控件由后续任务填充
                   <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">
                     ▢ ▢ ▢
                   </div>

@@ -169,13 +169,16 @@ export interface PreviewData {
 /**
  * 微积分叠加条目（ZOO-189 T2）：元素可选字段 overlays 的成员类型。
  * type 联合为开放式——T3（ZOO-190）已追加 `{ type: 'integral'; a; b }` 定积分
- * 形态、T4+ 按需扩展，均在本联合上并列增补，不改既有条目结构。
- * 渲染层仅对显式函数（kind === 'explicit'）生效；几何 / 错误态静默忽略、数据保留。
+ * 形态、T5（ZOO-192）追加 `{ type: 'physics' }` 物理标注形态、后续按需扩展，
+ * 均在本联合上并列增补，不改既有条目结构。
+ * 渲染层生效范围：derivative / tangent / integral 仅显式函数；physics 仅
+ * parametric 轨迹；其余 kind 静默忽略、数据保留（方程改回生效形态即恢复）。
  */
 export type MathPlotOverlay =
   | { type: 'derivative' }
   | { type: 'tangent'; x0: number }
-  | { type: 'integral'; a: number; b: number };
+  | { type: 'integral'; a: number; b: number }
+  | { type: 'physics' };
 
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
  *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。

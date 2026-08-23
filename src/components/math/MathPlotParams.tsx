@@ -13,12 +13,15 @@
  * constants / 新 kind，PropertyPanel 经 advancedFormulaState 派生）时渲染
  * 紧凑「公式设置」按钮（带已开启叠加徽标数），点开高级公式二级面板；
  * 普通元素不出现任何新控件，面板与现状逐像素一致。开合为纯 UI 态。
+ * ZOO-192（T5 物理模板）：物理区直连元素——标注开关读写 overlays 的 physics
+ * 条目；模板点选整包回填（方程 / 常量 / t 域〔xAxis〕/ 标注），一次离散提交。
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
 import { constantDisplayName } from '@/lib/math/normalize';
+import type { PhysicsTemplate } from '@/lib/math/templates';
 import { validateEquation } from '@/lib/math/validate';
 import {
   ellipseTeachingInfo,
@@ -513,7 +516,9 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
           仅显式函数可叠加（几何/错误态禁用并提示——parametric/polar 同口径）。
           ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验）。
-          ZOO-191 T4：参数式区直连元素 xAxis（t/θ 域，元素真实字段）。 */}
+          ZOO-191 T4：参数式区直连元素 xAxis（t/θ 域，元素真实字段）。
+          ZOO-192 T5：物理区直连元素——标注开关读写 overlays physics 条目，模板
+          点选整包回填（方程 / 常量 / t 域 / 标注）并一次离散提交。 */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -539,6 +544,27 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             onDomainChange: (domain) => patch({ xAxis: domain }),
             onCommit: () => onCommit?.(),
             onApplyTemplate: (equation) => patch({ equation }),
+          }}
+          physics={{
+            equation: value.equation,
+            constants: value.constants,
+            values: value.overlays ?? [],
+            onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
+            onCommit: () => onCommit?.(),
+            // ZOO-192：模板整包回填——常量预置（ASCII 键落元素真实字段）、t 域
+            // 预置（xAxis，commit 收敛按新方程判定 fallback 保持不被默认域覆盖）、
+            // 标注预置（physics 条目）；一次 onChange + 一次 onCommit（离散变更）
+            onApplyTemplate: (tpl: PhysicsTemplate) => {
+              const rest = (value.overlays ?? []).filter((o) => o.type !== 'physics');
+              const overlays = tpl.marks ? [...rest, { type: 'physics' as const }] : rest;
+              patch({
+                equation: tpl.equation,
+                constants: { ...tpl.constants },
+                xAxis: { ...tpl.domain },
+                ...(overlays.length > 0 ? { overlays } : { overlays: undefined }),
+              });
+              onCommit?.();
+            },
           }}
         />
       )}
