@@ -174,6 +174,116 @@ const LINE_VIEW_BASE = 8;
 const DEFAULT_ASPECT = 0.75;
 
 /**
+ * 参数式 / 极坐标默认参数域 [0, 2π]（ZOO-191 T4）：参数圆 / 心形线 / 李萨如
+ * 的整周期；摆线默认域出一段完整拱。元素 xAxis 字段复用为 t/θ 域。
+ */
+export const DEFAULT_PARAMETER_DOMAIN = { min: 0, max: Math.PI * 2 } as const;
+
+/**
+ * 参数式采样（ZOO-191 T4）：t 均匀采样 → (fx(t), fy(t)) 数学坐标折线。
+ * 断笔：x/y 任一非有限断笔；相邻点距超过视窗对角线 2 倍判为渐近线跳变断笔
+ * （对角线判据尺度无关——陡峭单调段〔Δy 大 Δx 小〕不会误杀，sec/tan 类
+ * 渐近线两侧的双向大跳会被截断）。
+ * 视窗：**xy 双向**四分位自适应（fitYWindow 的分位数逻辑与轴无关，x/y 独立
+ * 拟合后取中位数为中心），再经 aspectWindow 与卡片纵横比对齐（圆不画成椭圆）。
+ */
+export function sampleParametric(
+  fx: (t: number) => number,
+  fy: (t: number) => number,
+  view: Pick<MathViewport, 'xMin' | 'xMax'>,
+  count: number,
+  aspect: number = DEFAULT_ASPECT,
+  t: LibT = zhT,
+): SampleResult {
+  const { xMin: tMin, xMax: tMax } = view;
+  if (!(tMin < tMax)) return { error: t('mathErr.domainOrder') };
+  const width = tMax - tMin;
+  if (width < MIN_DOMAIN_WIDTH - 1e-12 || width > MAX_DOMAIN_WIDTH + 1e-12) {
+    return { error: t('mathErr.domainWidth') };
+  }
+
+  const n = clampSampleCount(count);
+  const xs = new Array<number>(n);
+  const ys = new Array<number>(n);
+  let anyFinite = false;
+  for (let i = 0; i < n; i++) {
+    const tv = tMin + (width * i) / (n - 1);
+    const x = fx(tv);
+    const y = fy(tv);
+    const finite = Number.isFinite(x) && Number.isFinite(y);
+    xs[i] = finite ? (x as number) : NaN;
+    ys[i] = finite ? (y as number) : NaN;
+    if (finite) anyFinite = true;
+  }
+  if (!anyFinite) return { error: t('mathErr.noValidValues') };
+
+  // xy 双向稳健拟合（分位数与轴无关，fitYWindow 直接复用于 x 轴）
+  const finiteXs = xs.filter((x) => Number.isFinite(x));
+  const finiteYs = ys.filter((y) => Number.isFinite(y));
+  const xFit = fitYWindow(finiteXs);
+  const yFit = fitYWindow(finiteYs);
+  const cx = (xFit.min + xFit.max) / 2;
+  const cy = (yFit.min + yFit.max) / 2;
+  // 数据视窗外扩 15% + 0.5 内边距后与卡片纵横比对齐（直线视窗同款余量）
+  const { halfX, halfY } = aspectWindow(((xFit.max - xFit.min) / 2) * 1.15 + 0.5, ((yFit.max - yFit.min) / 2) * 1.15 + 0.5, aspect);
+  const xMinV = cx - halfX;
+  const xMaxV = cx + halfX;
+  const yMinV = cy - halfY;
+  const yMaxV = cy + halfY;
+  const diag = Math.hypot(xMaxV - xMinV, yMaxV - yMinV);
+
+  const polylines: Polyline[] = [];
+  let current: Polyline = [];
+  const breakHere = () => {
+    if (current.length > 0) polylines.push(current);
+    current = [];
+  };
+  for (let i = 0; i < n; i++) {
+    const x = xs[i];
+    const y = ys[i];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      breakHere();
+      continue;
+    }
+    if (current.length > 0) {
+      const prev = current[current.length - 1];
+      if (Math.hypot(x - prev.x, y - prev.y) > 2 * diag) breakHere(); // 渐近线跳变
+    }
+    current.push({ x, y });
+  }
+  breakHere();
+  return { polylines, xMin: xMinV, xMax: xMaxV, yMin: yMinV, yMax: yMaxV };
+}
+
+/**
+ * 极坐标采样（ZOO-191 T4）：r(θ) → (r·cosθ, r·sinθ) 的参数式退化封装
+ * （断笔 / 视窗 / 域校验全部复用 sampleParametric；r 非有限或 r·cosθ 溢出
+ * 均按非有限点断笔）。负 r 经 cos/sin 自然映射（点关于原点对称，标准行为）。
+ */
+export function samplePolar(
+  rFn: (theta: number) => number,
+  view: Pick<MathViewport, 'xMin' | 'xMax'>,
+  count: number,
+  aspect: number = DEFAULT_ASPECT,
+  t: LibT = zhT,
+): SampleResult {
+  return sampleParametric(
+    (theta) => {
+      const r = rFn(theta);
+      return Number.isFinite(r) ? r * Math.cos(theta) : NaN;
+    },
+    (theta) => {
+      const r = rFn(theta);
+      return Number.isFinite(r) ? r * Math.sin(theta) : NaN;
+    },
+    view,
+    count,
+    aspect,
+    t,
+  );
+}
+
+/**
  * 等比视窗适配（ZOO-147 修复，惠及全部几何 kind）：几何视窗必须与卡片纵横比
  * 一致（ySpan = aspect·xSpan），否则 4:3 卡片里方形数学视窗会把圆画成椭圆、
  * 直线斜率失真。给定 x/y 半宽需求，返回与卡片纵横比一致且两侧都容纳需求的半宽。
@@ -405,7 +515,9 @@ export function sampleGeometry(
 }
 
 /** 统一采样入口（4c 渲染管线调用）：按 ParseResult 分类分发。
- *  aspect = 卡片高宽比，几何 kind 用于生成纵横比一致的等比视窗（ZOO-147）。 */
+ *  aspect = 卡片高宽比，几何 kind 用于生成纵横比一致的等比视窗（ZOO-147）。
+ *  ZOO-191（T4）：parametric / polar 走参数域采样——opts.xMin/xMax 即 t/θ 域
+ *  （元素 xAxis 字段复用），视窗由数据 xy 双向自适应（忽略传入的 y 视窗）。 */
 export function sampleEquation(
   result: ParseResult,
   opts: { xMin: number; xMax: number; yMin?: number; yMax?: number; sampleCount?: number; aspect?: number },
@@ -414,6 +526,12 @@ export function sampleEquation(
   if (result.kind === 'error') return { error: result.message };
   if (result.kind === 'explicit') {
     return sampleExplicit(result.fn, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, t);
+  }
+  if (result.kind === 'parametric') {
+    return sampleParametric(result.fx, result.fy, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, opts.aspect ?? DEFAULT_ASPECT, t);
+  }
+  if (result.kind === 'polar') {
+    return samplePolar(result.fn, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, opts.aspect ?? DEFAULT_ASPECT, t);
   }
   return sampleGeometry(result.kind, result.params, opts.aspect ?? DEFAULT_ASPECT, t);
 }
@@ -424,6 +542,7 @@ export function sampleEquation(
  * 返回 null 表示不出曲线（错误态 / 解析失败），预览仅显示坐标系或错误文案。
  * ZOO-188（T1）：constants 透传 parseEquation——含符号常量的公式（y=A·sin(ωx+φ)）
  * 绑定常量后预览实时出曲线。
+ * ZOO-191（T4）：parametric / polar 预览用默认参数域 [0,2π]（四类模板的整周期）。
  */
 export function createPreviewPolylines(
   equation: string,
@@ -431,6 +550,13 @@ export function createPreviewPolylines(
   constants?: Record<string, number>,
 ): PreviewData | null {
   if (outcome.kind === 'error') return null;
+  if (outcome.kind === 'parametric' || outcome.kind === 'polar') {
+    const parsed = parseEquation(equation, zhT, constants);
+    if (parsed.kind !== 'parametric' && parsed.kind !== 'polar') return null;
+    const sampled = sampleEquation(parsed, { xMin: DEFAULT_PARAMETER_DOMAIN.min, xMax: DEFAULT_PARAMETER_DOMAIN.max, sampleCount: DEFAULT_SAMPLE_COUNT });
+    if ('error' in sampled) return null;
+    return { polylines: sampled.polylines, xMin: sampled.xMin, xMax: sampled.xMax, yMin: sampled.yMin, yMax: sampled.yMax };
+  }
   if (outcome.kind !== 'explicit') {
     const sampled = sampleGeometry(outcome.kind, outcome.params);
     if ('error' in sampled) return null;

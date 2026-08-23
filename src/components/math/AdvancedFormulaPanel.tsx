@@ -22,7 +22,10 @@
  * - T3 积分区（ZOO-190，同微积分区）：定积分开关 + a/b 数值输入（a<b 且在
  *   定义域内校验，编辑侧经 binding.domain 传入；区间内无定义点由渲染层
  *   奇点防护报错 chip 兜底）；
- * - T4（参数式）/ T5（物理模板）分区仍为占位。
+ * - T4 参数式区（ZOO-191，parametric 绑定时渲染）：参数圆 / 心形线 / 摆线 /
+ *   李萨如模板行（点选回填方程输入）+ t/θ 取值范围数值输入（当前方程是
+ *   参数式 / 极坐标时激活，直改实时预览、失焦提交一条，D5 同款）；
+ * - T5（物理模板）分区仍为占位。
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -30,7 +33,7 @@ import { useT } from '@/i18n/I18nProvider';
 import { constantDisplayName, normalizeConstantKey } from '@/lib/math/normalize';
 import type { MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
-import { ADVANCED_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/templates';
+import { ADVANCED_TEMPLATES, PARAMETRIC_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/templates';
 
 /**
  * T1 常量编辑区绑定（两入口共用）：创建侧由 EquationEditor 持草稿态，
@@ -59,6 +62,29 @@ export interface AdvancedFormulaPanelProps {
   constants?: AdvancedConstantsBinding;
   /** T2 微积分编辑区绑定（ZOO-189）；缺省时微积分分区保持 T0 占位 */
   calculus?: AdvancedCalculusBinding;
+  /** T4 参数式编辑区绑定（ZOO-191）；缺省时参数式分区保持 T0 占位 */
+  parametric?: AdvancedParametricBinding;
+}
+
+/**
+ * T4 参数式编辑区绑定（ZOO-191，两入口共用）：编辑侧直连元素 xAxis（t/θ 域，
+ * 元素真实字段），创建侧连编辑器参数域草稿（确认载荷 payload.domain 带出）。
+ * 模板行（参数圆 / 心形线 / 摆线 / 李萨如）点选回填方程输入——方程转为
+ * 参数式 / 极坐标后 t/θ 域输入随之激活。
+ */
+export interface AdvancedParametricBinding {
+  /** 当前方程文本（判定参数式 / 极坐标态与参数字母） */
+  equation: string;
+  /** 常量绑定（裁决参与——x=v0·cos(θ)·t 配常量才是合法参数式） */
+  constants?: Record<string, number>;
+  /** 当前 t/θ 取值范围（编辑侧 = 元素 xAxis；创建侧 = 草稿，缺省 [0,2π]） */
+  domain: { min: number; max: number };
+  /** 域变更（数值输入实时预览，不上历史） */
+  onDomainChange: (domain: { min: number; max: number }) => void;
+  /** 一次可撤销操作边界（输入失焦时）；创建侧可缺省 */
+  onCommit?: () => void;
+  /** 模板点选出口（回填方程输入并重置参数域为缺省）；缺省不渲染模板行 */
+  onApplyTemplate?: (equation: string) => void;
 }
 
 /**
@@ -455,7 +481,89 @@ function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
   );
 }
 
-export default function AdvancedFormulaPanel({ onClose, constants, calculus }: AdvancedFormulaPanelProps) {
+/** T4 参数式编辑区（ZOO-191）：模板行 + t/θ 取值范围数值输入（当前方程
+ *  是参数式 / 极坐标时激活；否则提示并保留模板行引导点选）。 */
+function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
+  const t = useT();
+  const outcome = validateEquation(binding.equation, t, binding.constants);
+  const active = outcome.kind === 'parametric' || outcome.kind === 'polar';
+  const variable = active
+    ? outcome.kind === 'polar'
+      ? constantDisplayName(outcome.variable ?? 'theta')
+      : outcome.variable ?? 't'
+    : null;
+  const orderInvalid = !(binding.domain.min < binding.domain.max);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* 模板行：点选回填方程输入并重置参数域为缺省（四类模板整周期 [0,2π]） */}
+      {binding.onApplyTemplate && (
+        <div className="flex flex-wrap gap-1">
+          {PARAMETRIC_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => binding.onApplyTemplate?.(tpl.equation)}
+              title={tpl.equation}
+              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="block text-[10px] text-gray-400 leading-tight">{t(advancedTemplateNameKey(tpl.id))}</span>
+              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* t/θ 取值范围：直改实时预览（D5），失焦提交一条；非参数式方程禁用并提示 */}
+      <div className={`flex items-center gap-1.5 ${active ? '' : 'opacity-50'}`}>
+        <span className="font-serif italic text-[13px] text-gray-800 leading-none w-4 text-center">{variable ?? 't'}</span>
+        <span className="text-gray-400 text-[11px]" aria-hidden="true">
+          ∈
+        </span>
+        <input
+          type="number"
+          step="any"
+          value={String(binding.domain.min)}
+          disabled={!active}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (Number.isFinite(v)) binding.onDomainChange({ ...binding.domain, min: v });
+          }}
+          onBlur={binding.onCommit}
+          aria-label={t('advFormula.paramDomainMin')}
+          autoComplete="off"
+          className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+        />
+        <span className="text-gray-400">~</span>
+        <input
+          type="number"
+          step="any"
+          value={String(binding.domain.max)}
+          disabled={!active}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (Number.isFinite(v)) binding.onDomainChange({ ...binding.domain, max: v });
+          }}
+          onBlur={binding.onCommit}
+          aria-label={t('advFormula.paramDomainMax')}
+          autoComplete="off"
+          className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+        />
+      </div>
+
+      {!active && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.parametricInactive')}</div>
+      )}
+      {active && orderInvalid && (
+        <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
+          ⚠ {t('advFormula.paramDomainOrder')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric }: AdvancedFormulaPanelProps) {
   const t = useT();
 
   // Esc 关闭（窗口级监听，LanguageSwitch 同款）。T1 起面板含文本输入（常量名/数值），
@@ -496,10 +604,11 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus }: A
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
           <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.hint')}</div>
           {SECTIONS.map((s) => {
-            // T1/T2：常量、微积分分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
+            // T1/T2/T4：常量、微积分、参数式分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
             const constantsLive = s.id === 'constants' && constants;
             const calculusLive = s.id === 'calculus' && calculus;
-            const live = constantsLive || calculusLive;
+            const parametricLive = s.id === 'parametric' && parametric;
+            const live = constantsLive || calculusLive || parametricLive;
             return (
               <section key={s.id} className="border border-gray-200 rounded-lg p-2.5 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5">
@@ -516,8 +625,10 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus }: A
                   <ConstantsArea binding={constants} />
                 ) : calculusLive ? (
                   <CalculusArea binding={calculus} />
+                ) : parametricLive ? (
+                  <ParametricArea binding={parametric} />
                 ) : (
-                  // T0 占位：分区控件由后续任务填充（积分 T3 / 参数式 T4 / 物理模板 T5）
+                  // T0 占位：分区控件由后续任务填充（物理模板 T5）
                   <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">
                     ▢ ▢ ▢
                   </div>

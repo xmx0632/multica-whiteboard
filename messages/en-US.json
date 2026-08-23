@@ -164,7 +164,9 @@
     "hint": "Confirming creates a math plot element on the canvas, with its own coordinate system — move / resize / undo supported.",
     "previewWait": "Live preview",
     "previewUnavailable": "Preview unavailable",
-    "previewAria": "Equation live preview"
+    "previewAria": "Equation live preview",
+    "kindParametric": "Parametric equation (parameter {v})",
+    "kindPolar": "Polar equation r=f(θ)"
   },
   "params": {
     "title": "Math plot",
@@ -218,7 +220,9 @@
     "opacity": "Opacity: {n}%",
     "duplicate": "Duplicate",
     "delete": "Delete",
-    "hint": "Parameter changes redraw instantly; move / resize / delete can be undone with Ctrl+Z."
+    "hint": "Parameter changes redraw instantly; move / resize / delete can be undone with Ctrl+Z.",
+    "badgeParametric": "Parametric",
+    "badgePolar": "Polar"
   },
   "advFormula": {
     "entryLabel": "Calculus / Physics…",
@@ -253,7 +257,15 @@
     "calcIntegralDesc": "Definite integral shading",
     "calcIntegralRange": "The integral interval needs a<b and must stay within the domain",
     "calcIntegralLower": "Integral lower bound a",
-    "calcIntegralUpper": "Integral upper bound b"
+    "calcIntegralUpper": "Integral upper bound b",
+    "tplParametricCircle": "Parametric circle",
+    "tplCardioid": "Cardioid",
+    "tplCycloid": "Cycloid",
+    "tplLissajous": "Lissajous",
+    "paramDomainMin": "Parameter lower bound",
+    "paramDomainMax": "Parameter upper bound",
+    "parametricInactive": "Current equation is not parametric / polar — pick a template above, or type x=f(t),y=g(t) / r=f(θ)",
+    "paramDomainOrder": "Range needs lower bound less than upper bound"
   },
   "math": {
     "join": "{a} and {b}",
@@ -307,7 +319,8 @@
     "invalidDomainOrder": "Invalid domain: xMin must be less than xMax",
     "invalidDomainWidth": "Invalid domain: width must be between 0.1 and 1000",
     "integralInvalid": "Invalid integral interval (a must be less than b) — adjust the a/b endpoints",
-    "integralSingularity": "The function is undefined somewhere in the interval — adjust a/b to avoid it (e.g. 1/x must avoid x=0)"
+    "integralSingularity": "The function is undefined somewhere in the interval — adjust a/b to avoid it (e.g. 1/x must avoid x=0)",
+    "parametricNoParameter": "Neither side of the parametric form has a parameter letter — introduce one, e.g. x=cos(t),y=sin(t)"
   },
   "autosave": {
     "conflict": "Another tab is also editing this whiteboard; this tab's latest content was saved",

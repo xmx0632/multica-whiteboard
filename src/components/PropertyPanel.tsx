@@ -140,15 +140,19 @@ export default function PropertyPanel() {
 
   // —— 态 1.5：原位替换（错误占位 / 既有元素「重新编辑方程」）——
   if (editingEl && editingEl.type === 'mathPlot') {
+    // ZOO-191（T4）：参数式 / 极坐标元素重编辑回填 t/θ 域草稿；载荷未携带域
+    // （未触碰）时以元素现域兜底——方程微调不重置参数域
+    const editingParamDomain = editingEl.kind === 'parametric' || editingEl.kind === 'polar' ? editingEl.xAxis : undefined;
     return renderFoldable(
       <EquationEditor
         key={editingEl.id}
         initialEquation={editingEl.equation}
         initialConstants={editingEl.constants}
         initialOverlays={editingEl.overlays}
+        initialDomain={editingParamDomain}
         onCancel={() => setEditingId(null)}
         onConfirm={(payload) => {
-          updateElement(editingEl.id, mathPlotFieldsFromPayload(payload));
+          updateElement(editingEl.id, mathPlotFieldsFromPayload(payload, editingParamDomain));
           setEditingId(null);
           setSelected(editingEl.id);
         }}
@@ -219,8 +223,14 @@ export default function PropertyPanel() {
       if (!cur) return;
       // 方程文本收敛：重新校验分类与错误信息（几何方程同步推导定义域）。
       // ZOO-188：按元素当前常量绑定裁决——含常量的合法方程（y=A·sin(ωx+φ)）不会
-      // 被误判非法而回滚；常量变化使 kind 翻转（欠定 → explicit）也在此收敛
-      const converged = convergeEquationCommit(cur.equation, t, cur.constants);
+      // 被误判非法而回滚；常量变化使 kind 翻转（欠定 → explicit）也在此收敛。
+      // ZOO-191（T4）：参数式 / 极坐标元素以现 t/θ 域兜底——方程微调不重置参数域
+      const converged = convergeEquationCommit(
+        cur.equation,
+        t,
+        cur.constants,
+        cur.kind === 'parametric' || cur.kind === 'polar' ? cur.xAxis : undefined,
+      );
       if (!converged.fields) {
         // ZOO-155：非法方程不落错误占位 —— 元素回滚到手势前快照（曲线保持原样），面板提示原因
         setEquationError(converged.error ?? t('math.unrecognized'));

@@ -164,7 +164,9 @@
     "hint": "确认后在画布生成数学图形元素（MathPlot）：自带坐标系，可移动 / 缩放 / 撤销重做。",
     "previewWait": "实时预览",
     "previewUnavailable": "无法预览",
-    "previewAria": "方程实时预览"
+    "previewAria": "方程实时预览",
+    "kindParametric": "参数方程（参数 {v}）",
+    "kindPolar": "极坐标方程 r=f(θ)"
   },
   "params": {
     "title": "数学图形",
@@ -218,7 +220,9 @@
     "opacity": "不透明度：{n}%",
     "duplicate": "复制",
     "delete": "删除",
-    "hint": "修改参数实时重绘；移动 / 缩放 / 删除均可用 Ctrl+Z 撤销。"
+    "hint": "修改参数实时重绘；移动 / 缩放 / 删除均可用 Ctrl+Z 撤销。",
+    "badgeParametric": "参数方程",
+    "badgePolar": "极坐标"
   },
   "advFormula": {
     "entryLabel": "微积分 / 物理公式…",
@@ -253,7 +257,15 @@
     "calcIntegralDesc": "定积分着色",
     "calcIntegralRange": "积分区间需 a<b 且在定义域内",
     "calcIntegralLower": "积分下限 a",
-    "calcIntegralUpper": "积分上限 b"
+    "calcIntegralUpper": "积分上限 b",
+    "tplParametricCircle": "参数圆",
+    "tplCardioid": "心形线",
+    "tplCycloid": "摆线",
+    "tplLissajous": "李萨如曲线",
+    "paramDomainMin": "参数下限",
+    "paramDomainMax": "参数上限",
+    "parametricInactive": "当前方程不是参数式 / 极坐标方程——点选上方模板，或输入 x=f(t),y=g(t) / r=f(θ)",
+    "paramDomainOrder": "取值范围需下限小于上限"
   },
   "math": {
     "join": "{a} 与 {b}",
@@ -307,7 +319,8 @@
     "invalidDomainOrder": "定义域无效：xmin 需小于 xmax",
     "invalidDomainWidth": "定义域无效：宽度需在 0.1–1000 之间",
     "integralInvalid": "积分区间无效（需 a<b）——请调整区间端点 a/b",
-    "integralSingularity": "积分区间内存在无定义点——请调整 a/b 避开（如 1/x 需避开 x=0）"
+    "integralSingularity": "积分区间内存在无定义点——请调整 a/b 避开（如 1/x 需避开 x=0）",
+    "parametricNoParameter": "参数式两端都没有参数字母——请形如 x=cos(t),y=sin(t) 引入参数 t"
   },
   "autosave": {
     "conflict": "其他标签页也在编辑此白板，已按本页最新内容保存",

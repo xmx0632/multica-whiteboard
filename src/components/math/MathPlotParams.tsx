@@ -18,6 +18,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
+import { constantDisplayName } from '@/lib/math/normalize';
 import { validateEquation } from '@/lib/math/validate';
 import {
   ellipseTeachingInfo,
@@ -41,7 +42,8 @@ import type {
 
 export interface MathPlotParamsValue {
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+  /** ZOO-191（T4）：parametric / polar——xAxis 复用为参数 t/θ 域、equalRatio 强制 true */
+  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   errorMessage?: string;
   /** kind === 'line' 时的一般式系数（调用方经 validateEquation 重解析填充，D7 教学参数） */
@@ -118,6 +120,8 @@ const KIND_BADGE_KEYS: Record<MathPlotParamsValue['kind'], { key: string; cls: s
   hyperbola: { key: 'params.badgeHyperbola', cls: 'bg-blue-50 text-blue-600' },
   circle: { key: 'params.badgeCircle', cls: 'bg-blue-50 text-blue-600' },
   ellipse: { key: 'params.badgeEllipse', cls: 'bg-blue-50 text-blue-600' },
+  parametric: { key: 'params.badgeParametric', cls: 'bg-blue-50 text-blue-600' },
+  polar: { key: 'params.badgePolar', cls: 'bg-blue-50 text-blue-600' },
   error: { key: 'params.badgeError', cls: 'bg-red-50 text-red-600' },
 };
 
@@ -139,12 +143,19 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const isFn = value.kind === 'explicit';
+  // ZOO-191（T4）：参数式 / 极坐标——定义域（t/θ 域）与采样档位控件同样开放
+  const isParam = value.kind === 'parametric' || value.kind === 'polar';
   const isError = value.kind === 'error';
   // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）。
-  // ZOO-188：常量参与裁决——y=A·sin(ωx+φ) 绑定常量后自变量解析为 x
+  // ZOO-188：常量参与裁决——y=A·sin(ωx+φ) 绑定常量后自变量解析为 x。
+  // ZOO-191（T4）：参数式按实际参数字母（缺省 t）；极坐标缺省显示 θ（theta 经
+  // constantDisplayName 还原原貌）
   const variable = useMemo(() => {
     const r = validateEquation(value.equation, t, value.constants);
-    return r.kind === 'explicit' && r.variable ? r.variable : 'x';
+    if (r.kind === 'explicit') return r.variable ?? 'x';
+    if (r.kind === 'parametric') return r.variable ?? 't';
+    if (r.kind === 'polar') return constantDisplayName(r.variable ?? 'theta');
+    return 'x';
   }, [value.equation, value.constants, t]);
   const badge = KIND_BADGE_KEYS[value.kind];
   // ZOO-176：教学参数文案随语言（t 注入；line/point 的产出为纯数学记号，无需 t）
@@ -228,7 +239,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             </button>
           )}
 
-          {isFn && (
+          {(isFn || isParam) && (
             <>
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">{t('params.domain', { v: variable })}</label>
@@ -500,8 +511,9 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           真实字段，经 handleParamsChange 落元素，不在派生剥除清单）、onCommit 提交一条；
           模板点选回填方程输入。
           ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
-          仅显式函数可叠加（几何/错误态禁用并提示）。
-          ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验） */}
+          仅显式函数可叠加（几何/错误态禁用并提示——parametric/polar 同口径）。
+          ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验）。
+          ZOO-191 T4：参数式区直连元素 xAxis（t/θ 域，元素真实字段）。 */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -519,6 +531,14 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             domain: value.xAxis,
             onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
             onCommit: () => onCommit?.(),
+          }}
+          parametric={{
+            equation: value.equation,
+            constants: value.constants,
+            domain: value.xAxis,
+            onDomainChange: (domain) => patch({ xAxis: domain }),
+            onCommit: () => onCommit?.(),
+            onApplyTemplate: (equation) => patch({ equation }),
           }}
         />
       )}

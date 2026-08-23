@@ -91,7 +91,12 @@ export interface MathPlotElement extends BaseElement {
 
   // —— 方程 ——
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+  /**
+   * ZOO-191（T4）：parametric（x=f(t),y=g(t)）/ polar（r=f(θ)）新 kind。
+   * xAxis 字段复用为参数 t/θ 域（缺省 [0,2π]，高级公式面板参数式区编辑）；
+   * equalRatio 强制 true（参数圆不画成椭圆，与几何 kind 同口径）。
+   */
+  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   error?: string | null;
   /**

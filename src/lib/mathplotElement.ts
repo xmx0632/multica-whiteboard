@@ -7,7 +7,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { zhT, type LibT } from '../i18n/lib';
-import { sampleGeometry } from './math/sample';
+import { DEFAULT_PARAMETER_DOMAIN, sampleGeometry } from './math/sample';
 import { validateEquation } from './math/validate';
 import type { EquationDraftPayload, MathPlotOverlay } from './math/types';
 import { DEFAULT_MATHPLOT, MathPlotElement } from './types';
@@ -61,7 +61,18 @@ export interface MathPlotPatch {
   overlays?: MathPlotOverlay[] | undefined;
 }
 
-export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPlotPatch {
+/**
+ * 参数式 / 极坐标字段（ZOO-191 T4）：参数域优先级 payload.domain（编辑器
+ * 草稿）→ fallbackDomain（原位替换时既有元素当前域——方程文本微调不重置
+ * t/θ 域）→ DEFAULT_PARAMETER_DOMAIN（创建缺省 [0,2π]）；equalRatio 强制
+ * true（参数圆不画成椭圆，几何 kind 同口径）。
+ */
+function parametricFields(payload: EquationDraftPayload, fallbackDomain?: { min: number; max: number }): Pick<MathPlotElement, 'xAxis' | 'equalRatio'> {
+  const domain = payload.domain ?? fallbackDomain ?? DEFAULT_PARAMETER_DOMAIN;
+  return { xAxis: { min: domain.min, max: domain.max }, equalRatio: true };
+}
+
+export function mathPlotFieldsFromPayload(payload: EquationDraftPayload, fallbackDomain?: { min: number; max: number }): MathPlotPatch {
   const outcome = payload.outcome;
   const base: MathPlotPatch = {
     equation: payload.equation,
@@ -76,6 +87,9 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload): MathPl
   if (payload.overlays !== undefined) {
     // 空数组 = 显式清空（键置 undefined 覆盖旧值；非显式 undefined 不触碰既有叠加）
     base.overlays = payload.overlays.length > 0 ? payload.overlays.map((o) => ({ ...o })) : undefined;
+  }
+  if (outcome.kind === 'parametric' || outcome.kind === 'polar') {
+    return { ...base, ...parametricFields(payload, fallbackDomain) };
   }
   if (
     outcome.kind === 'line' ||
@@ -105,12 +119,19 @@ export interface EquationCommitResult {
  */
 /** ZOO-176：t 透传（错误文案随语言；缺省中文与历史行为一致）。
  *  ZOO-188（T1）：constants 透传——面板调参提交收敛须按元素当前常量绑定裁决，
- *  否则含常量的合法方程（y=A·sin(ωx+φ)）会被误判非法而回滚。 */
-export function convergeEquationCommit(equation: string, t: LibT = zhT, constants?: Record<string, number>): EquationCommitResult {
+ *  否则含常量的合法方程（y=A·sin(ωx+φ)）会被误判非法而回滚。
+ *  ZOO-191（T4）：fallbackDomain 透传（元素当前 t/θ 域）——参数式方程文本
+ *  微调收敛时不重置用户调好的参数域；非参数式元素不传（undefined）。 */
+export function convergeEquationCommit(
+  equation: string,
+  t: LibT = zhT,
+  constants?: Record<string, number>,
+  fallbackDomain?: { min: number; max: number },
+): EquationCommitResult {
   const outcome = validateEquation(equation, t, constants);
   const trimmed = equation.trim();
   if (outcome.kind === 'error') return { fields: null, error: outcome.message };
-  return { fields: mathPlotFieldsFromPayload({ equation: trimmed || equation, outcome }) };
+  return { fields: mathPlotFieldsFromPayload({ equation: trimmed || equation, outcome }, fallbackDomain) };
 }
 
 /** 方程载荷 → 新元素（外框中心落点；默认 480×360，超出可视区时按比例收缩）。 */

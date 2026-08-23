@@ -27,7 +27,7 @@ import { useT } from '@/i18n/I18nProvider';
 import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey } from '@/lib/math/templates';
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
-import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
+import { DEFAULT_PARAMETER_DOMAIN, createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
 import type { EquationDraftPayload, MathPlotOverlay, PreviewData, StructuralOutcome } from '@/lib/math/types';
 
 /** 分类状态行文案资源键（ZOO-166 方案 A：显式函数按实际自变量字母显示；ZOO-176 随语言）。 */
@@ -41,9 +41,12 @@ const KIND_LABEL_KEYS: Record<string, string> = {
   ellipse: 'equation.kindEllipse',
 };
 
-/** 分类状态行文案（经注入 t 按语言渲染）。 */
+/** 分类状态行文案（经注入 t 按语言渲染）。ZOO-191（T4）：参数式按实际参数字母
+ *  显示（x=cos(u),y=sin(u) 报「参数 u」），极坐标恒报 kindPolar。 */
 function kindLabel(outcome: StructuralOutcome, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (outcome.kind === 'explicit') return t('equation.kindExplicit', { v: outcome.variable ?? 'x' });
+  if (outcome.kind === 'parametric') return t('equation.kindParametric', { v: outcome.variable ?? 't' });
+  if (outcome.kind === 'polar') return t('equation.kindPolar');
   const key = KIND_LABEL_KEYS[outcome.kind];
   return key ? t(key) : outcome.kind;
 }
@@ -55,6 +58,8 @@ export interface EquationEditorProps {
   initialConstants?: Record<string, number>;
   /** 载入初始叠加（ZOO-189：高级元素重编辑回填叠加草稿；缺省空） */
   initialOverlays?: MathPlotOverlay[];
+  /** 载入初始参数域（ZOO-191：参数式 / 极坐标元素重编辑回填 t/θ 域草稿；缺省空） */
+  initialDomain?: { min: number; max: number };
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
   /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
@@ -67,6 +72,7 @@ export default function EquationEditor({
   initialEquation = '',
   initialConstants,
   initialOverlays,
+  initialDomain,
   onConfirm,
   onCancel,
   createPreviewPolylines = samplePreviewPolylines,
@@ -76,6 +82,9 @@ export default function EquationEditor({
   const [constantValues, setConstantValues] = useState<Record<string, number>>(initialConstants ?? {});
   // ZOO-189：叠加草稿（高级公式面板微积分区编辑；确认时随载荷全量带出，空数组 = 无叠加）
   const [overlayDraft, setOverlayDraft] = useState<MathPlotOverlay[]>(initialOverlays ?? []);
+  // ZOO-191：参数域草稿（高级公式面板参数式区编辑；null = 未触碰——确认时
+  // 不携带（创建落默认 [0,2π]、原位替换保持元素现值），模板点选重置为 null）
+  const [paramDomain, setParamDomain] = useState<{ min: number; max: number } | null>(initialDomain ?? null);
   // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,7 +116,7 @@ export default function EquationEditor({
       inputRef.current?.focus();
       return;
     }
-    onConfirm?.({ equation: trimmed, outcome, constants: constantValues, overlays: overlayDraft });
+    onConfirm?.({ equation: trimmed, outcome, constants: constantValues, overlays: overlayDraft, domain: paramDomain ?? undefined });
   };
 
   const insertAtCursor = (text: string) => {
@@ -127,6 +136,12 @@ export default function EquationEditor({
         input.setSelectionRange(equation.length, equation.length);
       }
     });
+  };
+
+  // ZOO-191：参数式模板点选——回填方程并重置参数域草稿（四类模板整周期取默认域）
+  const applyParametricTemplate = (equation: string) => {
+    setParamDomain(null);
+    applyTemplate(equation);
   };
 
   const statusLine = () => {
@@ -296,7 +311,8 @@ export default function EquationEditor({
 
       {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
           ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框。
-          ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出） */}
+          ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出）。
+          ZOO-191 T4：参数式区连参数域草稿（未触碰显示默认 [0,2π]，确认时随载荷带出）。 */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -310,6 +326,13 @@ export default function EquationEditor({
             values: overlayDraft,
             applicable: outcome.kind === 'explicit',
             onChange: setOverlayDraft,
+          }}
+          parametric={{
+            equation: draft,
+            constants: constantValues,
+            domain: paramDomain ?? { min: DEFAULT_PARAMETER_DOMAIN.min, max: DEFAULT_PARAMETER_DOMAIN.max },
+            onDomainChange: setParamDomain,
+            onApplyTemplate: applyParametricTemplate,
           }}
         />
       )}

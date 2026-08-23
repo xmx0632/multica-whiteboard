@@ -91,9 +91,9 @@ export function formatAreaValue(v: number): string {
 /** 解析输入契约（4d 的 MathPlotElement 数学字段的子集）。 */
 export interface PlotSpec {
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   errorMessage?: string;
-  /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定） */
+  /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定；参数式 / 极坐标复用为 t/θ 域〔ZOO-191 T4〕） */
   xAxis: { min: number; max: number };
   /** x/y 单位等比（圆/椭圆强制 true）：y 视窗 = 定义域按宽高比推导 */
   equalRatio: boolean;
@@ -101,8 +101,9 @@ export interface PlotSpec {
   /** 符号常量绑定（ZOO-188 T1）：显式路径求值 scope 注入；缺省 = 无常量 */
   constants?: Record<string, number>;
   /**
-   * 微积分叠加（ZOO-189 T2）：仅显式函数生效（几何/错误态忽略）；缺省 / 空 =
-   * 无叠加，走既有渲染路径（零变化）。进渲染缓存签名（叠加参数是数学输入）。
+   * 微积分叠加（ZOO-189 T2）：仅显式函数生效（几何/错误态忽略——parametric /
+   * polar 同口径静默忽略、数据保留，方程改回显式即恢复生效〔ZOO-191 T4〕）；
+   * 缺省 / 空 = 无叠加，走既有渲染路径（零变化）。进渲染缓存签名（叠加参数是数学输入）。
    */
   overlays?: readonly MathPlotOverlay[];
 }

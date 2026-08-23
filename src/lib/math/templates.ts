@@ -104,6 +104,20 @@ export const ADVANCED_TEMPLATES: EquationTemplate[] = [
 /** 高级面板模板显示名资源键（advFormula.tpl<Id>）。 */
 export const advancedTemplateNameKey = (id: string) => `advFormula.tpl${keySuffix(id)}`;
 
+/**
+ * 参数式模板（ZOO-191 T4）：落高级公式面板参数式分区（复用 T1 的
+ * advancedTemplateNameKey 机制），不进 EQUATION_TEMPLATES / TEMPLATE_GROUPS
+ * ——19 模板面板零改动（零回归硬约束）。方程原文保留书写原貌（θ 归一化层
+ * 翻译 theta），默认参数域 [0,2π] 即参数圆 / 心形线 / 李萨如的整周期
+ * （摆线出一段完整拱）。
+ */
+export const PARAMETRIC_TEMPLATES: EquationTemplate[] = [
+  { id: 'parametricCircle', equation: 'x=cos(t),y=sin(t)' },
+  { id: 'cardioid', equation: 'r=1+cos(θ)' },
+  { id: 'cycloid', equation: 'x=t-sin(t),y=1-cos(t)' },
+  { id: 'lissajous', equation: 'x=sin(3t),y=sin(5t)' },
+];
+
 /** 符号悬停提示资源键（equation.symbol<Id>）。 */
 export const symbolTitleKey = (id: string) => `equation.symbol${keySuffix(id)}`;
 

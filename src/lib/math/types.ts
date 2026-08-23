@@ -10,7 +10,22 @@
  */
 import type { Point } from '../types';
 
-export type EquationKind = 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+/**
+ * ZOO-191（T4）：parametric（x=f(t),y=g(t) 顶层逗号双等式）与 polar（r= 前缀）。
+ * 求值函数约定与 explicit 同款——异常 / 非 number 返回 NaN（采样期按断笔处理）。
+ */
+export type EquationKind =
+  | 'explicit'
+  | 'line'
+  | 'linePair'
+  | 'point'
+  | 'parabola'
+  | 'hyperbola'
+  | 'circle'
+  | 'ellipse'
+  | 'parametric'
+  | 'polar'
+  | 'error';
 
 /** 二元一次方程一般式 ax+by=c 的探针系数（ZOO-146 / D7，含 b=0 竖线）。 */
 export interface LineParams {
@@ -110,6 +125,8 @@ export type StructuralOutcome =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
+  | { kind: 'parametric'; variable?: string }
+  | { kind: 'polar'; variable?: string }
   | { kind: 'error'; message: string };
 
 /**
@@ -125,6 +142,8 @@ export type ParseResult =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
+  | { kind: 'parametric'; fx: (t: number) => number; fy: (t: number) => number; variable?: string }
+  | { kind: 'polar'; fn: (theta: number) => number; variable?: string }
   | { kind: 'error'; message: string };
 
 /** 采样折线（数学坐标，4c sample.ts 产物；MiniPreview / 主画布 / SVG 导出共用）。 */
@@ -163,10 +182,13 @@ export type MathPlotOverlay =
  *  ZOO-188（T1）：constants 为编辑器常量草稿全量快照——undefined 表示本次流程
  *  无常量参与（不触碰元素既有绑定）；空字典表示显式清空（原位替换时清掉元素常量）。
  *  ZOO-189（T2）：overlays 语义与 constants 对齐——undefined 不触碰、数组（含空）
- *  为全量快照（空数组 = 显式清空，落元素前归一为 undefined）。 */
+ *  为全量快照（空数组 = 显式清空，落元素前归一为 undefined）。
+ *  ZOO-191（T4）：domain 为参数式 / 极坐标的参数域草稿（元素 xAxis 字段复用为
+ *  t/θ 域）——undefined 表示未触碰（创建落默认 [0,2π]，原位替换保持元素现值）。 */
 export interface EquationDraftPayload {
   equation: string;
   outcome: StructuralOutcome;
   constants?: Record<string, number>;
   overlays?: MathPlotOverlay[];
+  domain?: { min: number; max: number };
 }

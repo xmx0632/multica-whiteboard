@@ -164,7 +164,9 @@
     "hint": "확인하면 캔버스에 수학 그래프 요소(MathPlot)가 생성됩니다. 좌표계를 포함하며 이동 / 확대·축소 / 실행 취소가 가능합니다.",
     "previewWait": "실시간 미리보기",
     "previewUnavailable": "미리보기 불가",
-    "previewAria": "방정식 실시간 미리보기"
+    "previewAria": "방정식 실시간 미리보기",
+    "kindParametric": "매개변수 방정식 (매개변수 {v})",
+    "kindPolar": "극방정식 r=f(θ)"
   },
   "params": {
     "title": "수학 그래프",
@@ -218,7 +220,9 @@
     "opacity": "불투명도: {n}%",
     "duplicate": "복제",
     "delete": "삭제",
-    "hint": "매개변수 변경은 실시간으로 다시 그려집니다. 이동 / 확대·축소 / 삭제는 Ctrl+Z로 실행 취소할 수 있습니다."
+    "hint": "매개변수 변경은 실시간으로 다시 그려집니다. 이동 / 확대·축소 / 삭제는 Ctrl+Z로 실행 취소할 수 있습니다.",
+    "badgeParametric": "매개변수",
+    "badgePolar": "극좌표"
   },
   "advFormula": {
     "entryLabel": "미적분 / 물리 공식…",
@@ -253,7 +257,15 @@
     "calcIntegralDesc": "정적분 음영",
     "calcIntegralRange": "적분 구간은 a<b이며 정의역 안에 있어야 합니다",
     "calcIntegralLower": "적분 하한 a",
-    "calcIntegralUpper": "적분 상한 b"
+    "calcIntegralUpper": "적분 상한 b",
+    "tplParametricCircle": "매개변수 원",
+    "tplCardioid": "카디오이드",
+    "tplCycloid": "사이클로이드",
+    "tplLissajous": "리사주 곡선",
+    "paramDomainMin": "매개변수 하한",
+    "paramDomainMax": "매개변수 상한",
+    "parametricInactive": "현재 방정식은 매개변수 / 극좌표 형식이 아닙니다——위 템플릿을 선택하거나 x=f(t),y=g(t) / r=f(θ)를 입력하세요",
+    "paramDomainOrder": "범위는 하한이 상한보다 작아야 합니다"
   },
   "math": {
     "join": "{a} 및 {b}",
@@ -307,7 +319,8 @@
     "invalidDomainOrder": "정의역이 잘못되었습니다: xmin은 xmax보다 작아야 합니다",
     "invalidDomainWidth": "정의역이 잘못되었습니다: 폭은 0.1–1000 사이여야 합니다",
     "integralInvalid": "적분 구간이 잘못되었습니다(a<b이어야 함) — 구간 끝점 a/b를 조정하세요",
-    "integralSingularity": "구간 안에 정의되지 않는 점이 있습니다 — a/b를 조정해 피하세요(예: 1/x는 x=0 피하기)"
+    "integralSingularity": "구간 안에 정의되지 않는 점이 있습니다 — a/b를 조정해 피하세요(예: 1/x는 x=0 피하기)",
+    "parametricNoParameter": "매개변수 형식 양쪽에 매개변수 문자가 없습니다——x=cos(t),y=sin(t)처럼 t를 도입하세요"
   },
   "autosave": {
     "conflict": "다른 탭에서도 이 화이트보드를 편집 중입니다. 이 탭의 최신 내용으로 저장했습니다",

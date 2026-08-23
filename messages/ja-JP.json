@@ -164,7 +164,9 @@
     "hint": "確定するとキャンバスに数学グラフ要素（MathPlot）が生成されます。座標系付きで、移動・拡大縮小・元に戻すが可能です。",
     "previewWait": "リアルタイムプレビュー",
     "previewUnavailable": "プレビューできません",
-    "previewAria": "方程式のリアルタイムプレビュー"
+    "previewAria": "方程式のリアルタイムプレビュー",
+    "kindParametric": "媒介変数方程式（パラメータ {v}）",
+    "kindPolar": "極方程式 r=f(θ)"
   },
   "params": {
     "title": "数学グラフ",
@@ -218,7 +220,9 @@
     "opacity": "不透明度：{n}%",
     "duplicate": "複製",
     "delete": "削除",
-    "hint": "パラメーター変更は即座に再描画されます。移動・拡大縮小・削除は Ctrl+Z で元に戻せます。"
+    "hint": "パラメーター変更は即座に再描画されます。移動・拡大縮小・削除は Ctrl+Z で元に戻せます。",
+    "badgeParametric": "媒介変数",
+    "badgePolar": "極座標"
   },
   "advFormula": {
     "entryLabel": "微積分 / 物理公式…",
@@ -253,7 +257,15 @@
     "calcIntegralDesc": "定積分の塗り",
     "calcIntegralRange": "積分区間は a<b かつ定義域内である必要があります",
     "calcIntegralLower": "積分の下限 a",
-    "calcIntegralUpper": "積分の上限 b"
+    "calcIntegralUpper": "積分の上限 b",
+    "tplParametricCircle": "パラメトリック円",
+    "tplCardioid": "カージオイド",
+    "tplCycloid": "サイクロイド",
+    "tplLissajous": "リサージュ曲線",
+    "paramDomainMin": "パラメータ下限",
+    "paramDomainMax": "パラメータ上限",
+    "parametricInactive": "現在の方程式は媒介変数・極座標ではありません——上のテンプレートを選ぶか、x=f(t),y=g(t) / r=f(θ) を入力してください",
+    "paramDomainOrder": "範囲は下限を上限より小さくしてください"
   },
   "math": {
     "join": "{a} と {b}",
@@ -307,7 +319,8 @@
     "invalidDomainOrder": "定義域が無効です：xmin は xmax 未満にしてください",
     "invalidDomainWidth": "定義域が無効です：幅は 0.1〜1000 の範囲にしてください",
     "integralInvalid": "積分区間が無効です（a<b が必要）——区間の端点 a/b を調整してください",
-    "integralSingularity": "区間内に定義されない点があります——a/b を調整して避けてください（例：1/x は x=0 を避ける）"
+    "integralSingularity": "区間内に定義されない点があります——a/b を調整して避けてください（例：1/x は x=0 を避ける）",
+    "parametricNoParameter": "パラメトリック形式の両辺にパラメータ文字がありません——x=cos(t),y=sin(t) のように t を導入してください"
   },
   "autosave": {
     "conflict": "別のタブでもこのホワイトボードを編集しています。このタブの最新内容で保存しました",
