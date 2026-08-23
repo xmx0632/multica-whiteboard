@@ -21,7 +21,7 @@ import type { EquationDraftPayload } from '../types';
 
 const explicitFn = (raw: string, constants?: Record<string, number>) => {
   const r = parseEquation(raw, zhT, constants);
-  if (r.kind !== 'explicit') throw new Error(`期望 explicit，得到 ${r.kind}: ${r.message ?? JSON.stringify(r)}`);
+  if (r.kind !== 'explicit') throw new Error(`期望 explicit，得到 ${r.kind}: ${r.kind === 'error' ? r.message : JSON.stringify(r)}`);
   return r;
 };
 const errorMessage = (raw: string, constants?: Record<string, number>) => {
