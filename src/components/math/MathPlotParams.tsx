@@ -513,7 +513,9 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
           仅显式函数可叠加（几何/错误态禁用并提示——parametric/polar 同口径）。
           ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验）。
-          ZOO-191 T4：参数式区直连元素 xAxis（t/θ 域，元素真实字段）。 */}
+          ZOO-191 T4：参数式区直连元素 xAxis（t/θ 域，元素真实字段）。
+          ZOO-193 T6：微积分区增 ×10 邻域放大预设（onDomainChange 写元素 xAxis，
+          离散变更面板内即提交一条）。 */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
@@ -529,6 +531,8 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             applicable: isFn,
             // ZOO-190 T3：a/b 定义域内校验（元素 xAxis；创建侧无元素、缺省不校验）
             domain: value.xAxis,
+            // ZOO-193 T6：×10 邻域放大预设写元素定义域（点击即 onChange+onCommit）
+            onDomainChange: (domain) => patch({ xAxis: domain }),
             onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
             onCommit: () => onCommit?.(),
           }}

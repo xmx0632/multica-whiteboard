@@ -312,7 +312,9 @@ export default function EquationEditor({
       {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
           ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框。
           ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出）。
-          ZOO-191 T4：参数式区连参数域草稿（未触碰显示默认 [0,2π]，确认时随载荷带出）。 */}
+          ZOO-191 T4：参数式区连参数域草稿（未触碰显示默认 [0,2π]，确认时随载荷带出）。
+          ZOO-193 T6：微积分区不带 onDomainChange（元素尚未建立、无定义域可改），
+          邻域放大控件不渲染——放大是编辑侧对元素 xAxis 的操作。 */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}

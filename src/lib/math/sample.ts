@@ -27,8 +27,11 @@ import { zhT, type LibT } from '../../i18n/lib';
 export const MAX_SAMPLE_COUNT = 2000;
 /** 默认采样档位（交互基线：粗 160 / 中 320 / 细 640）。 */
 export const DEFAULT_SAMPLE_COUNT = 320;
-/** 定义域宽度合法区间。 */
-const MIN_DOMAIN_WIDTH = 0.1;
+/**
+ * 定义域宽度合法区间。下限导出供高级公式「×10 邻域放大」预设（ZOO-193 T6）
+ * 对齐——预设连续点击的收窄地板即采样层合法下限，不会把域压进报错区间。
+ */
+export const MIN_DOMAIN_WIDTH = 0.1;
 const MAX_DOMAIN_WIDTH = 1000;
 
 export type SampleResult =
