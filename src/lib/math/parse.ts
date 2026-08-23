@@ -300,15 +300,30 @@ export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<str
   // ZOO-166 方案 A + ZOO-188 三分法：自由符号剔除已赋值常量后，恰一个字母即自变量
   // （y=4z ⟂ y=4x 同一条直线）；未赋值的非希腊多字母词是拼写/未知名；存在未赋值
   // 希腊名或已启用常量字典时，多符号欠定一律引导去常量区赋值（含模板
-  // y=A·sin(ωx+φ) 未赋值的初始态——不是拼写错误）
+  // y=A·sin(ωx+φ) 未赋值的初始态——不是拼写错误）。
+  // ZOO-197：欠定 / 缺赋值引导错误附 missingConstants——欠定符号剔除自变量
+  // 占位（x 在场保 x，否则保首个 ASCII 单字母候选）后的「可一键建滑块」集合，
+  // UI 据此渲染一键创建 chips（拼写错误等其余错误不带该字段）
   const { candidates, unassigned, bad, hasUnassignedGreek, dictActive } = splitFreeSymbols(syms, constants);
   if (bad) return err(t('mathErr.badSymbolExplicit', { name: bad }));
+  const variableReserve = unassigned.includes('x')
+    ? 'x'
+    : candidates[0];
+  const missingConstants = [...new Set(unassigned.filter((s) => s !== variableReserve))];
   if (hasUnassignedGreek) {
-    return err(t('mathErr.multiVarWithConstants', { list: unassigned.join(t('common.listSep')) }));
+    return {
+      kind: 'error',
+      message: t('mathErr.multiVarWithConstants', { list: unassigned.join(t('common.listSep')) }),
+      ...(missingConstants.length > 0 ? { missingConstants } : {}),
+    };
   }
   if (candidates.length > 1) {
     const messageKey = dictActive ? 'mathErr.multiVarWithConstants' : 'mathErr.multiVarExplicit';
-    return err(t(messageKey, { list: candidates.join(t('common.listSep')) }));
+    return {
+      kind: 'error',
+      message: t(messageKey, { list: candidates.join(t('common.listSep')) }),
+      ...(missingConstants.length > 0 ? { missingConstants } : {}),
+    };
   }
   const variable = candidates[0] ?? 'x';
 

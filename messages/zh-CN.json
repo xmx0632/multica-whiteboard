@@ -164,7 +164,10 @@
     "hint": "确认后在画布生成数学图形元素（MathPlot）：自带坐标系，可移动 / 缩放 / 撤销重做。",
     "previewWait": "实时预览",
     "previewUnavailable": "无法预览",
-    "previewAria": "方程实时预览"
+    "previewAria": "方程实时预览",
+    "sliderHint": "缺常量赋值？一键建滑块：",
+    "sliderChipAria": "为 {name} 创建常量滑块",
+    "sliderAll": "全部"
   },
   "params": {
     "title": "数学图形",
@@ -253,7 +256,15 @@
     "calcIntegralDesc": "定积分着色",
     "calcIntegralRange": "积分区间需 a<b 且在定义域内",
     "calcIntegralLower": "积分下限 a",
-    "calcIntegralUpper": "积分上限 b"
+    "calcIntegralUpper": "积分上限 b",
+    "constantsSliderAria": "常量 {name} 滑杆",
+    "constantsPlayAria": "播放 {name} 动画",
+    "constantsPauseAria": "暂停 {name} 动画",
+    "constantsSpeedAria": "动画速度（当前 {speed}x，点击切换）",
+    "constantsMinAria": "常量 {name} 滑杆下限",
+    "constantsMaxAria": "常量 {name} 滑杆上限",
+    "constantsStepAria": "常量 {name} 滑杆步长",
+    "constantsStepLabel": "步长"
   },
   "math": {
     "join": "{a} 与 {b}",

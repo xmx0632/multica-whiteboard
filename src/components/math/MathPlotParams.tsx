@@ -19,6 +19,7 @@ import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
 import { validateEquation } from '@/lib/math/validate';
+import type { ConstantSliderMap } from '@/lib/math/slider';
 import {
   ellipseTeachingInfo,
   formatCoef,
@@ -72,6 +73,12 @@ export interface MathPlotParamsValue {
    * 键为存储层 ASCII 名，显示层经 constantDisplayName 还原（θ/ω/φ/v₀）。
    */
   constants?: Record<string, number>;
+  /**
+   * 常量滑块元数据（ZOO-197）：元素真实字段——高级公式面板常量区滑杆范围 /
+   * 步长编辑与播放直改（onChange 直改实时生效 / 离散变更 onCommit 提交一条）。
+   * 仅存自定义条目，缺省常量回落 DEFAULT_SLIDER。
+   */
+  constantSliders?: ConstantSliderMap;
   /**
    * 微积分叠加（ZOO-189 T2）：元素真实字段（f′ 叠加 / 切线 x₀）——高级公式
    * 面板微积分区直改；清空全部叠加时归一为 undefined（元素不留空壳字段）。
@@ -501,14 +508,21 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           模板点选回填方程输入。
           ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
           仅显式函数可叠加（几何/错误态禁用并提示）。
-          ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验） */}
+          ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验）。
+          ZOO-197：常量区滑块元数据直连元素 constantSliders（同为真实字段；
+          清空归一 undefined） */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
           constants={{
             equation: value.equation,
             values: value.constants ?? {},
+            sliders: value.constantSliders,
             onChange: (update) => patch({ constants: update(value.constants ?? {}) }),
+            onSlidersChange: (update) => {
+              const next = update(value.constantSliders ?? {});
+              patch({ constantSliders: Object.keys(next).length > 0 ? next : undefined });
+            },
             onCommit: () => onCommit?.(),
             onApplyTemplate: (equation) => patch({ equation }),
           }}

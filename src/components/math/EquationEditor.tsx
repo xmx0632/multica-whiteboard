@@ -19,6 +19,9 @@
  * - ZOO-188（T1 常量绑定）：常量草稿（面板常量区编辑）参与实时校验与预览，
  *   确认载荷全量带出（EquationDraftPayload.constants）；重编辑流经
  *   initialConstants 回填。含符号常量的公式绑定后即时出图。
+ * - ZOO-197（常量滑块）：欠定 / 缺赋值引导错误旁提供「一键建滑块」chips——
+ *   点选即绑常量（教学惯用初值）出预览，无需先手输常量；滑块元数据草稿
+ *   （面板常量区自定义的 min/max/step）随确认载荷带出、重编辑流回填。
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import AdvancedFormulaPanel from './AdvancedFormulaPanel';
@@ -28,6 +31,8 @@ import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, t
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
 import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
+import { constantDefaultValue, type ConstantSliderMap } from '@/lib/math/slider';
+import { constantDisplayName } from '@/lib/math/normalize';
 import type { EquationDraftPayload, MathPlotOverlay, PreviewData, StructuralOutcome } from '@/lib/math/types';
 
 /** 分类状态行文案资源键（ZOO-166 方案 A：显式函数按实际自变量字母显示；ZOO-176 随语言）。 */
@@ -55,6 +60,8 @@ export interface EquationEditorProps {
   initialConstants?: Record<string, number>;
   /** 载入初始叠加（ZOO-189：高级元素重编辑回填叠加草稿；缺省空） */
   initialOverlays?: MathPlotOverlay[];
+  /** 载入初始滑块元数据（ZOO-197：高级元素重编辑回填；缺省空） */
+  initialConstantSliders?: ConstantSliderMap;
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
   /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
@@ -67,6 +74,7 @@ export default function EquationEditor({
   initialEquation = '',
   initialConstants,
   initialOverlays,
+  initialConstantSliders,
   onConfirm,
   onCancel,
   createPreviewPolylines = samplePreviewPolylines,
@@ -76,6 +84,8 @@ export default function EquationEditor({
   const [constantValues, setConstantValues] = useState<Record<string, number>>(initialConstants ?? {});
   // ZOO-189：叠加草稿（高级公式面板微积分区编辑；确认时随载荷全量带出，空数组 = 无叠加）
   const [overlayDraft, setOverlayDraft] = useState<MathPlotOverlay[]>(initialOverlays ?? []);
+  // ZOO-197：滑块元数据草稿（面板常量区自定义的 min/max/step；确认时随载荷全量带出）
+  const [constantSliderDraft, setConstantSliderDraft] = useState<ConstantSliderMap>(initialConstantSliders ?? {});
   // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,7 +117,13 @@ export default function EquationEditor({
       inputRef.current?.focus();
       return;
     }
-    onConfirm?.({ equation: trimmed, outcome, constants: constantValues, overlays: overlayDraft });
+    onConfirm?.({
+      equation: trimmed,
+      outcome,
+      constants: constantValues,
+      overlays: overlayDraft,
+      constantSliders: constantSliderDraft,
+    });
   };
 
   const insertAtCursor = (text: string) => {
@@ -135,6 +151,8 @@ export default function EquationEditor({
     return { text: t('equation.recognized', { kind: kindLabel(outcome, t) }), cls: 'text-green-600' };
   };
   const status = statusLine();
+  // ZOO-197：欠定 / 缺赋值引导错误的一键建滑块符号（parse 层已剔除自变量占位）
+  const missing = outcome.kind === 'error' ? outcome.missingConstants : undefined;
 
   return (
     <div className="touch-panel touch-side-panel absolute right-3 top-1/2 -translate-y-1/2 w-[264px] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-10 flex flex-col gap-3">
@@ -176,6 +194,39 @@ export default function EquationEditor({
           aria-label={t('equation.inputAria')}
         />
         <div className={`text-[11px] mt-1 leading-snug ${status.cls}`}>{status.text}</div>
+        {/* ZOO-197 一键建滑块：欠定符号点选即绑常量（教学惯用初值）出预览，免手输 */}
+        {isError && missing && missing.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 mt-1">
+            <span className="text-[10px] text-gray-400">{t('equation.sliderHint')}</span>
+            {missing.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setConstantValues((prev) => ({ ...prev, [k]: constantDefaultValue(k) }))}
+                aria-label={t('equation.sliderChipAria', { name: constantDisplayName(k) })}
+                title={t('equation.sliderChipAria', { name: constantDisplayName(k) })}
+                className="touch-target h-5 px-1.5 border border-blue-300 bg-blue-50/60 rounded-md font-serif text-[11px] text-blue-600 cursor-pointer hover:bg-blue-100 active:bg-blue-200 transition-colors"
+              >
+                +{constantDisplayName(k)}
+              </button>
+            ))}
+            {missing.length > 1 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setConstantValues((prev) => {
+                    const next = { ...prev };
+                    for (const k of missing) if (!(k in next)) next[k] = constantDefaultValue(k);
+                    return next;
+                  })
+                }
+                className="touch-target h-5 px-1.5 border border-blue-500 bg-blue-500 rounded-md text-[11px] font-medium text-white cursor-pointer hover:bg-[#2f7ae5] active:bg-[#2564c4] transition-colors"
+              >
+                {t('equation.sliderAll')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ZOO-144：小屏（粗指针）下内容超高 → 中段内滚，方程输入与插入按钮钉在可视区 */}
@@ -296,14 +347,17 @@ export default function EquationEditor({
 
       {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
           ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框。
-          ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出） */}
+          ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出）。
+          ZOO-197：常量区滑块元数据连草稿（函数式更新直连） */}
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
           constants={{
             equation: draft,
             values: constantValues,
+            sliders: constantSliderDraft,
             onChange: setConstantValues, // 函数式更新直连（ZOO-188 修复：连点预置槽逐次叠加）
+            onSlidersChange: setConstantSliderDraft,
             onApplyTemplate: applyTemplate,
           }}
           calculus={{

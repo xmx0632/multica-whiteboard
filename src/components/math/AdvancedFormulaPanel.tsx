@@ -15,6 +15,11 @@
  *   （g/v₀/θ/ω/A/φ）+ 自定义项，值变更走「静默直改 + 提交一条」调参历史
  *   （技术方案 D5，onChange 实时预览 / onBlur·离散点击 onCommit 压快照）；
  *   存储层键为 ASCII 名（theta/v0），显示层经 constantDisplayName 还原原貌；
+ * - ZOO-197 常量滑块：已绑定常量各带滑杆（默认 -10~10、步长 0.1，均可改）+
+ *   精确数值输入；播放按钮驱动常量在 [min,max] 内往复（速度 0.5x/1x/2x，
+ *   rAF 时间步进，math/slider.ts 纯函数）。播放 / 拖动全程走 D5「静默直改 +
+ *   收尾提交一条」——撤销栈不被逐帧写入刷爆；欠定 / 缺赋值引导错误旁提供
+ *   「一键建滑块」chips（parse 层 missingConstants）。
  * - T2 微积分区（ZOO-189，calculus 绑定时渲染）：f′ 叠加开关 + 切线演示开关
  *   与 x₀ 数值输入。求导惰性——渲染管线仅 overlays 非空时求导（勿逐键求导）；
  *   x₀ 输入 onChange 实时预览 / onBlur 提交一条（D5 同款）；非显式函数时控件
@@ -24,13 +29,25 @@
  *   奇点防护报错 chip 兜底）；
  * - T4（参数式）/ T5（物理模板）分区仍为占位。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '@/i18n/I18nProvider';
 import { constantDisplayName, normalizeConstantKey } from '@/lib/math/normalize';
 import type { MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
 import { ADVANCED_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/templates';
+import {
+  advanceSliderAnimation,
+  clampToSlider,
+  constantDefaultValue,
+  nextSliderSpeed,
+  roundSliderValue,
+  SLIDER_DT_CLAMP_MS,
+  sliderMetaFor,
+  type ConstantSliderMap,
+  type ConstantSliderMeta,
+  type SliderSpeed,
+} from '@/lib/math/slider';
 
 /**
  * T1 常量编辑区绑定（两入口共用）：创建侧由 EquationEditor 持草稿态，
@@ -38,14 +55,20 @@ import { ADVANCED_TEMPLATES, advancedTemplateNameKey } from '@/lib/math/template
  * onCommit → 提交一条历史）。onApplyTemplate 供模板点选回填方程输入。
  * onChange 为函数式更新（prev → next）：同一批次内多次离散变更（连点预置槽）
  * 不受渲染闭包过期影响，逐次叠加而非相互覆盖。
+ * ZOO-197：sliders / onSlidersChange 透传滑块元数据（仅存自定义条目，缺省
+ * 回落 DEFAULT_SLIDER；常量移除时调用方同步剔除对应键）。
  */
 export interface AdvancedConstantsBinding {
   /** 当前方程文本（常量赋值后的解析状态行反馈） */
   equation: string;
   /** 常量绑定值（存储层 ASCII 键名） */
   values: Record<string, number>;
+  /** 滑块元数据（存储层键名；未自定义的常量缺省条目） */
+  sliders?: ConstantSliderMap;
   /** 值变更（函数式更新：入参为当前值，返回下一值；直改实时预览，不上历史） */
   onChange: (update: (prev: Record<string, number>) => Record<string, number>) => void;
+  /** 滑块元数据变更（函数式更新；直改实时生效，离散变更 / 失焦时 onCommit 收口） */
+  onSlidersChange?: (update: (prev: ConstantSliderMap) => ConstantSliderMap) => void;
   /** 一次可撤销操作边界（离散变更即时 / 输入失焦时）；创建侧可缺省 */
   onCommit?: () => void;
   /** 模板点选出口（回填方程输入）；缺省（无方程输入侧）不渲染模板行 */
@@ -90,14 +113,15 @@ const SECTIONS: readonly { id: 'calculus' | 'physics' | 'constants' | 'parametri
   { id: 'parametric', glyph: 't', nameKey: 'advFormula.sectionParametric', descKey: 'advFormula.sectionParametricDesc' },
 ];
 
-/** 预置常量槽（ZOO-188）：label 为显示原貌，key 为存储层 ASCII 名，def 为点选初值。 */
+/** 预置常量槽（ZOO-188）：label 为显示原貌，key 为存储层 ASCII 名；初值与
+ *  一键建滑块同源（constantDefaultValue，教学惯用值）。 */
 const PRESET_CONSTANTS: readonly { key: string; label: string; def: number }[] = [
-  { key: 'g', label: 'g', def: 9.8 },
-  { key: 'v0', label: 'v₀', def: 1 },
-  { key: 'theta', label: 'θ', def: Math.PI / 4 },
-  { key: 'omega', label: 'ω', def: 1 },
-  { key: 'a', label: 'A', def: 1 },
-  { key: 'phi', label: 'φ', def: 0 },
+  { key: 'g', label: 'g', def: constantDefaultValue('g') },
+  { key: 'v0', label: 'v₀', def: constantDefaultValue('v0') },
+  { key: 'theta', label: 'θ', def: constantDefaultValue('theta') },
+  { key: 'omega', label: 'ω', def: constantDefaultValue('omega') },
+  { key: 'a', label: 'A', def: constantDefaultValue('a') },
+  { key: 'phi', label: 'φ', def: constantDefaultValue('phi') },
 ];
 
 /** 保留名：x/y 是自变量、e/π 是数学常数（parse 层不视为自由符号，赋值无意义）。 */
@@ -105,12 +129,29 @@ const RESERVED_CONSTANT_KEYS = new Set(['x', 'y', 'e', 'pi']);
 /** 常量键合法形（归一化后）：字母开头、字母数字、至多 8 字符。 */
 const CONSTANT_KEY_RE = /^[a-z][a-z0-9]{0,7}$/;
 
-/** T1 常量编辑区：模板行 + 预置槽 + 已绑定行 + 自定义项 + 解析状态行。 */
+/** T1 常量编辑区：模板行 + 预置槽 + 已绑定行（ZOO-197 各带滑块 / 播放）+ 自定义项 + 解析状态行。 */
 function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
   const t = useT();
   const [customName, setCustomName] = useState('');
   const [customValue, setCustomValue] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
+
+  // —— ZOO-197 播放态（纯 UI，不入元素数据）：playKey 为正在动画的常量键 ——
+  const [playKey, setPlayKey] = useState<string | null>(null);
+  const [speed, setSpeed] = useState<SliderSpeed>(1);
+  // 帧循环读活引用：binding 每渲染换新闭包（values 常新），dir / value / speed
+  // 由循环自身持有，避免 effect 依赖 values 逐帧重启。引用只在 effect 内读写
+  //（渲染期同步为 react-hooks/refs 禁止形态），每次提交后刷新至最新 props
+  const bindingRef = useRef(binding);
+  const speedRef = useRef(speed);
+  const dirRef = useRef<1 | -1>(1);
+  const animValueRef = useRef(0);
+  useEffect(() => {
+    bindingRef.current = binding;
+  });
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   // 赋值后的解析反馈：欠定报错引导补常量，合法则报自变量字母
   const outcome = validateEquation(binding.equation, t, binding.values);
@@ -122,15 +163,27 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
     binding.onCommit?.();
   };
 
-  const togglePreset = (key: string, def: number) => {
+  /** 常量移除：值 + 滑块元数据同批剔除（元素不留悬挂键） */
+  const removeConstant = (key: string) => {
+    if (playKey === key) setPlayKey(null);
     applyDiscrete((prev) => {
-      if (key in prev) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return { ...prev, [key]: def };
+      const next = { ...prev };
+      delete next[key];
+      return next;
     });
+    binding.onSlidersChange?.((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const togglePreset = (key: string, def: number) => {
+    if (key in binding.values) {
+      removeConstant(key);
+      return;
+    }
+    applyDiscrete((prev) => ({ ...prev, [key]: def }));
   };
 
   const addCustom = () => {
@@ -146,6 +199,54 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
     setCustomValue('');
     setNameError(null);
   };
+
+  /** 停止播放（playKey → null 触发帧循环 cleanup 收口提交一条调参历史） */
+  const stopPlay = () => {
+    if (playKey !== null) setPlayKey(null);
+  };
+
+  /** 起播（同屏仅一个动画：切换目标时上一个的 cleanup 先提交一条再起新循环） */
+  const startPlay = (key: string) => {
+    setPlayKey(key);
+  };
+
+  // 帧循环：rAF 时间步进（dt 截顶防后台恢复大跳），值直改（D5 不上历史）。
+  // cleanup 三路同源收口——暂停（playKey → null）/ 面板关闭（卸载）/ 切换动画
+  // 目标（换 key 重跑 effect）——各提交且仅提交一条调参历史快照
+  useEffect(() => {
+    if (!playKey) return;
+    const key = playKey;
+    const b0 = bindingRef.current;
+    const meta0 = sliderMetaFor(b0.sliders, key);
+    animValueRef.current = b0.values[key] ?? meta0.min;
+    // 起手方向：贴上界则向下，其余向上（从中值附近向远处先走）
+    dirRef.current = animValueRef.current >= meta0.max - meta0.step ? -1 : 1;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (ts: number) => {
+      const b = bindingRef.current;
+      if (!(key in b.values)) {
+        setPlayKey(null); // 常量被外部移除：停循环即可，移除流程自会提交
+        return;
+      }
+      const dt = Math.min(Math.max(ts - last, 0), SLIDER_DT_CLAMP_MS);
+      last = ts;
+      const meta = sliderMetaFor(b.sliders, key);
+      const step = advanceSliderAnimation(animValueRef.current, dirRef.current, dt, speedRef.current, meta);
+      dirRef.current = step.dir;
+      animValueRef.current = roundSliderValue(clampToSlider(step.value, meta));
+      b.onChange((prev) => ({ ...prev, [key]: animValueRef.current }));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      bindingRef.current.onCommit?.();
+    };
+    // 值 / 元数据 / 速度经 ref 活引用读取，依赖仅 playKey（起停边界）
+  }, [playKey]);
+
+  const missing = outcome.kind === 'error' ? outcome.missingConstants : undefined;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -188,44 +289,23 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
         })}
       </div>
 
-      {/* 已绑定行：数值输入直改实时预览（D5），失焦提交一条 */}
+      {/* 已绑定行（ZOO-197 各带滑块 / 播放 / 范围步长编辑）：数值输入直改实时预览（D5），失焦提交一条 */}
       {entries.length === 0 ? (
         <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.constantsEmpty')}</div>
       ) : (
         entries.map(([key, value]) => (
-          <div key={key} className="flex items-center gap-1.5">
-            <span className="font-serif italic text-[13px] text-gray-800 w-8 text-center leading-none">{constantDisplayName(key)}</span>
-            <span className="text-gray-400 text-[11px]" aria-hidden="true">
-              =
-            </span>
-            <input
-              type="number"
-              step="any"
-              value={String(value)}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                if (Number.isFinite(v)) binding.onChange((prev) => ({ ...prev, [key]: v }));
-              }}
-              onBlur={binding.onCommit}
-              aria-label={t('advFormula.constantsValueAria', { name: constantDisplayName(key) })}
-              autoComplete="off"
-              className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                applyDiscrete((prev) => {
-                  const next = { ...prev };
-                  delete next[key];
-                  return next;
-                });
-              }}
-              aria-label={t('advFormula.constantsRemoveAria', { name: constantDisplayName(key) })}
-              className="touch-target border-none bg-transparent text-gray-400 text-base leading-none cursor-pointer hover:text-red-500 active:text-red-600 transition-colors"
-            >
-              ×
-            </button>
-          </div>
+          <ConstantSliderRow
+            key={key}
+            binding={binding}
+            constantKey={key}
+            value={value}
+            meta={sliderMetaFor(binding.sliders, key)}
+            playing={playKey === key}
+            speed={speed}
+            onTogglePlay={() => (playKey === key ? stopPlay() : startPlay(key))}
+            onCycleSpeed={() => setSpeed((s) => nextSliderSpeed(s))}
+            onRemove={() => removeConstant(key)}
+          />
         ))
       )}
 
@@ -282,18 +362,184 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
         </div>
       )}
 
-      {/* 解析状态行：合法（显式函数）报自变量字母；欠定引导补常量 */}
+      {/* 解析状态行：合法（显式函数）报自变量字母；欠定引导补常量（旁附一键建滑块 chips，ZOO-197） */}
       {(outcome.kind === 'error' || outcome.kind === 'explicit') && (
-        <div
-          className={`text-[11px] leading-relaxed break-all ${
-            outcome.kind === 'error' ? 'text-red-500' : 'text-green-600'
-          }`}
-        >
-          {outcome.kind === 'error'
-            ? `⚠ ${outcome.message}`
-            : t('equation.recognized', { kind: t('equation.kindExplicit', { v: outcome.variable ?? 'x' }) })}
+        <div className={outcome.kind === 'error' ? 'text-red-500' : 'text-green-600'}>
+          <div className="text-[11px] leading-relaxed break-all">
+            {outcome.kind === 'error'
+              ? `⚠ ${outcome.message}`
+              : t('equation.recognized', { kind: t('equation.kindExplicit', { v: outcome.variable ?? 'x' }) })}
+          </div>
+          {missing && missing.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 mt-1">
+              <span className="text-[10px] text-gray-400">{t('equation.sliderHint')}</span>
+              {missing.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => applyDiscrete((prev) => ({ ...prev, [k]: constantDefaultValue(k) }))}
+                  aria-label={t('equation.sliderChipAria', { name: constantDisplayName(k) })}
+                  title={t('equation.sliderChipAria', { name: constantDisplayName(k) })}
+                  className="touch-target h-5 px-1.5 border border-blue-300 bg-blue-50/60 rounded-md font-serif text-[11px] text-blue-600 cursor-pointer hover:bg-blue-100 active:bg-blue-200 transition-colors"
+                >
+                  +{constantDisplayName(k)}
+                </button>
+              ))}
+              {missing.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    applyDiscrete((prev) => {
+                      const next = { ...prev };
+                      for (const k of missing) if (!(k in next)) next[k] = constantDefaultValue(k);
+                      return next;
+                    })
+                  }
+                  className="touch-target h-5 px-1.5 border border-blue-500 bg-blue-500 rounded-md text-[11px] font-medium text-white cursor-pointer hover:bg-[#2f7ae5] active:bg-[#2564c4] transition-colors"
+                >
+                  {t('equation.sliderAll')}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 已绑定常量行（ZOO-197）：数值输入（精确）+ 播放 / 速度 + 移除，滑杆拖动
+ * 连续调参（onChange 直改实时重采样 / 抬杆提交一条），min/max/step 可改
+ * （改范围时值裁剪进新范围）。播放中数值输入与滑杆禁用（值由动画驱动）。
+ */
+function ConstantSliderRow({
+  binding,
+  constantKey,
+  value,
+  meta,
+  playing,
+  speed,
+  onTogglePlay,
+  onCycleSpeed,
+  onRemove,
+}: {
+  binding: AdvancedConstantsBinding;
+  constantKey: string;
+  value: number;
+  meta: ConstantSliderMeta;
+  playing: boolean;
+  speed: SliderSpeed;
+  onTogglePlay: () => void;
+  onCycleSpeed: () => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  const name = constantDisplayName(constantKey);
+
+  /** 滑杆拖动：直改实时预览（值圆整到滑杆步进显示精度），抬杆 / 键抬提交一条 */
+  const dragTo = (v: number) => {
+    binding.onChange((prev) => ({ ...prev, [constantKey]: roundSliderValue(v) }));
+  };
+
+  /** 范围 / 步长编辑：元数据裁剪落键，值同步裁进新范围（实时预览，失焦收口） */
+  const editMeta = (part: Partial<ConstantSliderMeta>) => {
+    const next = sliderMetaFor({ ...binding.sliders, [constantKey]: { ...meta, ...part } }, constantKey);
+    binding.onSlidersChange?.((prev) => ({ ...prev, [constantKey]: next }));
+    const clamped = clampToSlider(value, next);
+    if (clamped !== value) binding.onChange((prev) => ({ ...prev, [constantKey]: clamped }));
+  };
+
+  const metaInput = (field: 'min' | 'max' | 'step', labelKey: string, w: string) => (
+    <input
+      type="number"
+      step="any"
+      value={String(meta[field])}
+      onChange={(e) => {
+        const v = parseFloat(e.target.value);
+        if (Number.isFinite(v)) editMeta({ [field]: v } as Partial<ConstantSliderMeta>);
+      }}
+      onBlur={binding.onCommit}
+      aria-label={t(labelKey, { name })}
+      autoComplete="off"
+      className={`touch-target ${w} min-w-0 px-1 py-0.5 border border-gray-200 rounded-md font-serif text-[11px] text-gray-600 outline-none select-text focus:border-blue-500`}
+    />
+  );
+
+  return (
+    <div className="flex flex-col gap-1 border border-gray-100 rounded-md px-1.5 py-1.5">
+      <div className="flex items-center gap-1.5">
+        <span className="font-serif italic text-[13px] text-gray-800 w-6 text-center leading-none">{name}</span>
+        <span className="text-gray-400 text-[11px]" aria-hidden="true">
+          =
+        </span>
+        <input
+          type="number"
+          step="any"
+          value={String(value)}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (Number.isFinite(v)) binding.onChange((prev) => ({ ...prev, [constantKey]: v }));
+          }}
+          onBlur={binding.onCommit}
+          disabled={playing}
+          aria-label={t('advFormula.constantsValueAria', { name })}
+          autoComplete="off"
+          className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+        />
+        <button
+          type="button"
+          onClick={onTogglePlay}
+          aria-label={t(playing ? 'advFormula.constantsPauseAria' : 'advFormula.constantsPlayAria', { name })}
+          className={`touch-target w-6 h-6 border rounded-md text-[11px] leading-none cursor-pointer transition-colors ${
+            playing
+              ? 'border-blue-500 bg-blue-500 text-white hover:bg-[#2f7ae5]'
+              : 'border-gray-200 bg-white text-blue-500 hover:border-blue-500 hover:bg-blue-50'
+          }`}
+        >
+          {playing ? '❚❚' : '▶'}
+        </button>
+        <button
+          type="button"
+          onClick={onCycleSpeed}
+          aria-label={t('advFormula.constantsSpeedAria', { speed })}
+          className={`touch-target h-6 px-1 border rounded-md text-[10px] font-medium cursor-pointer transition-colors ${
+            playing ? 'border-blue-500 text-blue-600 hover:bg-blue-50' : 'border-gray-200 text-gray-500 hover:border-blue-500 hover:text-blue-500'
+          }`}
+        >
+          {speed}x
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={t('advFormula.constantsRemoveAria', { name })}
+          className="touch-target border-none bg-transparent text-gray-400 text-base leading-none cursor-pointer hover:text-red-500 active:text-red-600 transition-colors"
+        >
+          ×
+        </button>
+      </div>
+      <input
+        type="range"
+        min={meta.min}
+        max={meta.max}
+        step={meta.step}
+        value={clampToSlider(value, meta)}
+        onChange={(e) => dragTo(Number(e.target.value))}
+        onPointerUp={binding.onCommit}
+        onKeyUp={binding.onCommit}
+        disabled={playing}
+        aria-label={t('advFormula.constantsSliderAria', { name })}
+        className="touch-target w-full accent-blue-500"
+      />
+      <div className="flex items-center gap-1 text-[10px] text-gray-400">
+        {metaInput('min', 'advFormula.constantsMinAria', 'w-11')}
+        <span aria-hidden="true">~</span>
+        {metaInput('max', 'advFormula.constantsMaxAria', 'w-11')}
+        <span className="ml-auto" aria-hidden="true">
+          {t('advFormula.constantsStepLabel')}
+        </span>
+        {metaInput('step', 'advFormula.constantsStepAria', 'w-10')}
+      </div>
     </div>
   );
 }

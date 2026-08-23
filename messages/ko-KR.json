@@ -164,7 +164,10 @@
     "hint": "확인하면 캔버스에 수학 그래프 요소(MathPlot)가 생성됩니다. 좌표계를 포함하며 이동 / 확대·축소 / 실행 취소가 가능합니다.",
     "previewWait": "실시간 미리보기",
     "previewUnavailable": "미리보기 불가",
-    "previewAria": "방정식 실시간 미리보기"
+    "previewAria": "방정식 실시간 미리보기",
+    "sliderHint": "상수 값이 비었나요? 원클릭으로 슬라이더 만들기:",
+    "sliderChipAria": "{name} 상수 슬라이더 만들기",
+    "sliderAll": "전체"
   },
   "params": {
     "title": "수학 그래프",
@@ -253,7 +256,15 @@
     "calcIntegralDesc": "정적분 음영",
     "calcIntegralRange": "적분 구간은 a<b이며 정의역 안에 있어야 합니다",
     "calcIntegralLower": "적분 하한 a",
-    "calcIntegralUpper": "적분 상한 b"
+    "calcIntegralUpper": "적분 상한 b",
+    "constantsSliderAria": "상수 {name} 슬라이더",
+    "constantsPlayAria": "{name} 애니메이션 재생",
+    "constantsPauseAria": "{name} 애니메이션 일시정지",
+    "constantsSpeedAria": "애니메이션 속도(현재 {speed}x, 클릭해 전환)",
+    "constantsMinAria": "상수 {name} 슬라이더 하한",
+    "constantsMaxAria": "상수 {name} 슬라이더 상한",
+    "constantsStepAria": "상수 {name} 슬라이더 단계",
+    "constantsStepLabel": "단계"
   },
   "math": {
     "join": "{a} 및 {b}",

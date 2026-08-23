@@ -164,7 +164,10 @@
     "hint": "確定するとキャンバスに数学グラフ要素（MathPlot）が生成されます。座標系付きで、移動・拡大縮小・元に戻すが可能です。",
     "previewWait": "リアルタイムプレビュー",
     "previewUnavailable": "プレビューできません",
-    "previewAria": "方程式のリアルタイムプレビュー"
+    "previewAria": "方程式のリアルタイムプレビュー",
+    "sliderHint": "定数が未代入？ワンクリックでスライダー作成：",
+    "sliderChipAria": "{name} の定数スライダーを作成",
+    "sliderAll": "すべて"
   },
   "params": {
     "title": "数学グラフ",
@@ -253,7 +256,15 @@
     "calcIntegralDesc": "定積分の塗り",
     "calcIntegralRange": "積分区間は a<b かつ定義域内である必要があります",
     "calcIntegralLower": "積分の下限 a",
-    "calcIntegralUpper": "積分の上限 b"
+    "calcIntegralUpper": "積分の上限 b",
+    "constantsSliderAria": "定数 {name} のスライダー",
+    "constantsPlayAria": "{name} のアニメーションを再生",
+    "constantsPauseAria": "{name} のアニメーションを一時停止",
+    "constantsSpeedAria": "アニメーション速度（現在 {speed}x、クリックで切り替え）",
+    "constantsMinAria": "定数 {name} のスライダー下限",
+    "constantsMaxAria": "定数 {name} のスライダー上限",
+    "constantsStepAria": "定数 {name} のスライダー刻み幅",
+    "constantsStepLabel": "刻み"
   },
   "math": {
     "join": "{a} と {b}",
