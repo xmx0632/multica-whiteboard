@@ -12,6 +12,8 @@ import { parseVertexHandle, vertexDragPatch, insertVertexPatch } from '@/lib/pol
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt, panBy } from '@/lib/gestures';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { isEditableTarget } from '@/lib/keyboard';
+import { hitTestPoi, mathPlotMapper, nearestCurvePoint, poiHintsFor, togglePoiAnnotation, type HoverTrace } from '@/lib/poi';
+import { formatPoiCoord } from '@/lib/math/poi';
 import TextInputOverlay from './TextInputOverlay';
 import { v4 as uuidv4 } from 'uuid';
 import { useT } from '@/i18n/I18nProvider';
@@ -75,6 +77,12 @@ export default function Canvas() {
   const inertPointersRef = useRef<Set<number>>(new Set());
   /** select 拖拽中的元素 id（双指取消时恢复原位用） */
   const dragElementIdRef = useRef<string | null>(null);
+
+  // —— POI / 悬停坐标追踪（ZOO-199）——
+  /** 悬停吸附态（ref 为准，渲染层直读；无手势时 pointermove 更新） */
+  const hoverTraceRef = useRef<HoverTrace | null>(null);
+  /** 悬停重绘 rAF 合并（每帧至多一次 render，与 pan / pinch 同构） */
+  const hoverRafRef = useRef<number | null>(null);
 
   const {
     elements, selectedId, activeTool, strokeColor, strokeWidth, strokeDash, fillColor,
@@ -203,6 +211,59 @@ export default function Canvas() {
         selectedVertex: polylineVertexIndex,
       });
     }
+
+    // —— POI 灰点提示层 + 悬停坐标标签（ZOO-199；屏幕 px 纯视觉层，最顶层，
+    //    不参与元素命中）。灰点仅对「选中或悬停贴近」的元素出现；标签锚在
+    //    吸附点（非光标）——平移缩放后位置依然正确 ——
+    const hoverTrace = hoverTraceRef.current;
+    const hintVisibleId = hoverTrace?.elementId ?? null;
+    for (const el of elements) {
+      if (el.type !== 'mathPlot' || (el.id !== selectedId && el.id !== hintVisibleId)) continue;
+      for (const h of poiHintsFor(el, elements, viewport)) {
+        ctx.beginPath();
+        ctx.arc(h.screen.x, h.screen.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#6b7280';
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+      }
+    }
+    if (hoverTrace) {
+      const traced = elements.find((e) => e.id === hoverTrace.elementId);
+      if (traced && traced.type === 'mathPlot') {
+        const mapper = mathPlotMapper(traced, viewport);
+        const anchor = mapper ? mapper.toScreen(hoverTrace.x, hoverTrace.y) : null;
+        if (anchor) {
+          const label = formatPoiCoord(hoverTrace.x, hoverTrace.y);
+          ctx.font = '11px system-ui, sans-serif';
+          const tw = ctx.measureText(label).width;
+          const cw = tw + 12;
+          const ch = 18;
+          const cx = Math.min(Math.max(anchor.x + 10, 4), rect.width - cw - 4);
+          const cy = Math.min(Math.max(anchor.y - 10 - ch, 4), rect.height - ch - 4);
+          ctx.beginPath();
+          ctx.moveTo(cx + 4, cy);
+          ctx.lineTo(cx + cw - 4, cy);
+          ctx.quadraticCurveTo(cx + cw, cy, cx + cw, cy + 4);
+          ctx.lineTo(cx + cw, cy + ch - 4);
+          ctx.quadraticCurveTo(cx + cw, cy + ch, cx + cw - 4, cy + ch);
+          ctx.lineTo(cx + 4, cy + ch);
+          ctx.quadraticCurveTo(cx, cy + ch, cx, cy + ch - 4);
+          ctx.lineTo(cx, cy + 4);
+          ctx.quadraticCurveTo(cx, cy, cx + 4, cy);
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#d1d5db';
+          ctx.stroke();
+          ctx.fillStyle = '#111827';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, cx + 6, cy + ch / 2 + 0.5);
+        }
+      }
+    }
   }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, t]);
 
   useEffect(() => {
@@ -323,6 +384,7 @@ export default function Canvas() {
     return () => {
       if (panRafRef.current !== null) cancelAnimationFrame(panRafRef.current);
       if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
+      if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
     };
   }, []);
 
@@ -420,6 +482,25 @@ export default function Canvas() {
           isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在抬指时用陈旧起点压脏快照
           return;
         }
+      }
+
+      // POI 点击（ZOO-199）：已持久化标注优先（再点即删）、次灰点提示（点即标注），
+      // 命中即吞掉手势（不启动元素拖拽）；灰点可见 = 元素选中或悬停贴近。
+      // 触摸无 hover 前置——命中半径放大对齐其余控点的 44px 等效口径减半。
+      const hoverElId = hoverTraceRef.current?.elementId ?? null;
+      const poiHit = hitTestPoi(elements, local, viewport, {
+        radiusPx: e.pointerType === 'touch' ? 16 : undefined,
+        hintVisible: (el) => el.id === selectedId || el.id === hoverElId,
+      });
+      if (poiHit) {
+        const target = elements.find((el) => el.id === poiHit.elementId);
+        if (target && target.type === 'mathPlot') {
+          const patch = togglePoiAnnotation(target, poiHit);
+          if (patch) useStore.getState().updateElement(target.id, patch); // 单条可撤销快照
+          setSelected(target.id);
+        }
+        isDrawingRef.current = false;
+        return;
       }
       let found = false;
       for (let i = elements.length - 1; i >= 0; i--) {
@@ -560,6 +641,36 @@ export default function Canvas() {
     return { x: left, y: top, width: Math.max(width, minW), height: Math.max(height, minH) };
   }, []);
 
+  // —— 悬停坐标追踪（ZOO-199）：无手势进行时按帧更新吸附态（rAF 合并），
+  //    任何手势（画笔 / 拖拽 / 缩放 / pan）起手即清空——标签不遮挡操作 ——
+  const renderFromHoverRaf = useCallback(() => {
+    hoverRafRef.current = null;
+    render();
+  }, [render]);
+
+  const updateHoverTrace = useCallback((local: Point, tool: string) => {
+    const st = useStore.getState();
+    const eligible = tool === 'select' || tool === 'hand';
+    const next = eligible ? nearestCurvePoint(st.elements, local, st.viewport) : null;
+    const prev = hoverTraceRef.current;
+    const sameSpot =
+      (prev === null && next === null) ||
+      (prev !== null && next !== null && prev.elementId === next.elementId && prev.x === next.x && prev.y === next.y);
+    if (sameSpot) return;
+    hoverTraceRef.current = next;
+    if (hoverRafRef.current === null) {
+      hoverRafRef.current = requestAnimationFrame(renderFromHoverRaf);
+    }
+  }, [renderFromHoverRaf]);
+
+  const clearHoverTrace = useCallback(() => {
+    if (hoverTraceRef.current === null) return;
+    hoverTraceRef.current = null;
+    if (hoverRafRef.current === null) {
+      hoverRafRef.current = requestAnimationFrame(renderFromHoverRaf);
+    }
+  }, [renderFromHoverRaf]);
+
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const local = getLocalPoint(e);
     const rec = activePointersRef.current.get(e.pointerId);
@@ -656,6 +767,13 @@ export default function Canvas() {
       return;
     }
 
+    // 无手势进行：悬停坐标追踪（ZOO-199）；画笔 / 拖拽等手势中清空标签
+    if (!isDrawingRef.current) {
+      updateHoverTrace(local, useStore.getState().activeTool);
+    } else if (hoverTraceRef.current !== null) {
+      clearHoverTrace();
+    }
+
     if (!isDrawingRef.current) return;
     const point = getCanvasPoint(e);
     const temp = tempElementRef.current;
@@ -701,7 +819,7 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf]);
+  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, clearHoverTrace]);
 
   /** 抬指 / 手势被系统打断（pointercancel）的统一收尾 */
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -888,6 +1006,7 @@ export default function Canvas() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onPointerLeave={clearHoverTrace}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />

@@ -1,4 +1,4 @@
-import type { MathPlotOverlay } from './math/types';
+import type { MathPlotOverlay, MathPoiAnnotation } from './math/types';
 
 export type ToolType = 'hand' | 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
 
@@ -113,6 +113,13 @@ export interface MathPlotElement extends BaseElement {
    * 旧文档零迁移）；渲染层仅对显式函数生效，几何 / 错误态静默忽略、数据保留。
    */
   overlays?: MathPlotOverlay[];
+  /**
+   * POI 标注（ZOO-199）：点击灰点提示后持久化的坐标标注（零点 / 极值 / 交点，
+   * 条目类型见 math/types.ts 的 MathPoiAnnotation）。缺省 / 空数组 = 无标注
+   * （旧文档零迁移）；渲染层仅对显式函数生效，其余 kind 数据保留、不绘制；
+   * 随元素序列化并出现在 SVG 导出，撤销 / 重做按整元素快照天然兼容。
+   */
+  poiAnnotations?: MathPoiAnnotation[];
 
   // —— 数学视窗（局部坐标系定义，数学单位）——
   xAxis: { min: number; max: number };
