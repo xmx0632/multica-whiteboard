@@ -2,19 +2,21 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { exportToImage, exportToSvg, downloadBlob, downloadText } from '@/lib/export';
+import { exportToImage, exportToSvg, exportFrameToImage, exportFrameToSvg, downloadBlob, downloadText } from '@/lib/export';
 import { saveToLocal, saveToServer } from '@/lib/persistence';
 import { useAutosaveStore } from '@/lib/autosave';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { useI18n } from '@/i18n/I18nProvider';
+import { FrameElement } from '@/lib/types';
 import ZoomControl from './ZoomControl';
 import LanguageSwitch from './LanguageSwitch';
 
 export default function TopMenuBar() {
   const {
-    elements, viewport, documentId, documentTitle,
+    elements, viewport, documentId, documentTitle, schemaVersion,
     undo, redo, undoStack, redoStack, clearAll, newDocument, markSaved, isDirty,
+    activeFrameId,
   } = useStore();
   const { locale, t } = useI18n();
   const [showExport, setShowExport] = useState(false);
@@ -58,17 +60,36 @@ export default function TopMenuBar() {
     setShowExport(false);
   }, [elements, documentTitle, t]);
 
+  // —— 导出当前页（ZOO-198）：按帧边界裁剪，含页内元素与页名，无页外内容 ——
+  const activeFrame = elements.find(
+    (e): e is FrameElement => e.type === 'frame' && e.id === activeFrameId
+  ) ?? null;
+
+  const handleExportPagePng = useCallback(async () => {
+    if (!activeFrame) return;
+    const blob = await exportFrameToImage(activeFrame, elements, 'png', { scale: 2 });
+    downloadBlob(blob, `${documentTitle || 'whiteboard'}-${activeFrame.name}.png`);
+    setShowExport(false);
+  }, [activeFrame, elements, documentTitle]);
+
+  const handleExportPageSvg = useCallback(() => {
+    if (!activeFrame) return;
+    const svg = exportFrameToSvg(activeFrame, elements, t);
+    downloadText(svg, `${documentTitle || 'whiteboard'}-${activeFrame.name}.svg`);
+    setShowExport(false);
+  }, [activeFrame, elements, documentTitle, t]);
+
   const handleSaveLocal = useCallback(() => {
-    saveToLocal({ id: documentId, title: documentTitle, elements, viewport, createdAt: Date.now(), updatedAt: Date.now() });
+    saveToLocal({ id: documentId, title: documentTitle, schemaVersion, elements, viewport, createdAt: Date.now(), updatedAt: Date.now() });
     markSaved();
     setMessage(t('menu.savedLocal'));
     setTimeout(() => setMessage(''), 2000);
-  }, [documentId, documentTitle, elements, viewport, markSaved, t]);
+  }, [documentId, documentTitle, schemaVersion, elements, viewport, markSaved, t]);
 
   const handleSaveServer = useCallback(async () => {
     setSaving(true);
     try {
-      await saveToServer({ id: documentId, title: documentTitle, elements, viewport, createdAt: Date.now(), updatedAt: Date.now() });
+      await saveToServer({ id: documentId, title: documentTitle, schemaVersion, elements, viewport, createdAt: Date.now(), updatedAt: Date.now() });
       markSaved();
       setMessage(t('menu.savedServer'));
     } catch {
@@ -76,7 +97,7 @@ export default function TopMenuBar() {
     }
     setSaving(false);
     setTimeout(() => setMessage(''), 2000);
-  }, [documentId, documentTitle, elements, viewport, markSaved, t]);
+  }, [documentId, documentTitle, schemaVersion, elements, viewport, markSaved, t]);
 
   const handleClear = useCallback(() => {
     if (confirm(t('menu.confirmClear'))) clearAll();
@@ -114,6 +135,9 @@ export default function TopMenuBar() {
             <button onClick={handleExportPng} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">{t('menu.exportPng')}</button>
             <button onClick={handleExportJpg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">{t('menu.exportJpg')}</button>
             <button onClick={handleExportSvg} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100">{t('menu.exportSvg')}</button>
+            <div className="h-px bg-gray-100 my-1" />
+            <button onClick={handleExportPagePng} disabled={!activeFrame} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100 disabled:opacity-40" title={activeFrame ? undefined : t('pages.exportDisabledTip')}>{t('menu.exportPagePng')}</button>
+            <button onClick={handleExportPageSvg} disabled={!activeFrame} className="touch-target w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 active:bg-gray-100 disabled:opacity-40" title={activeFrame ? undefined : t('pages.exportDisabledTip')}>{t('menu.exportPageSvg')}</button>
           </div>
         )}
       </div>

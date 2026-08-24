@@ -126,6 +126,21 @@ export interface MathPlotElement extends BaseElement {
   showLabel: boolean;
 }
 
+/**
+ * 分页帧元素（ZOO-198）：一节课的板书按页组织的容器，语义同 Miro / Excalidraw frame。
+ *
+ * x/y/width/height 为世界 px 外框；name 为页名（如「第 1 页 · 二次函数导入」）。
+ * 帧渲染在底图层（全部内容元素之下，Canvas 渲染前先分区），不遮挡内容；
+ * 页内元素不落字段——归属按「元素包围盒中心落在帧内」动态推导（frame.ts），
+ * 旧文档无帧天然零迁移。elements 数组中帧的相对顺序即页序。
+ */
+export interface FrameElement extends BaseElement {
+  type: 'frame';
+  width: number;
+  height: number;
+  name: string;
+}
+
 export type WhiteboardElement =
   | PathElement
   | RectangleElement
@@ -133,7 +148,8 @@ export type WhiteboardElement =
   | LineElement
   | ArrowElement
   | TextElement
-  | MathPlotElement;
+  | MathPlotElement
+  | FrameElement;
 
 export interface Viewport {
   offsetX: number;
@@ -149,9 +165,16 @@ export interface WhiteboardDocument {
   createdAt: number;
   updatedAt: number;
   thumbnail?: string;
-  /** 数据模型版本占位（技术方案 §5.3）：当前不写值，为未来迁移预留 */
+  /**
+   * 数据模型版本（技术方案 §5.3）。v2 = 分页帧（ZOO-198）：新增 frame 元素类型。
+   * 旧文档（缺省 / v1）读作 1：无帧元素，打开 / 编辑 / 保存行为零变化；
+   * 保存时写 CURRENT_SCHEMA_VERSION，不含帧的旧文档仅版本号递增、内容不变。
+   */
   schemaVersion?: number;
 }
+
+/** 当前数据模型版本：v2 起含分页帧元素（ZOO-198） */
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * 撤销 / 重做操作（ZOO-183 扩展 reorder）。

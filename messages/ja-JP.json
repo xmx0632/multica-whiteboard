@@ -46,7 +46,9 @@
     "closeMenuAria": "メニューを閉じる",
     "autosaved": "✓ 自動保存 {time}",
     "autosavedTip": "内容はローカルに自動保存され、更新やクラッシュ後に復元できます",
-    "dirtyTip": "未保存の変更あり"
+    "dirtyTip": "未保存の変更あり",
+    "exportPagePng": "現在のページを PNG 出力",
+    "exportPageSvg": "現在のページを SVG 出力"
   },
   "zoom": {
     "groupAria": "キャンバスのズーム",
@@ -345,5 +347,16 @@
     "perfNote": "移動・ズームでは再サンプリングされません（Path2D キャッシュヒット）。",
     "metaTitle": "数式グラフ描画デモ - MulticaBoard",
     "metaDescription": "数式からベクターグラフへのオンラインデモ：入力即パース、リアルタイムプレビュー、パラメータ調整可能——サイン曲線・放物線・円と楕円"
+  },
+  "pages": {
+    "add": "新規ページ",
+    "defaultName": "第 {n} ページ",
+    "copyName": "{name}（コピー）",
+    "confirmDelete": "「{name}」とページ内の内容を削除しますか？",
+    "duplicate": "ページを複製",
+    "delete": "ページを削除",
+    "renameTip": "ダブルクリックで名前変更",
+    "jumpTip": "「{name}」へ移動",
+    "exportDisabledTip": "先にページバーでページを選択"
   }
 }

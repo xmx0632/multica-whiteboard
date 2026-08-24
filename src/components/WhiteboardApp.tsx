@@ -8,6 +8,7 @@ import TopMenuBar from '@/components/TopMenuBar';
 import HistoryPanel from '@/components/HistoryPanel';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import ImmersiveToggle from '@/components/ImmersiveToggle';
+import PageBar from '@/components/PageBar';
 import { useShortcuts } from '@/lib/useShortcuts';
 import { useAutosave } from '@/lib/useAutosave';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
@@ -32,6 +33,8 @@ export default function WhiteboardApp() {
       <PropertyPanel />
       <TopMenuBar />
       <HistoryPanel />
+      {/* 页导航条（ZOO-198）：分页帧的增删 / 复制 / 重排 / 跳转入口 */}
+      <PageBar />
       {phonePortrait ? (
         /* 手机竖屏（ZOO-152 追加）：右下角操作行——沉浸与横屏全屏同行，不再两行叠放；
          * 沉浸中全屏钮随 whiteboard-chrome 隐藏，行内仅剩退出沉浸 */

@@ -8,7 +8,7 @@
  *
  * 纯函数：不改原元素，返回可直接合入元素的补丁（与 textResizePatch / applyResize 同构）。
  */
-import { WhiteboardElement, RectangleElement, CircleElement, LineElement, ArrowElement, PathElement } from './types';
+import { WhiteboardElement, RectangleElement, CircleElement, LineElement, ArrowElement, PathElement, FrameElement } from './types';
 import { getElementBounds } from './renderer';
 import { lineVertices, polylinePatch, isPolyline } from './polyline';
 
@@ -26,13 +26,13 @@ export interface ResizeOpts {
 }
 
 /**
- * 角控点外框缩放（rect/circle）：拖拽侧自由、对角锚定，最小边兜底（拖过头收在 minSize，
+ * 角控点外框缩放（rect/circle/frame）：拖拽侧自由、对角锚定，最小边兜底（拖过头收在 minSize，
  * 不翻转——与 mathPlot applyResize 同构）。shift → 等比锁定，主导轴优先
  * （x/y 变化折算取更接近拖拽意图的一侧，与 mathPlot equalRatio / textResizePatch 同构）。
  */
 export function boxResizePatch(
   handle: CornerHandle,
-  startEl: RectangleElement | CircleElement,
+  startEl: RectangleElement | CircleElement | FrameElement,
   world: { x: number; y: number },
   opts?: ResizeOpts
 ): Pick<RectangleElement, 'x' | 'y' | 'width' | 'height'> {

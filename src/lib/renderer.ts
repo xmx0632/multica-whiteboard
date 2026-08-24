@@ -1,9 +1,10 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, Viewport, Point } from './types';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point } from './types';
 import { drawMathPlot, resolvePlotRender } from './math/plot';
 import type { LibT } from '../i18n/lib';
 import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
 import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
+import { FRAME_TITLE_HEIGHT } from './frame';
 
 /**
  * 描边线型（ZOO-165）：按元素 dash + 线宽设 ctx 虚线数组（世界 px 模式 × scale →
@@ -261,6 +262,41 @@ function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement,
   ctx.restore();
 }
 
+/**
+ * 分页帧底图（ZOO-198）：白色页底 + 页框 + 帧上缘外侧页名。帧绘制在内容层之下
+ * （Canvas 渲染前分区、export 帧先画），不遮挡内容。页框线宽 / 页名字号为屏幕
+ * 恒定 px（任意缩放下视觉稳定，export scale=1 时同值）。active = 当前页蓝框高亮。
+ * opts.showTitle=false 供小尺寸缩略图省略页名。
+ */
+export function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  el: FrameElement,
+  viewport: Viewport,
+  opts?: { active?: boolean; showTitle?: boolean }
+) {
+  const { offsetX, offsetY, scale } = viewport;
+  const x = el.x * scale + offsetX;
+  const y = el.y * scale + offsetY;
+  const w = el.width * scale;
+  const h = el.height * scale;
+  const active = opts?.active ?? false;
+
+  ctx.save();
+  ctx.globalAlpha = el.opacity;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = active ? '#3B82F6' : '#cbd5e1';
+  ctx.lineWidth = active ? 2 : 1.5;
+  ctx.strokeRect(x, y, w, h);
+  if (opts?.showTitle !== false) {
+    ctx.fillStyle = active ? '#3B82F6' : '#64748b';
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(el.name, x, y - 10);
+  }
+  ctx.restore();
+}
+
 export function renderElement(
   ctx: CanvasRenderingContext2D,
   el: WhiteboardElement,
@@ -275,6 +311,7 @@ export function renderElement(
     case 'arrow': drawArrow(ctx, el, viewport); break;
     case 'text': drawText(ctx, el, viewport); break;
     case 'mathPlot': drawMathPlotElement(ctx, el, viewport, t); break;
+    case 'frame': drawFrame(ctx, el, viewport); break;
   }
 }
 
@@ -489,6 +526,9 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
     case 'circle':
     case 'mathPlot':
       return { x: el.x, y: el.y, width: el.width, height: el.height };
+    case 'frame':
+      // 含上缘标题条：选中框 / culling / 全板导出边界都覆盖页名（ZOO-198）
+      return { x: el.x, y: el.y - FRAME_TITLE_HEIGHT, width: el.width, height: el.height + FRAME_TITLE_HEIGHT };
     case 'line':
     case 'arrow': {
       // 折线形态：包围盒覆盖全部顶点（ZOO-168）；两点直线与旧算法等价
@@ -523,6 +563,20 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
   if (el.type === 'line' || el.type === 'arrow') {
     const near = nearestOnPolyline(point, lineVertices(el));
     return near !== null && near.dist <= margin;
+  }
+
+  // 帧（ZOO-198）：内部大片空白是板书区，不能挡内容命中——仅边框带 + 上缘标题条可选中
+  if (el.type === 'frame') {
+    const band = Math.max(8 / scale, el.strokeWidth / 2 + 4 / scale);
+    const inTitle =
+      point.x >= el.x && point.x <= el.x + el.width &&
+      point.y >= el.y - FRAME_TITLE_HEIGHT && point.y < el.y;
+    const innerX = point.x > el.x + band && point.x < el.x + el.width - band;
+    const innerY = point.y > el.y + band && point.y < el.y + el.height - band;
+    const inOuter =
+      point.x >= el.x - band && point.x <= el.x + el.width + band &&
+      point.y >= el.y - band && point.y <= el.y + el.height + band;
+    return inTitle || (inOuter && !(innerX && innerY));
   }
 
   return (

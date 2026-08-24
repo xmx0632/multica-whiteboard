@@ -46,7 +46,9 @@
     "closeMenuAria": "Collapse menu panel",
     "autosaved": "✓ Auto-saved {time}",
     "autosavedTip": "Content is autosaved locally; recoverable after refresh or crash",
-    "dirtyTip": "Unsaved changes"
+    "dirtyTip": "Unsaved changes",
+    "exportPagePng": "Export current page PNG",
+    "exportPageSvg": "Export current page SVG"
   },
   "zoom": {
     "groupAria": "Canvas zoom",
@@ -345,5 +347,16 @@
     "perfNote": "Pan/zoom never triggers resampling (Path2D cache hit).",
     "metaTitle": "Equation Plotting Demo - MulticaBoard",
     "metaDescription": "Online demo of equation-to-vector-plot: instant parsing, live preview, adjustable parameters — sine curves, parabolas, circles and ellipses"
+  },
+  "pages": {
+    "add": "New page",
+    "defaultName": "Page {n}",
+    "copyName": "{name} (copy)",
+    "confirmDelete": "Delete \"{name}\" and all its content?",
+    "duplicate": "Duplicate page",
+    "delete": "Delete page",
+    "renameTip": "Double-click to rename",
+    "jumpTip": "Jump to \"{name}\"",
+    "exportDisabledTip": "Select a page in the page bar first"
   }
 }

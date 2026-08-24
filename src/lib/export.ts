@@ -1,5 +1,5 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement } from './types';
-import { renderElement, getAllElementsBounds } from './renderer';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement } from './types';
+import { renderElement, drawFrame, getAllElementsBounds } from './renderer';
 import { zhT, type LibT } from '../i18n/lib';
 import {
   formatAreaValue,
@@ -18,6 +18,7 @@ import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
 import { lineVertices, isPolyline } from './polyline';
+import { isFrame, frameContents, frameExportRegion } from './frame';
 
 export interface ExportOptions {
   format: 'png' | 'jpg' | 'svg';
@@ -111,6 +112,10 @@ function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
     }
     case 'mathPlot':
       return mathPlotToSvg(el, t);
+    case 'frame':
+      // 帧 SVG（ZOO-198）：白底页框 + 上缘页名（与 drawFrame 同一套视觉常量）
+      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"${opacity}/>` +
+        `<text x="${el.x}" y="${el.y - 10}" font-size="13" font-weight="600" font-family="system-ui, sans-serif" fill="#64748b"${opacity}>${escapeXml(el.name)}</text>`;
     default:
       return '';
   }
@@ -403,6 +408,15 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
   return parts.join('');
 }
 
+/**
+ * 绘制序统一：帧是底图层（ZOO-198），无论 elements 数组序如何，导出时帧先画、
+ * 内容后画——帧白底不遮内容，与 Canvas 渲染的分区语义一致。无帧时退化为原序。
+ */
+function framesFirst(elements: WhiteboardElement[]): WhiteboardElement[] {
+  if (!elements.some(isFrame)) return elements;
+  return [...elements.filter(isFrame), ...elements.filter((e) => !isFrame(e))];
+}
+
 /** ZOO-176：t 为文案翻译器（错误占位提示随语言），缺省中文。 */
 export function exportToSvg(elements: WhiteboardElement[], t: LibT = zhT, options?: Partial<ExportOptions>): string {
   const opts = { ...DEFAULT_OPTIONS, ...options, format: 'svg' as const };
@@ -421,13 +435,103 @@ export function exportToSvg(elements: WhiteboardElement[], t: LibT = zhT, option
     ? ''
     : `<rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${opts.background}"/>`;
 
-  const els = elements.map((el) => elementToSvg(el, t)).join('\n    ');
+  const els = framesFirst(elements).map((el) => elementToSvg(el, t)).join('\n    ');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW}" height="${vbH}">
   ${bg}
   ${els}
 </svg>`;
+}
+
+/**
+ * 导出当前页 SVG（ZOO-198）：viewBox = 帧边界 + 上缘标题条（padding 缺省 0——
+ * 按帧精确裁剪），内容 clip 到帧矩形，页外元素不出现；帧底图与页名随页导出。
+ */
+export function exportFrameToSvg(
+  frame: FrameElement,
+  elements: WhiteboardElement[],
+  t: LibT = zhT,
+  options?: Partial<ExportOptions>
+): string {
+  const opts = { ...DEFAULT_OPTIONS, ...options, format: 'svg' as const, padding: options?.padding ?? 0 };
+  const region = frameExportRegion(frame);
+  const contents = frameContents(elements, frame);
+  const vbX = region.x - opts.padding;
+  const vbY = region.y - opts.padding;
+  const vbW = region.width + opts.padding * 2;
+  const vbH = region.height + opts.padding * 2;
+
+  const bg = opts.background === 'transparent'
+    ? ''
+    : `<rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${opts.background}"/>`;
+  const clipId = `frame-clip-${frame.id}`;
+  const body = contents.map((el) => elementToSvg(el, t)).join('\n    ');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW}" height="${vbH}">
+  ${bg}
+  <rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <defs><clipPath id="${clipId}"><rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}"/></clipPath></defs>
+  <g clip-path="url(#${clipId})">
+    ${body}
+  </g>
+  <text x="${frame.x}" y="${frame.y - 10}" font-size="13" font-weight="600" font-family="system-ui, sans-serif" fill="#64748b">${escapeXml(frame.name)}</text>
+</svg>`;
+}
+
+/**
+ * 导出当前页 PNG/JPG（ZOO-198）：canvas 尺寸 = 帧边界 + 标题条（× scale），
+ * 内容 ctx.clip 到帧矩形；帧底图先画、内容后画（同 Canvas 分区语义）。
+ */
+export async function exportFrameToImage(
+  frame: FrameElement,
+  elements: WhiteboardElement[],
+  format: 'png' | 'jpg',
+  options?: Partial<ExportOptions>,
+  t: LibT = zhT
+): Promise<Blob> {
+  const opts = { ...DEFAULT_OPTIONS, ...options, format, padding: options?.padding ?? 0 };
+  const region = frameExportRegion(frame);
+  const contents = frameContents(elements, frame);
+  const scale = opts.scale;
+  const cw = region.width + opts.padding * 2;
+  const ch = region.height + opts.padding * 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = cw * scale;
+  canvas.height = ch * scale;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
+
+  if (opts.background !== 'transparent') {
+    ctx.fillStyle = opts.background;
+    ctx.fillRect(0, 0, cw, ch);
+  }
+
+  const viewport = { offsetX: -(region.x - opts.padding), offsetY: -(region.y - opts.padding), scale: 1 };
+  drawFrame(ctx, frame, viewport); // 白底 + 页框 + 页名（标题条内，不受裁剪影响）
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(frame.x + viewport.offsetX, frame.y + viewport.offsetY, frame.width, frame.height);
+  ctx.clip();
+  for (const el of contents) {
+    renderElement(ctx, el, viewport, t);
+  }
+  ctx.restore();
+
+  return new Promise((resolve, reject) => {
+    const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
+    const quality = format === 'jpg' ? 0.92 : undefined;
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Failed to create image blob'));
+      },
+      mimeType,
+      quality
+    );
+  });
 }
 
 export async function exportToImage(
@@ -463,7 +567,7 @@ export async function exportToImage(
   }
 
   const viewport = { offsetX: -ox, offsetY: -oy, scale: 1 };
-  for (const el of elements) {
+  for (const el of framesFirst(elements)) {
     renderElement(ctx, el, viewport, t);
   }
 

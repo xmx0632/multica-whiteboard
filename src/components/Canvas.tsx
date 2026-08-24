@@ -2,9 +2,10 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement } from '@/lib/renderer';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
 import { parseVertexHandle, vertexDragPatch, insertVertexPatch } from '@/lib/polyline';
@@ -53,7 +54,10 @@ export default function Canvas() {
   // mathPlot 8 控点缩放（§11 D-1）：startEl 为手势前快照，抬指压一条 update 快照
   // text 4 角等比缩放（ZOO-159）同走此通道；图形元素（ZOO-160）扩展分派：
   // rect/circle 角控点改外框、line/arrow 端点手柄、path 角控点整体等比缩放点集
-  const resizeRef = useRef<{ handle: ResizeHandleId; startEl: WhiteboardElement; startWorld: Point } | null>(null);
+  // frame 角控点（ZOO-198）：groupStart 为起手时页内内容快照——帧缩放联动内容
+  const resizeRef = useRef<{ handle: ResizeHandleId; startEl: WhiteboardElement; startWorld: Point; groupStart?: WhiteboardElement[] } | null>(null);
+  /** select 拖拽帧时的页内内容快照（ZOO-198）：帧整体移动联动内容，抬指一并压快照 */
+  const frameDragContentsRef = useRef<WhiteboardElement[] | null>(null);
 
   // —— 内联文本输入（ZOO-159）——
   /** 当前草稿镜像（提交 / 取消以 ref 为准，state 只驱动渲染——blur 与卸载竞态下幂等） */
@@ -77,6 +81,7 @@ export default function Canvas() {
     viewport, addElement, setSelected, setViewport, pushOperations,
     pendingMathPlot, consumeMathPlotInsert, setTool,
     polylineEditId, polylineVertexIndex, selectPolylineVertex,
+    activeFrameId,
   } = useStore();
 
   // 容器宽（ZOO-159）：输入浮层右缘避让用；ResizeObserver 维护，渲染期不读 ref
@@ -174,10 +179,16 @@ export default function Canvas() {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, rect.width, rect.height);
     renderGrid(ctx, rect.width, rect.height, viewport);
+    // 帧是底图层（ZOO-198）：先画全部帧（当前页蓝框高亮），再画内容元素——帧不遮挡内容
+    const frames = elements.filter(isFrame);
+    for (const f of frames) {
+      drawFrame(ctx, f, viewport, { active: f.id === activeFrameId });
+    }
     // 传入可视尺寸启用视口 culling（§6.4，视口外元素跳过绘制）
+    const contentElements = frames.length > 0 ? elements.filter((e) => !isFrame(e)) : elements;
     renderElements(
       ctx,
-      hiddenTextId ? elements.filter((e) => e.id !== hiddenTextId) : elements,
+      hiddenTextId ? contentElements.filter((e) => e.id !== hiddenTextId) : contentElements,
       viewport,
       { width: rect.width, height: rect.height, t }
     );
@@ -192,7 +203,7 @@ export default function Canvas() {
         selectedVertex: polylineVertexIndex,
       });
     }
-  }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, t]);
+  }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, t]);
 
   useEffect(() => {
     render();
@@ -253,9 +264,12 @@ export default function Canvas() {
     if (rs) {
       resizeRef.current = null;
       const st = useStore.getState();
-      if (st.elements.some((el) => el.id === rs.startEl.id)) {
+      // 帧缩放联动内容（ZOO-198）：恢复帧本体 + 页内内容起手快照
+      const restore = new Map<string, WhiteboardElement>([[rs.startEl.id, rs.startEl]]);
+      for (const g of rs.groupStart ?? []) restore.set(g.id, g);
+      if (st.elements.some((el) => restore.has(el.id))) {
         useStore.setState({
-          elements: st.elements.map((el) => (el.id === rs.startEl.id ? rs.startEl : el)),
+          elements: st.elements.map((el) => restore.get(el.id) ?? el),
         });
       }
     }
@@ -266,8 +280,14 @@ export default function Canvas() {
       dragElementIdRef.current = null;
       dragElementStartRef.current = null;
       const st = useStore.getState();
+      // 帧整体拖动联动内容（ZOO-198）：一并恢复
+      const restore = new Map<string, WhiteboardElement>([[dragId, dragStart]]);
+      if (isFrame(dragStart)) {
+        for (const g of frameDragContentsRef.current ?? []) restore.set(g.id, g);
+      }
+      frameDragContentsRef.current = null;
       useStore.setState({
-        elements: st.elements.map((el) => (el.id === dragId ? dragStart : el)),
+        elements: st.elements.map((el) => restore.get(el.id) ?? el),
       });
     }
   }, []);
@@ -389,7 +409,11 @@ export default function Canvas() {
             : { polylineEditing: editingPolyline }
         );
         if (handle) {
-          resizeRef.current = { handle, startEl: { ...sel }, startWorld: point };
+          // 帧缩放（ZOO-198）：快照页内内容，拖动中按比例联动
+          resizeRef.current = {
+            handle, startEl: { ...sel }, startWorld: point,
+            groupStart: isFrame(sel) ? frameContents(elements, sel) : undefined,
+          };
           // 点中顶点手柄 = 选中该顶点（Delete 的删除目标）
           const vi = parseVertexHandle(handle);
           if (vi != null) selectPolylineVertex(vi);
@@ -399,10 +423,13 @@ export default function Canvas() {
       }
       let found = false;
       for (let i = elements.length - 1; i >= 0; i--) {
-        if (hitTest(elements[i], point, viewport)) {
-          setSelected(elements[i].id);
-          dragElementStartRef.current = elements[i];
-          dragElementIdRef.current = elements[i].id;
+        const hitEl = elements[i];
+        if (hitTest(hitEl, point, viewport)) {
+          setSelected(hitEl.id);
+          dragElementStartRef.current = hitEl;
+          dragElementIdRef.current = hitEl.id;
+          // 帧整体拖动（ZOO-198）：快照页内内容，拖动中联动平移
+          frameDragContentsRef.current = isFrame(hitEl) ? frameContents(elements, hitEl) : null;
           found = true;
           break;
         }
@@ -435,6 +462,7 @@ export default function Canvas() {
 
     if (activeTool === 'eraser') {
       for (let i = elements.length - 1; i >= 0; i--) {
+        if (isFrame(elements[i])) continue; // 页不归橡皮管（ZOO-198）：删页走页条，防整页板书误擦
         if (hitTest(elements[i], point, viewport)) {
           useStore.getState().deleteElement(elements[i].id);
           break;
@@ -561,7 +589,8 @@ export default function Canvas() {
     }
 
     // 控点缩放拖拽（静默直改，抬指统一压快照 —— 与移动拖拽同构）：
-    // mathPlot（§11 D-1）/ text（ZOO-159）/ 图形元素（ZOO-160）按类型分派
+    // mathPlot（§11 D-1）/ text（ZOO-159）/ 图形元素（ZOO-160）按类型分派；
+    // frame（ZOO-198）角控点改外框并按比例联动页内内容
     const rs = resizeRef.current;
     if (rs) {
       const point = getCanvasPoint(e);
@@ -569,6 +598,7 @@ export default function Canvas() {
       const { scale } = useStore.getState().viewport;
       const minSize = Math.max(SHAPE_MIN_SIZE, 16 / scale); // 屏幕侧 16px 下限
       let next: Record<string, unknown> | null = null;
+      let scaledGroup: WhiteboardElement[] | null = null;
       switch (start.type) {
         case 'text':
           next = textResizePatch(rs.handle as 'nw' | 'ne' | 'sw' | 'se', start, point);
@@ -592,12 +622,35 @@ export default function Canvas() {
         case 'path':
           next = pathResizePatch(rs.handle as CornerHandle, start, point, { minSize });
           break;
+        case 'frame': {
+          // 角控点改外框（ZOO-198）：boxResizePatch 统一对角锚定，帧另按页尺寸下限加严
+          const patch = boxResizePatch(rs.handle as CornerHandle, start, point, {
+            minSize: Math.max(minSize, Math.min(FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT)),
+          });
+          let { x, y, width, height } = patch;
+          if (width < FRAME_MIN_WIDTH) {
+            if (rs.handle.includes('w')) x = start.x + start.width - FRAME_MIN_WIDTH;
+            width = FRAME_MIN_WIDTH;
+          }
+          if (height < FRAME_MIN_HEIGHT) {
+            if (rs.handle.includes('n')) y = start.y + start.height - FRAME_MIN_HEIGHT;
+            height = FRAME_MIN_HEIGHT;
+          }
+          next = { x, y, width, height };
+          // 页内内容按比例联动（以起手快照推算，拖动全程稳定不抖）
+          scaledGroup = rs.groupStart
+            ? scaleFrameContents(start, { ...start, x, y, width, height }, rs.groupStart)
+            : null;
+          break;
+        }
       }
       if (next) {
+        const groupById = new Map((scaledGroup ?? []).map((g) => [g.id, g]));
         useStore.setState({
-          elements: useStore.getState().elements.map((el) =>
-            el.id === rs.startEl.id ? { ...el, ...next } : el
-          ),
+          elements: useStore.getState().elements.map((el) => {
+            if (el.id === rs.startEl.id) return { ...el, ...next };
+            return groupById.get(el.id) ?? el;
+          }),
         });
       }
       return;
@@ -614,18 +667,23 @@ export default function Canvas() {
         const el = useStore.getState().elements.find((e) => e.id === selectedId);
         const start = dragElementStartRef.current;
         if (el && start) {
+          // 帧整体拖动联动页内内容（ZOO-198）：起手快照组统一按位移重算
+          const groupStarts = isFrame(start)
+            ? [start, ...(frameDragContentsRef.current ?? [])]
+            : [start];
+          const movedById = new Map(groupStarts.map((g) => [g.id, translateElement(g, dx, dy)]));
           useStore.setState({
-            elements: useStore.getState().elements.map((e) =>
-              e.id === selectedId ? translateElement(start, dx, dy) : e
-            ),
+            elements: useStore.getState().elements.map((e2) => movedById.get(e2.id) ?? e2),
           });
         }
       }
       // Eraser drag
       if (activeTool === 'eraser') {
-        for (let i = useStore.getState().elements.length - 1; i >= 0; i--) {
-          if (hitTest(useStore.getState().elements[i], point, viewport)) {
-            useStore.getState().deleteElement(useStore.getState().elements[i].id);
+        const els = useStore.getState().elements;
+        for (let i = els.length - 1; i >= 0; i--) {
+          if (isFrame(els[i])) continue; // 页不归橡皮管（ZOO-198）
+          if (hitTest(els[i], point, viewport)) {
+            useStore.getState().deleteElement(els[i].id);
             break;
           }
         }
@@ -691,17 +749,25 @@ export default function Canvas() {
       return;
     }
     // 缩放提交：一次拖拽 = 一条可撤销快照（D5 同构）；判变泛化到全类型
-    // （ZOO-160：path 逐点比值，text fontSize / mathPlot 外框语义均被覆盖）
+    // （ZOO-160：path 逐点比值，text fontSize / mathPlot 外框语义均被覆盖）；
+    // 帧缩放（ZOO-198）：页内内容联动一并进同一条快照——undo 一次回整页
     const rs = resizeRef.current;
     if (rs) {
       resizeRef.current = null;
       const cur = useStore.getState().elements.find((el) => el.id === rs.startEl.id);
       if (cur && elementResizeChanged(cur, rs.startEl)) {
-        pushOperations([{
-          type: 'update', elementId: rs.startEl.id,
+        const ops = [{
+          type: 'update' as const, elementId: rs.startEl.id,
           before: rs.startEl,
           after: { ...cur },
-        }]);
+        }];
+        for (const g of rs.groupStart ?? []) {
+          const gCur = useStore.getState().elements.find((el) => el.id === g.id);
+          if (gCur && elementResizeChanged(gCur, g)) {
+            ops.push({ type: 'update', elementId: g.id, before: g, after: { ...gCur } });
+          }
+        }
+        pushOperations(ops);
       }
       return;
     }
@@ -722,13 +788,24 @@ export default function Canvas() {
       const orig = dragElementStartRef.current;
       if (el && orig) {
         if (el.x !== orig.x || el.y !== orig.y) {
-          useStore.getState().pushOperations([{
-            type: 'update', elementId: selectedId,
+          // 帧整体拖动（ZOO-198）：页内内容联动位移一并进同一条快照
+          const ops = [{
+            type: 'update' as const, elementId: selectedId,
             before: orig,
             after: { ...el },
-          }]);
+          }];
+          if (isFrame(orig)) {
+            for (const g of frameDragContentsRef.current ?? []) {
+              const gCur = useStore.getState().elements.find((e) => e.id === g.id);
+              if (gCur && (gCur.x !== g.x || gCur.y !== g.y)) {
+                ops.push({ type: 'update', elementId: g.id, before: g, after: { ...gCur } });
+              }
+            }
+          }
+          useStore.getState().pushOperations(ops);
         }
       }
+      frameDragContentsRef.current = null;
     }
   }, [activeTool, selectedId, addElement, setViewport, pushOperations]);
 

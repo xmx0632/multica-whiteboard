@@ -46,7 +46,9 @@
     "closeMenuAria": "메뉴 접기",
     "autosaved": "✓ 자동 저장됨 {time}",
     "autosavedTip": "콘텐츠는 로컬에 자동 저장되어 새로고침이나 비정상 종료 후 복구할 수 있습니다",
-    "dirtyTip": "저장하지 않은 변경 사항"
+    "dirtyTip": "저장하지 않은 변경 사항",
+    "exportPagePng": "현재 페이지 PNG 내보내기",
+    "exportPageSvg": "현재 페이지 SVG 내보내기"
   },
   "zoom": {
     "groupAria": "캔버스 확대/축소",
@@ -345,5 +347,16 @@
     "perfNote": "이동/확대·축소 시 재샘플링이 일어나지 않습니다(Path2D 캐시 히트).",
     "metaTitle": "수식 그래프 데모 - MulticaBoard",
     "metaDescription": "수식을 벡터 그래프로 그리는 온라인 데모: 입력 즉시 파싱, 실시간 미리보기, 매개변수 조정——사인 곡선, 포물선, 원과 타원"
+  },
+  "pages": {
+    "add": "새 페이지",
+    "defaultName": "제 {n} 페이지",
+    "copyName": "{name} (사본)",
+    "confirmDelete": "\"{name}\" 페이지와 내용을 삭제할까요?",
+    "duplicate": "페이지 복제",
+    "delete": "페이지 삭제",
+    "renameTip": "더블클릭하여 이름 변경",
+    "jumpTip": "\"{name}\"(으)로 이동",
+    "exportDisabledTip": "먼저 페이지 표시줄에서 페이지를 선택하세요"
   }
 }

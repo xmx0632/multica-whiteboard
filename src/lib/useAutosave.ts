@@ -87,6 +87,7 @@ export function useAutosave() {
         documentTitle: st.documentTitle,
         elements: st.elements,
         viewport: st.viewport,
+        schemaVersion: st.schemaVersion,
         updatedAt: Date.now(),
         tabId,
         sig,
