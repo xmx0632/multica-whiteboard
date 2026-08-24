@@ -147,7 +147,7 @@ function snapshotToDocument(snap: AutosaveSnapshot): WhiteboardDocument {
 
 // ========== 轻量状态提示（ZOO-170 需求 6） ==========
 
-export type AutosaveNoticeKind = 'restored' | 'conflict';
+export type AutosaveNoticeKind = 'restored' | 'conflict' | 'saved';
 
 export interface AutosaveNotice {
   kind: AutosaveNoticeKind;

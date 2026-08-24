@@ -9,6 +9,7 @@ import { usePhonePortrait } from '@/lib/usePhonePortrait';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { useI18n } from '@/i18n/I18nProvider';
 import { FrameElement } from '@/lib/types';
+import { useShortcutUI } from '@/lib/keymap';
 import ZoomControl from './ZoomControl';
 import LanguageSwitch from './LanguageSwitch';
 
@@ -111,7 +112,7 @@ export default function TopMenuBar() {
 
   const barContent = (
     <>
-      <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title={`${t('menu.new')} (Ctrl+N)`}>
+      <button onClick={handleNew} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title={`${t('menu.new')} (Alt+N)`}>
         {t('menu.new')}
       </button>
 
@@ -144,7 +145,7 @@ export default function TopMenuBar() {
 
       <div className="w-px h-5 bg-gray-200" />
 
-      <button onClick={handleSaveLocal} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md">
+      <button onClick={handleSaveLocal} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md" title={`${t('menu.save')} (Alt+S)`}>
         {t('menu.save')}
       </button>
       <button onClick={handleSaveServer} disabled={saving} className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-50">
@@ -165,6 +166,18 @@ export default function TopMenuBar() {
 
       {/* ZOO-176：语言切换（cookie 记住偏好，优先级高于自动检测） */}
       <LanguageSwitch />
+
+      <div className="w-px h-5 bg-gray-200" />
+
+      {/* 快捷键帮助（ZOO-205）：? 入口按钮，与 Alt+/ 同一开合源 */}
+      <button
+        onClick={() => useShortcutUI.getState().setHelpOpen(true)}
+        aria-label={t('shortcuts.title')}
+        title={`${t('shortcuts.title')} (Alt+/)`}
+        className="touch-target px-1.5 py-1 text-sm text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md"
+      >
+        ?
+      </button>
 
       {message && <span className="text-xs text-green-600 px-1">{message}</span>}
       {notice ? (

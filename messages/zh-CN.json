@@ -358,5 +358,34 @@
     "renameTip": "双击重命名",
     "jumpTip": "跳转到「{name}」",
     "exportDisabledTip": "先在页条选中一页"
+  },
+  "shortcuts": {
+    "title": "键盘快捷键",
+    "close": "关闭",
+    "sections": {
+      "tools": "工具",
+      "file": "文件",
+      "edit": "编辑",
+      "view": "视图",
+      "general": "通用"
+    },
+    "copy": "复制",
+    "paste": "粘贴",
+    "cut": "剪切",
+    "duplicate": "复制并平移",
+    "selectAll": "全选",
+    "delete": "删除选中",
+    "moveUp": "上移一层",
+    "moveDown": "下移一层",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "zoomReset": "重置缩放",
+    "zoomFit": "适应内容",
+    "prevBoard": "上一白板",
+    "nextBoard": "下一白板",
+    "helpPanel": "快捷键帮助",
+    "escape": "取消选择 / 退出编辑",
+    "noteInput": "输入框聚焦时快捷键自动失效，文字与方程输入不受影响",
+    "noteReserved": "浏览器保留键（Ctrl+N/T/W）无法被网页接管，新建白板请用 Alt+N"
   }
 }

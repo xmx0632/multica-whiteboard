@@ -18,8 +18,12 @@ import type { EquationDraftPayload } from './math/types';
 import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor } from './stroke';
 import { measureTextElement } from './textElement';
 import { isPolyline, removeVertexPatch } from './polyline';
-import { reorderElements, ZOrderAction } from './zorder';
+import { reorderElements, reorderElementsMulti, ZOrderAction } from './zorder';
 import { framesOf, nextFrameRect, frameContents, duplicateFrameBundle } from './frame';
+import { translateElement } from './renderer';
+
+/** 粘贴 / 复制并平移的落位偏移（世界坐标，ZOO-205；Excalidraw 同数量级手感） */
+const CLIPBOARD_PASTE_OFFSET = 16;
 
 interface WhiteboardState {
   // Document
@@ -31,6 +35,12 @@ interface WhiteboardState {
   // Elements
   elements: WhiteboardElement[];
   selectedId: string | null;
+  /** 最小选中集合（ZOO-205）：Ctrl+A 全选 / 复制粘贴剪切 / 组拖拽作用域。
+   *  不变量：selectedId 非空时 ∈ selectedIds（单选即长度 1 的集合） */
+  selectedIds: string[];
+  /** 页面内剪贴板（ZOO-205）：Ctrl+C/X 存入快照（元素不可变，存引用安全），
+   *  Ctrl+V 以新 id 偏移落位；不写系统剪贴板 */
+  clipboard: WhiteboardElement[];
 
   // Tool
   activeTool: ToolType;
@@ -68,6 +78,19 @@ interface WhiteboardState {
 
   // Actions - Selection
   setSelected: (id: string | null) => void;
+  // Actions - 多选最小集 + 页面内剪贴板（ZOO-205）
+  /** Ctrl+A：选中全部内容元素（不含页帧；纯会话态不置脏） */
+  selectAll: () => void;
+  /** Ctrl+C：当前选中集合存入页面内剪贴板（页帧不参与，页复制走页条） */
+  copySelected: () => void;
+  /** Ctrl+X：复制入剪贴板后删除源（单条可撤销快照） */
+  cutSelected: () => void;
+  /** Ctrl+V：剪贴板内容以新 id 偏移落位（单条可撤销快照），粘贴结果成为新选中 */
+  pasteClipboard: () => void;
+  /** Ctrl+D：选中集合原地克隆偏移落位（不触碰剪贴板，单条可撤销快照） */
+  duplicateSelected: () => void;
+  /** 批量删除（deleteSelected 多选分支 / cutSelected 共用；单条可撤销快照） */
+  deleteElements: (ids: string[]) => void;
 
   // Actions - 图层顺序（ZOO-183）：基于 selectedId 数组重排；边界空转不入撤销栈
   /** 置于最上层（移到 elements 末位，renderer 最后绘制） */
@@ -165,6 +188,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   // Elements
   elements: [],
   selectedId: null,
+  selectedIds: [],
+  clipboard: [],
 
   // 折线顶点编辑态（ZOO-168）
   polylineEditId: null,
@@ -236,6 +261,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set((s) => ({
       elements: s.elements.filter((e) => e.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
+      selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((sid) => sid !== id) : s.selectedIds,
       polylineEditId: s.polylineEditId === id ? null : s.polylineEditId,
       polylineVertexIndex: s.polylineEditId === id ? null : s.polylineVertexIndex,
       undoStack: [...s.undoStack.slice(-99), ops],
@@ -245,8 +271,32 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   },
 
   deleteSelected: () => {
-    const { selectedId, deleteElement } = get();
-    if (selectedId) deleteElement(selectedId);
+    const { selectedIds, selectedId, deleteElement, deleteElements } = get();
+    const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    if (ids.length <= 1) {
+      if (selectedId) deleteElement(selectedId);
+      return;
+    }
+    deleteElements(ids);
+  },
+
+  deleteElements: (ids) => {
+    const st = get();
+    const removed = st.elements.filter((e) => ids.includes(e.id));
+    if (removed.length === 0) return;
+    const removedSet = new Set(removed.map((e) => e.id));
+    const ops: Operation[] = removed.map((el) => ({ type: 'delete' as const, elementId: el.id, before: el }));
+    const editIdCleared = st.polylineEditId != null && removedSet.has(st.polylineEditId);
+    set((s) => ({
+      elements: s.elements.filter((e) => !removedSet.has(e.id)),
+      selectedId: s.selectedId != null && removedSet.has(s.selectedId) ? null : s.selectedId,
+      selectedIds: s.selectedIds.some((id) => removedSet.has(id)) ? [] : s.selectedIds,
+      polylineEditId: editIdCleared ? null : s.polylineEditId,
+      polylineVertexIndex: editIdCleared ? null : s.polylineVertexIndex,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+    }));
   },
 
   clearAll: () => {
@@ -256,6 +306,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     set((s) => ({
       elements: [],
       selectedId: null,
+      selectedIds: [],
       polylineEditId: null,
       polylineVertexIndex: null,
       undoStack: [...s.undoStack.slice(-99), ops],
@@ -269,9 +320,77 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   setSelected: (id) =>
     set((s) =>
       id === s.polylineEditId
-        ? { selectedId: id }
-        : { selectedId: id, polylineEditId: null, polylineVertexIndex: null }
+        ? { selectedId: id, selectedIds: id ? [id] : [] }
+        : { selectedId: id, selectedIds: id ? [id] : [], polylineEditId: null, polylineVertexIndex: null }
     ),
+
+  // 多选最小集 + 页面内剪贴板（ZOO-205）
+  selectAll: () => {
+    const ids = get().elements.filter((e) => e.type !== 'frame').map((e) => e.id);
+    set({
+      selectedIds: ids,
+      selectedId: ids.length > 0 ? ids[ids.length - 1] : null,
+      polylineEditId: null,
+      polylineVertexIndex: null,
+    });
+  },
+
+  copySelected: () => {
+    const { elements, selectedIds, selectedId } = get();
+    const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    const picked = elements.filter((e) => ids.includes(e.id) && e.type !== 'frame');
+    if (picked.length === 0) return;
+    set({ clipboard: picked });
+  },
+
+  cutSelected: () => {
+    get().copySelected();
+    const { clipboard, deleteElements } = get();
+    if (clipboard.length === 0) return;
+    deleteElements(clipboard.map((e) => e.id));
+  },
+
+  pasteClipboard: () => {
+    const { clipboard } = get();
+    if (clipboard.length === 0) return;
+    const created = clipboard.map((el) => ({
+      ...translateElement(el, CLIPBOARD_PASTE_OFFSET, CLIPBOARD_PASTE_OFFSET),
+      id: uuidv4(),
+    })) as WhiteboardElement[];
+    const ops: Operation[] = created.map((c) => ({ type: 'create' as const, elementId: c.id, after: c }));
+    set((s) => ({
+      elements: [...s.elements, ...created],
+      selectedIds: created.map((c) => c.id),
+      selectedId: created[created.length - 1].id,
+      polylineEditId: null,
+      polylineVertexIndex: null,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+    }));
+  },
+
+  duplicateSelected: () => {
+    const { elements, selectedIds, selectedId } = get();
+    const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    const picked = elements.filter((e) => ids.includes(e.id) && e.type !== 'frame');
+    if (picked.length === 0) return;
+    const created = picked.map((el) => ({
+      ...translateElement(el, CLIPBOARD_PASTE_OFFSET, CLIPBOARD_PASTE_OFFSET),
+      id: uuidv4(),
+    })) as WhiteboardElement[];
+    const ops: Operation[] = created.map((c) => ({ type: 'create' as const, elementId: c.id, after: c }));
+    set((s) => ({
+      elements: [...s.elements, ...created],
+      selectedIds: created.map((c) => c.id),
+      selectedId: created[created.length - 1].id,
+      polylineEditId: null,
+      polylineVertexIndex: null,
+      undoStack: [...s.undoStack.slice(-99), ops],
+      redoStack: [],
+      isDirty: true,
+    }));
+  },
 
   // 图层顺序（ZOO-183）：一次调整一条 reorder 快照（before/after 全量数组，
   // 元素不可变仅持引用）；redoStack 清空同其他操作，与画笔 / 删除历史正确交错
@@ -281,11 +400,14 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   moveDown: () => get().applyZOrder('sendBackward'),
 
   applyZOrder: (action: ZOrderAction) => {
-    const { elements, selectedId } = get();
-    const reordered = reorderElements(elements, selectedId, action);
+    const { elements, selectedId, selectedIds } = get();
+    // 多选集合整体重排（ZOO-205）；单选 / 空选走原单元素路径
+    const reordered = selectedIds.length > 1
+      ? reorderElementsMulti(elements, selectedIds, action)
+      : reorderElements(elements, selectedId, action);
     if (!reordered) return; // 边界 / 无选中空转：不置脏、不压撤销栈
     const ops: Operation[] = [{
-      type: 'reorder', elementId: selectedId!,
+      type: 'reorder', elementId: selectedIds.length > 0 ? selectedIds[0] : selectedId!,
       beforeElements: elements, afterElements: reordered,
     }];
     set((s) => ({
@@ -318,7 +440,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   },
 
   // Tool
-  setTool: (tool) => set({ activeTool: tool, selectedId: null, polylineEditId: null, polylineVertexIndex: null }),
+  setTool: (tool) => set({ activeTool: tool, selectedId: null, selectedIds: [], polylineEditId: null, polylineVertexIndex: null }),
   setStrokeColor: (color) => set({ strokeColor: color }),
   setStrokeWidth: (width) => set({ strokeWidth: width }),
   // 线型与色板点选同语义（ZOO-165）：离散选择即时落元素，单条快照可撤销
@@ -587,6 +709,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       elements: doc.elements,
       viewport: doc.viewport,
       selectedId: null,
+      selectedIds: [],
       polylineEditId: null,
       polylineVertexIndex: null,
       undoStack: [],
@@ -605,6 +728,7 @@ export const useStore = create<WhiteboardState>((set, get) => ({
       elements: [],
       viewport: { offsetX: 0, offsetY: 0, scale: 1 },
       selectedId: null,
+      selectedIds: [],
       polylineEditId: null,
       polylineVertexIndex: null,
       undoStack: [],

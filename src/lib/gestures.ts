@@ -70,6 +70,28 @@ export function panBy(viewport: Viewport, dx: number, dy: number): Viewport {
   return { ...viewport, offsetX: viewport.offsetX + dx, offsetY: viewport.offsetY + dy };
 }
 
+/** 适应内容默认留白（屏幕 px，ZOO-205 Alt+Shift+0） */
+export const FIT_PADDING_PX = 60;
+
+/**
+ * 适应内容（ZOO-205）：求把世界坐标 bounds 居中放进 viewSize 视口的 viewport。
+ * scale 按「内容完整可见」取小者并夹取到缩放边界；空 bounds（无可视内容）返回 null。
+ */
+export function fitViewport(
+  bounds: { x: number; y: number; width: number; height: number } | null,
+  viewSize: { width: number; height: number },
+): Viewport | null {
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return null;
+  const availW = Math.max(viewSize.width - FIT_PADDING_PX * 2, 1);
+  const availH = Math.max(viewSize.height - FIT_PADDING_PX * 2, 1);
+  const scale = clampScale(Math.min(availW / bounds.width, availH / bounds.height));
+  return {
+    offsetX: viewSize.width / 2 - (bounds.x + bounds.width / 2) * scale,
+    offsetY: viewSize.height / 2 - (bounds.y + bounds.height / 2) * scale,
+    scale,
+  };
+}
+
 export interface PinchSnapshot {
   /** 手势开始时的 viewport 快照 */
   viewport: Viewport;

@@ -60,3 +60,37 @@ export function reorderElements(
     }
   }
 }
+
+/**
+ * 多选图层重排（ZOO-205 最小选中集合）：对 ids 内全部元素逐个施加同一操作，
+ * 在同一份结果数组上迭代（一次快照可撤销）。
+ *
+ * 迭代顺序按操作方向取：bringForward / bringToFront 自顶向下（先移最上层，
+ * 后续元素下标不受影响），sendBackward / sendToBack 自底向上——组内相对顺序保持。
+ * 全部空转（无位移）返回 null，与单元素语义一致（不置脏、不入撤销栈）。
+ */
+export function reorderElementsMulti(
+  elements: WhiteboardElement[],
+  ids: string[],
+  action: ZOrderAction,
+): WhiteboardElement[] | null {
+  const present = ids.filter((id) => elements.some((e) => e.id === id));
+  if (present.length === 0) return null;
+  const indices = present
+    .map((id) => elements.findIndex((e) => e.id === id))
+    .filter((idx) => idx >= 0);
+  // bringForward 系自顶向下、sendBackward 系自底向上，保证组内逐个相邻交换成立
+  const ordered = action === 'bringForward' || action === 'bringToFront'
+    ? indices.sort((a, b) => b - a)
+    : indices.sort((a, b) => a - b);
+  let current = elements;
+  let changed = false;
+  for (const idx of ordered) {
+    const next = reorderElements(current, current[idx].id, action);
+    if (next) {
+      current = next;
+      changed = true;
+    }
+  }
+  return changed ? current : null;
+}
