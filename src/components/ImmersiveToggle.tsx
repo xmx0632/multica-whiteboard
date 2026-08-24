@@ -38,7 +38,7 @@ export default function ImmersiveToggle({ immersive, onChange }: ImmersiveToggle
       type="button"
       onClick={() => onChange(!immersive)}
       aria-label={exit ? t('immersive.exitAria') : t('immersive.enterAria')}
-      className={`touch-target px-3 py-1.5 text-xs rounded-xl shadow-lg border backdrop-blur-sm transition-colors ${
+      className={`immersive-toggle touch-target px-3 py-1.5 text-xs rounded-xl shadow-lg border backdrop-blur-sm transition-colors ${
         exit
           ? 'bg-gray-900/85 text-white border-gray-700 active:bg-gray-900'
           : 'bg-white/90 text-gray-600 border-gray-200 hover:bg-gray-50 active:bg-gray-100'

@@ -25,6 +25,13 @@
     "eraser": "橡皮",
     "equation": "方程"
   },
+  "confirm": {
+    "discardTitle": "放弃未保存的修改？",
+    "discardBody": "新建白板将丢弃当前未保存的修改，此操作无法撤销。",
+    "discardConfirm": "放弃修改",
+    "ok": "确认",
+    "cancel": "取消"
+  },
   "menu": {
     "new": "新建",
     "undo": "撤销",
@@ -358,6 +365,17 @@
     "renameTip": "双击重命名",
     "jumpTip": "跳转到「{name}」",
     "exportDisabledTip": "先在页条选中一页"
+  },
+  "presentation": {
+    "enter": "▶ 演示",
+    "enterAria": "进入演示模式（翻页放映）",
+    "exit": "✕ 退出演示",
+    "exitAria": "退出演示模式",
+    "pageOf": "{current} / {total}",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "needPageTip": "先创建至少一页（帧）再开始演示",
+    "laserTip": "按住 L 移动 = 激光指针；触屏长按拖动同理"
   },
   "shortcuts": {
     "title": "键盘快捷键",

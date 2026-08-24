@@ -25,6 +25,13 @@
     "eraser": "消しゴム",
     "equation": "方程式"
   },
+  "confirm": {
+    "discardTitle": "未保存の変更を破棄しますか？",
+    "discardBody": "新しいホワイトボードを作成すると、未保存の変更は破棄されます。この操作は元に戻せません。",
+    "discardConfirm": "変更を破棄",
+    "ok": "OK",
+    "cancel": "キャンセル"
+  },
   "menu": {
     "new": "新規",
     "undo": "元に戻す",
@@ -358,6 +365,17 @@
     "renameTip": "ダブルクリックで名前変更",
     "jumpTip": "「{name}」へ移動",
     "exportDisabledTip": "先にページバーでページを選択"
+  },
+  "presentation": {
+    "enter": "▶ プレゼン",
+    "enterAria": "プレゼンテーションモードに入る（ページ送り）",
+    "exit": "✕ プレゼン終了",
+    "exitAria": "プレゼンテーションモードを終了",
+    "pageOf": "{current} / {total}",
+    "prevPage": "前のページ",
+    "nextPage": "次のページ",
+    "needPageTip": "プレゼン前に少なくとも 1 ページ（フレーム）を作成してください",
+    "laserTip": "L を押しながら移動 = レーザーポインター；タッチは長押ししてドラッグ"
   },
   "shortcuts": {
     "title": "キーボードショートカット",

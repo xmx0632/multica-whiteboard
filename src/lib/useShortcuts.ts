@@ -4,11 +4,14 @@ import { useEffect } from 'react';
 import { useStore } from './store';
 import { isEditableTarget } from './keyboard';
 import { matchEvent, useShortcutUI, ShortcutId } from './keymap';
+import { isModalOpen } from './modal';
+import { confirmDiscardNew } from './confirmDialog';
 import { zoomAt, stepZoomScale, fitViewport } from './gestures';
 import { getAllElementsBounds } from './renderer';
 import { saveToLocal, listLocalDocuments, listServerDocuments, loadFromLocal, loadFromServer } from './persistence';
 import { framesOf, neighborFrame, frameFocusViewport } from './frame';
 import { animateViewportTo } from './frameNav';
+import { usePresentation } from './presentation';
 import { useAutosaveStore } from './autosave';
 import { useT } from '@/i18n/I18nProvider';
 import type { ToolType } from './types';
@@ -21,11 +24,13 @@ import type { ToolType } from './types';
  * 1. 编辑态守卫（ZOO-163 单一来源）：焦点在 input/textarea/contenteditable 时全部
  *    放行（不 preventDefault、不动作）——单字母工具键（现 Alt 系）、Ctrl 系编辑键、
  *    删除键不得劫持文本输入；输入框内 Option/Alt+字母继续原生输入数学符号（√ ≈ ≤）。
- * 2. 模态守卫：帮助面板 / 高级公式面板（role=dialog）打开期间除 Esc / Alt+/ 外全部
- *    失效——防后台切工具、误触发保存。
+ * 2. 模态守卫：帮助面板 / 高级公式面板（role=dialog）/ 确认弹窗（role=alertdialog，
+ *    ZOO-209）打开期间除 Esc / Alt+/ 外全部失效——防后台切工具、误触发保存
+ *    （判定单一来源 modal.ts，Canvas 空格平移共用）。
  *
- * Esc 优先级（一次按下只做一件事）：关帮助面板 > 折线编辑退出（ZOO-168）>
- * 其他模态自身关闭（此处放行不动作）> 取消选中。
+ * Esc 优先级（一次按下只做一件事）：关帮助面板 > 其他模态自身关闭（此处放行不动作，
+ * ZOO-209 起优先于折线编辑——确认弹窗打开时 Esc 只关弹窗）> 折线编辑退出（ZOO-168）
+ * > 取消选中。
  */
 const TOOL_OF_BINDING: Partial<Record<ShortcutId, ToolType>> = {
   'tool.select': 'select', 'tool.hand': 'hand', 'tool.pen': 'pen', 'tool.penAlias': 'pen',
@@ -114,8 +119,14 @@ export function useShortcuts() {
           st.moveDown();
           return;
         case 'file.new':
-          if (st.isDirty && !confirm(t('menu.confirmDiscard'))) return;
-          st.newDocument(t('common.untitled'));
+          // 未保存确认改自定义弹窗（ZOO-209）：Enter 放弃并新建 / Esc 留在当前画布
+          if (!st.isDirty) {
+            st.newDocument(t('common.untitled'));
+            return;
+          }
+          void confirmDiscardNew(t).then((ok) => {
+            if (ok) useStore.getState().newDocument(t('common.untitled'));
+          });
           return;
         case 'file.save': {
           // 手动保存 = 立即落盘（ZOO-170 协同：签名未变则自动保存不再重复写）
@@ -178,6 +189,47 @@ export function useShortcuts() {
       // 守卫 1（ZOO-163）：编辑态全部放行——文本输入优先于一切快捷键
       if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
 
+      // —— 演示态路由（ZOO-200）：全部编辑快捷键让位，只认翻页 / 首末页 / 退出 /
+      //    激光指针。空格在此 preventDefault → 不触发页面滚动与按钮激活 ——
+      const pres = usePresentation.getState();
+      if (pres.active) {
+        if (e.key === 'Escape') {
+          if (isModalOpen()) return; // 模态自身关闭优先（演示态正常不可开，防御）
+          e.preventDefault();
+          pres.exit();
+          return;
+        }
+        switch (e.code) {
+          case 'ArrowRight':
+            e.preventDefault();
+            pres.step(1);
+            return;
+          case 'ArrowLeft':
+            e.preventDefault();
+            pres.step(-1);
+            return;
+          case 'Space':
+            e.preventDefault();
+            pres.step(1);
+            return;
+          case 'Home':
+            e.preventDefault();
+            pres.jumpToEdge('home');
+            return;
+          case 'End':
+            e.preventDefault();
+            pres.jumpToEdge('end');
+            return;
+          case 'KeyL':
+            if (!e.repeat) {
+              e.preventDefault();
+              pres.setLaserPointer(true);
+            }
+            return;
+        }
+        return; // 其余键（含 Alt 工具 / Ctrl 编辑 / Alt+/ 帮助）演示态一律不动作
+      }
+
       const { helpOpen, setHelpOpen } = useShortcutUI.getState();
 
       // Esc 优先级链（见文件头注释）；Escape 不在 KEY_BINDINGS 分派里匹配（防 modifier 误配）
@@ -187,14 +239,15 @@ export function useShortcuts() {
           setHelpOpen(false);
           return;
         }
-        const modalOpen = typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]');
+        // 模态（含确认弹窗 alertdialog，ZOO-209）优先于折线编辑：Esc 一次只关一层，
+        // 不得在关弹窗的同时退出折线编辑（画布动作）
+        if (isModalOpen()) return; // 高级公式面板 / 确认弹窗：其自身监听关闭，此处不叠加动作
         const st = useStore.getState();
         if (st.polylineEditId) {
           e.preventDefault();
           st.endPolylineEdit();
           return;
         }
-        if (modalOpen) return; // 高级公式面板等模态：其自身监听关闭，此处不叠加动作
         e.preventDefault();
         st.setSelected(null);
         return;
@@ -204,14 +257,26 @@ export function useShortcuts() {
       if (!binding) return;
 
       // 守卫 2：模态打开期间仅保留帮助面板开合
-      const modalOpen = typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]');
-      if ((helpOpen || modalOpen) && binding.id !== 'ui.help') return;
+      if ((helpOpen || isModalOpen()) && binding.id !== 'ui.help') return;
 
       e.preventDefault();
       runAction(binding.id);
     };
 
+    // L 键抬键（ZOO-200 演示激光）：按住画轨迹、抬起渐隐——与 keydown 的
+    // setLaserPointer(true) 成对；窗口失焦兜底松开（防 L 粘滞）
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'KeyL') usePresentation.getState().setLaserPointer(false);
+    };
+    const handleBlur = () => usePresentation.getState().setLaserPointer(false);
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [t]);
 }

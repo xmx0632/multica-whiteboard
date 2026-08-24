@@ -25,6 +25,13 @@
     "eraser": "지우개",
     "equation": "방정식"
   },
+  "confirm": {
+    "discardTitle": "저장하지 않은 변경 사항을 버리시겠습니까?",
+    "discardBody": "새 화이트보드를 만들면 저장하지 않은 변경 사항이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "discardConfirm": "변경 사항 버리기",
+    "ok": "확인",
+    "cancel": "취소"
+  },
   "menu": {
     "new": "새로 만들기",
     "undo": "실행 취소",
@@ -358,6 +365,17 @@
     "renameTip": "더블클릭하여 이름 변경",
     "jumpTip": "\"{name}\"(으)로 이동",
     "exportDisabledTip": "먼저 페이지 표시줄에서 페이지를 선택하세요"
+  },
+  "presentation": {
+    "enter": "▶ 발표",
+    "enterAria": "발표 모드 진입 (페이지 넘김)",
+    "exit": "✕ 발표 종료",
+    "exitAria": "발표 모드 종료",
+    "pageOf": "{current} / {total}",
+    "prevPage": "이전 페이지",
+    "nextPage": "다음 페이지",
+    "needPageTip": "발표를 시작하려면 페이지(프레임)를 먼저 만드세요",
+    "laserTip": "L을 누른 채 이동 = 레이저 포인터; 터치는 길게 누른 후 드래그"
   },
   "shortcuts": {
     "title": "키보드 단축키",
