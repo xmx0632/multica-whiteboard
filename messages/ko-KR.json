@@ -386,6 +386,8 @@
     "helpPanel": "단축키 도움말",
     "escape": "선택 해제 / 편집 종료",
     "noteInput": "입력란에 포커스가 있으면 단축키가 자동으로 비활성화됩니다",
-    "noteReserved": "브라우저 예약 키(Ctrl+N/T/W)는 웹페이지에서 사용할 수 없습니다. 새 화이트보드는 Alt+N을 사용하세요"
+    "noteReserved": "브라우저 예약 키(Ctrl+N/T/W)는 웹페이지에서 사용할 수 없습니다. 새 화이트보드는 Alt+N을 사용하세요",
+    "prevPage": "이전 페이지",
+    "nextPage": "다음 페이지"
   }
 }

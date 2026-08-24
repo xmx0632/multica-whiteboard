@@ -219,3 +219,21 @@ function reIdShifted(el: WhiteboardElement, dx: number, dy: number): WhiteboardE
       return shifted;
   }
 }
+
+/**
+ * 相邻页导航（ZOO-205 ←→ 翻页快捷键）：给定有序帧列表与当前活动页 id，
+ * 返回上一页（dir=-1）/ 下一页（dir=+1）的帧；边界与空列表返回 null（空转）。
+ *
+ * activeId 悬空（撤销 / 删除后）或 null 时按首页（frames[0]）语义起算——
+ * 与 PageBar 的 active 兜底（active ?? frames[0]）一致。
+ */
+export function neighborFrame(
+  frames: FrameElement[],
+  activeId: string | null,
+  dir: 1 | -1,
+): FrameElement | null {
+  if (frames.length === 0) return null;
+  const idx = Math.max(0, frames.findIndex((f) => f.id === activeId));
+  const next = frames[idx + dir];
+  return next ?? null;
+}

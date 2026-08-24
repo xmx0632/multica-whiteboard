@@ -386,6 +386,8 @@
     "helpPanel": "快捷键帮助",
     "escape": "取消选择 / 退出编辑",
     "noteInput": "输入框聚焦时快捷键自动失效，文字与方程输入不受影响",
-    "noteReserved": "浏览器保留键（Ctrl+N/T/W）无法被网页接管，新建白板请用 Alt+N"
+    "noteReserved": "浏览器保留键（Ctrl+N/T/W）无法被网页接管，新建白板请用 Alt+N",
+    "prevPage": "上一页",
+    "nextPage": "下一页"
   }
 }

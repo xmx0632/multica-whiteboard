@@ -386,6 +386,8 @@
     "helpPanel": "Keyboard shortcuts",
     "escape": "Deselect / exit editing",
     "noteInput": "Shortcuts are disabled while typing in a text field",
-    "noteReserved": "Browser-reserved keys (Ctrl+N/T/W) cannot be captured by web pages; use Alt+N for a new whiteboard"
+    "noteReserved": "Browser-reserved keys (Ctrl+N/T/W) cannot be captured by web pages; use Alt+N for a new whiteboard",
+    "prevPage": "Previous page",
+    "nextPage": "Next page"
   }
 }

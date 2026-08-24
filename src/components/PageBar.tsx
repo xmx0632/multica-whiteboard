@@ -11,12 +11,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { FrameElement, Viewport, WhiteboardElement } from '@/lib/types';
 import { framesOf, frameContents, frameFocusViewport } from '@/lib/frame';
+import { animateViewportTo } from '@/lib/frameNav';
 import { drawFrame, renderElements } from '@/lib/renderer';
 import { useT } from '@/i18n/I18nProvider';
-
-/** 跳转动画时长（ms） */
-const JUMP_MS = 240;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 /** 页缩略图：帧外框 fit 到小画布，白底 + 页框 + 页内内容（不画页名） */
 function FrameThumbnail({
@@ -67,30 +64,15 @@ export default function PageBar() {
   // activeFrameId 撤销 / 删除后可能悬空：兜底到首页
   const active = frames.find((f) => f.id === activeFrameId) ?? frames[0] ?? null;
 
-  // —— 点击跳转：视口平滑对齐到帧 ——
-  const rafRef = useRef<number | null>(null);
-  useEffect(() => () => {
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-  }, []);
-
+  // —— 点击跳转：视口平滑对齐到帧（动画沉淀 frameNav，与 ←→ 翻页快捷键共用，ZOO-205）——
   const jumpTo = useCallback((frame: FrameElement) => {
     setActiveFrame(frame.id);
-    if (typeof window === 'undefined') return;
-    const from: Viewport = { ...useStore.getState().viewport };
     const to = frameFocusViewport(frame, window.innerWidth, window.innerHeight);
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    const start = performance.now();
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - start) / JUMP_MS);
-      const k = easeOutCubic(p);
-      setViewport({
-        offsetX: from.offsetX + (to.offsetX - from.offsetX) * k,
-        offsetY: from.offsetY + (to.offsetY - from.offsetY) * k,
-        scale: from.scale + (to.scale - from.scale) * k,
-      });
-      rafRef.current = p < 1 ? requestAnimationFrame(tick) : null;
-    };
-    rafRef.current = requestAnimationFrame(tick);
+    animateViewportTo(
+      to,
+      () => useStore.getState().viewport,
+      setViewport,
+    );
   }, [setActiveFrame, setViewport]);
 
   // —— 页操作 ——

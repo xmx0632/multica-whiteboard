@@ -30,6 +30,8 @@ export type ShortcutId =
   // 视图（Alt+符号；PageUp/PageDown 为非字母编辑键）
   | 'view.zoomIn' | 'view.zoomOut' | 'view.zoomReset' | 'view.zoomFit'
   | 'view.prevBoard' | 'view.nextBoard'
+  // 页内翻页（分页帧 ZOO-198，方向键非字母键）
+  | 'page.prev' | 'page.next'
   // 通用
   | 'ui.help' | 'ui.escape';
 
@@ -89,6 +91,9 @@ export const KEY_BINDINGS: KeyBinding[] = [
   { id: 'view.zoomFit', group: 'view', labelKey: 'shortcuts.zoomFit', code: 'Digit0', altKey: true, shiftKey: true },
   { id: 'view.prevBoard', group: 'view', labelKey: 'shortcuts.prevBoard', key: 'PageUp' },
   { id: 'view.nextBoard', group: 'view', labelKey: 'shortcuts.nextBoard', key: 'PageDown' },
+  // —— 页内翻页（ZOO-198 分页帧）：方向键非字母键，不违反"无裸单字母"；与 PPT 翻页直觉一致 ——
+  { id: 'page.prev', group: 'view', labelKey: 'shortcuts.prevPage', key: 'ArrowLeft' },
+  { id: 'page.next', group: 'view', labelKey: 'shortcuts.nextPage', key: 'ArrowRight' },
   // —— 通用 ——
   { id: 'ui.help', group: 'general', labelKey: 'shortcuts.helpPanel', code: 'Slash', altKey: true },
   { id: 'ui.escape', group: 'general', labelKey: 'shortcuts.escape', key: 'Escape' },

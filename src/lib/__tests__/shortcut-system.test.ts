@@ -16,6 +16,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { KEY_BINDINGS, matchShortcut, matchEvent, formatShortcut } from '../keymap';
 import { fitViewport } from '../gestures';
 import { useStore } from '../store';
+import { neighborFrame } from '../frame';
 import { WhiteboardElement } from '../types';
 
 /** 合成 KeyboardEvent 形状（node 无 DOM） */
@@ -231,5 +232,27 @@ describe('store：多选最小集 + 页面内剪贴板（ZOO-205）', () => {
     const s = useStore.getState();
     expect(s.selectedIds).toEqual([]);
     expect(s.selectedId).toBeNull();
+  });
+});
+
+describe('页内翻页（ZOO-205 ←/→ + neighborFrame）', () => {
+  const frame = (id: string): never => ({ id, type: 'frame', x: 0, y: 0, width: 800, height: 600, name: id }) as never;
+
+  it('方向键命中翻页绑定（非字母键，无修饰）', () => {
+    expect(matchShortcut(key({ key: 'ArrowLeft' }), binding('page.prev'))).toBe(true);
+    expect(matchShortcut(key({ key: 'ArrowRight' }), binding('page.next'))).toBe(true);
+    // 带修饰不命中（Alt+← 等留给浏览器/未来）
+    expect(matchShortcut(key({ key: 'ArrowLeft', alt: true }), binding('page.prev'))).toBe(false);
+  });
+
+  it('neighborFrame：常规翻页、边界空转、悬空 activeId 按首页起算', () => {
+    const frames = [frame('p1'), frame('p2'), frame('p3')];
+    expect(neighborFrame(frames, 'p2', 1)?.id).toBe('p3');
+    expect(neighborFrame(frames, 'p2', -1)?.id).toBe('p1');
+    expect(neighborFrame(frames, 'p3', 1)).toBeNull();   // 末页再翻 = 空转
+    expect(neighborFrame(frames, 'p1', -1)).toBeNull();  // 首页回翻 = 空转
+    expect(neighborFrame(frames, null, 1)?.id).toBe('p2');   // 未激活：首页起算
+    expect(neighborFrame(frames, 'gone', 1)?.id).toBe('p2'); // 悬空：同首页语义
+    expect(neighborFrame([], 'p1', 1)).toBeNull();           // 无帧：无页概念
   });
 });
