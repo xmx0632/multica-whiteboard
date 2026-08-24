@@ -375,7 +375,7 @@
     "prevPage": "上一页",
     "nextPage": "下一页",
     "needPageTip": "先创建至少一页（帧）再开始演示",
-    "laserTip": "按住 L 移动 = 激光指针；触屏长按拖动同理"
+    "laserTip": "按住鼠标右键拖动 = 激光指针；触屏长按拖动同理"
   },
   "shortcuts": {
     "title": "键盘快捷键",

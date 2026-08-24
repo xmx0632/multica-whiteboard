@@ -3,10 +3,9 @@
  * - 纯函数：铺满视口（等比 contain、居中、缩放上界）、页序步进夹取、
  *   横滑方向判定、激光采点去重 / 渐隐 alpha / 渐隐完成判定；
  * - 状态机（usePresentation + useStore）：进入（快照 + 清选中 + 锁定首帧视口）、
- *   翻页（step / goTo / jumpToEdge，边界空转）、退出（视口与选中态逐字段还原）、
- *   激光标志（L 按住 / 抬起）；
- * - 不变量：全程撤销 / 重做栈长度与 isDirty / elements 零变化（激光不入历史栈、
- *   翻页不改文档），无帧文档进入被拒绝。
+ *   翻页（step / goTo / jumpToEdge，边界空转）、退出（视口与选中态逐字段还原）；
+ * - 不变量：全程撤销 / 重做栈长度与 isDirty / elements 零变化（激光为纯渲染层，
+ *   触发走 Canvas 指针通道——右键按住 / 触屏长按，不入历史栈），无帧文档进入被拒绝。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useStore } from '../store';
@@ -65,7 +64,6 @@ beforeEach(() => {
   usePresentation.setState({
     active: false,
     frameId: null,
-    laserPointerActive: false,
     restore: null,
     requestedFullscreen: false,
   });
@@ -173,7 +171,6 @@ describe('演示态状态机（usePresentation）', () => {
     const pres = usePresentation.getState();
     expect(pres.active).toBe(true);
     expect(pres.frameId).toBe('f2'); // activeFrameId 起始
-    expect(pres.laserPointerActive).toBe(false);
 
     // 视口 = f2 铺满（帧中心对齐视口中心）
     const vp = useStore.getState().viewport;
@@ -258,16 +255,7 @@ describe('演示态状态机（usePresentation）', () => {
     expect((f2.x + f2.width / 2) * vp.scale + vp.offsetX).toBeCloseTo(400);
   });
 
-  it('激光标志：L 按住 / 抬起切换，重复设置不抖动', () => {
-    usePresentation.getState().setLaserPointer(true);
-    expect(usePresentation.getState().laserPointerActive).toBe(true);
-    usePresentation.getState().setLaserPointer(true); // 幂等
-    expect(usePresentation.getState().laserPointerActive).toBe(true);
-    usePresentation.getState().setLaserPointer(false);
-    expect(usePresentation.getState().laserPointerActive).toBe(false);
-  });
-
-  it('不变量：进入 / 翻页 / 激光 / 退出全程文档零变化（撤销栈 / elements / isDirty）', () => {
+  it('不变量：进入 / 翻页 / 退出全程文档零变化（撤销栈 / elements / isDirty；激光为渲染层不涉 store）', () => {
     const before = {
       elements: useStore.getState().elements,
       undoStackLen: useStore.getState().undoStack.length,
@@ -275,8 +263,6 @@ describe('演示态状态机（usePresentation）', () => {
       isDirty: useStore.getState().isDirty,
     };
     usePresentation.getState().enter(VIEW);
-    usePresentation.getState().setLaserPointer(true);
-    usePresentation.getState().setLaserPointer(false);
     usePresentation.getState().step(1);
     usePresentation.getState().jumpToEdge('home');
     usePresentation.getState().exit();

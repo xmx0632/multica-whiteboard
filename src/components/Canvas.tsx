@@ -169,7 +169,7 @@ export default function Canvas() {
   // —— 演示模式（ZOO-200）——
   /** 激光轨迹（纯渲染层，屏幕坐标）：不入 elements / 撤销栈 / 持久化 */
   const laserRef = useRef<LaserTrail>({ points: [], drawing: false, releasedAt: null });
-  /** 演示态单指记录：触屏长按 → 激光；横滑 → 翻页；鼠标只走 L 键激光 */
+  /** 演示态单指记录：触屏长按 → 激光、横滑 → 翻页；鼠标 / 触控笔按住右键 → 激光 */
   const presentPointerRef = useRef<{
     id: number;
     startX: number;
@@ -192,7 +192,8 @@ export default function Canvas() {
   // 演示模式（ZOO-200）：渲染分支与事件路由按 active 切换；frameId 驱动翻页重绘
   const presenting = usePresentation((s) => s.active);
   const presentationFrameId = usePresentation((s) => s.frameId);
-  const laserPointerActive = usePresentation((s) => s.laserPointerActive);
+  // 激光绘制中（起笔 → 松开）：驱动演示态光标隐藏（激光点即光标）
+  const [laserDrawing, setLaserDrawing] = useState(false);
 
   // 容器宽（ZOO-159）：输入浮层右缘避让用；ResizeObserver 维护，渲染期不读 ref
   const [containerWidth, setContainerWidth] = useState(0);
@@ -563,6 +564,7 @@ export default function Canvas() {
   }, [render]);
 
   const startLaser = useCallback((p: Point) => {
+    setLaserDrawing(true);
     laserRef.current = { points: [p], drawing: true, releasedAt: null };
     scheduleLaserRender();
   }, [scheduleLaserRender]);
@@ -578,17 +580,14 @@ export default function Canvas() {
 
   const releaseLaser = useCallback(() => {
     const trail = laserRef.current;
+    setLaserDrawing(false);
     if (!trail.drawing) return;
     laserRef.current = { ...trail, drawing: false, releasedAt: performance.now() };
     scheduleLaserRender();
   }, [scheduleLaserRender]);
 
-  // L 键抬起 / 演示退出：鼠标通道的轨迹收尾（触屏通道在 pointerup 收尾）
-  useEffect(() => {
-    if (presenting && !laserPointerActive) releaseLaser();
-  }, [presenting, laserPointerActive, releaseLaser]);
-
-  // —— 演示态指针路由（ZOO-200）：触屏长按 → 激光、横滑 → 翻页；鼠标 L 键激光 ——
+  // —— 演示态指针路由（ZOO-200，评审修订：激光 = 按住右键拖动）：
+  //    鼠标 / 触控笔右键 → 激光；触屏长按 → 激光、横滑 → 翻页 ——
   const handlePresentPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const local = getLocalPoint(e);
     if (e.pointerType === 'touch') {
@@ -618,9 +617,28 @@ export default function Canvas() {
       };
       return;
     }
-    // 鼠标 / 触控笔：L 按住中，落点即起笔（悬停移动起笔见 move 通道）
-    if (laserPointerActive && !laserRef.current.drawing) startLaser(local);
-  }, [getLocalPoint, laserPointerActive, startLaser]);
+    // 鼠标 / 触控笔：右键按下即起笔（contextmenu 已被画布 preventDefault），
+    // 拖动跟手、抬键渐隐——单手可达，不占键盘（评审修订，替代原 L 键通道）
+    if (e.button === 2) {
+      if (presentPointerRef.current) return;
+      try {
+        canvasRef.current?.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      presentPointerRef.current = {
+        id: e.pointerId,
+        startX: local.x,
+        startY: local.y,
+        x: local.x,
+        y: local.y,
+        touch: false,
+        laser: true,
+        holdTimer: null,
+      };
+      startLaser(local);
+    }
+  }, [getLocalPoint, startLaser]);
 
   const handlePresentPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const local = getLocalPoint(e);
@@ -629,6 +647,12 @@ export default function Canvas() {
       rec.x = local.x;
       rec.y = local.y;
       if (rec.laser) {
+        // 鼠标通道丢抬键兜底：右键已不在按下集合 → 直接收尾（不依赖 pointerup）
+        if (!rec.touch && (e.buttons & 2) === 0) {
+          presentPointerRef.current = null;
+          releaseLaser();
+          return;
+        }
         appendLaser(local);
         return;
       }
@@ -640,14 +664,8 @@ export default function Canvas() {
         clearTimeout(rec.holdTimer);
         rec.holdTimer = null;
       }
-      return;
     }
-    // 鼠标悬停移动（无按下记录）：L 按住中轨迹跟手
-    if (e.pointerType !== 'touch' && laserPointerActive) {
-      if (!laserRef.current.drawing) startLaser(local);
-      else appendLaser(local);
-    }
-  }, [getLocalPoint, appendLaser, startLaser, laserPointerActive]);
+  }, [getLocalPoint, appendLaser, releaseLaser]);
 
   const handlePresentPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
     const rec = presentPointerRef.current;
@@ -1374,9 +1392,9 @@ export default function Canvas() {
         className="whiteboard-canvas absolute inset-0 w-full h-full"
         // 光标映射统一收口 cursors.ts（ZOO-207）：工具 → 指针直观对应；
         // 平移 / 空格 / 文本编辑 / 悬停命中作为上下文传入，覆盖链见 canvasCursor。
-        // 演示态（ZOO-200）：激光按住中隐藏系统光标（激光点即光标），否则默认指针
+        // 演示态（ZOO-200）：激光绘制中隐藏系统光标（激光点即光标），否则默认指针
         style={{ cursor: presenting
-          ? (laserPointerActive ? 'none' : 'default')
+          ? (laserDrawing ? 'none' : 'default')
           : canvasCursor(activeTool, {
             panning: panActive,
             spacePanning: spaceDown,
