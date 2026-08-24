@@ -358,5 +358,34 @@
     "renameTip": "Double-click to rename",
     "jumpTip": "Jump to \"{name}\"",
     "exportDisabledTip": "Select a page in the page bar first"
+  },
+  "shortcuts": {
+    "title": "Keyboard Shortcuts",
+    "close": "Close",
+    "sections": {
+      "tools": "Tools",
+      "file": "File",
+      "edit": "Edit",
+      "view": "View",
+      "general": "General"
+    },
+    "copy": "Copy",
+    "paste": "Paste",
+    "cut": "Cut",
+    "duplicate": "Duplicate",
+    "selectAll": "Select all",
+    "delete": "Delete selection",
+    "moveUp": "Bring forward",
+    "moveDown": "Send backward",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomReset": "Reset zoom",
+    "zoomFit": "Zoom to fit",
+    "prevBoard": "Previous whiteboard",
+    "nextBoard": "Next whiteboard",
+    "helpPanel": "Keyboard shortcuts",
+    "escape": "Deselect / exit editing",
+    "noteInput": "Shortcuts are disabled while typing in a text field",
+    "noteReserved": "Browser-reserved keys (Ctrl+N/T/W) cannot be captured by web pages; use Alt+N for a new whiteboard"
   }
 }

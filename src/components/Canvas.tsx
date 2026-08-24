@@ -2,9 +2,9 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame } from '@/lib/renderer';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, getElementBounds } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
-import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
@@ -60,6 +60,13 @@ export default function Canvas() {
   const resizeRef = useRef<{ handle: ResizeHandleId; startEl: WhiteboardElement; startWorld: Point; groupStart?: WhiteboardElement[] } | null>(null);
   /** select 拖拽帧时的页内内容快照（ZOO-198）：帧整体移动联动内容，抬指一并压快照 */
   const frameDragContentsRef = useRef<WhiteboardElement[] | null>(null);
+  // —— 多选组拖拽（ZOO-205 最小选中集合）——
+  /** 组拖拽起手快照（选中集合全部元素，帧含页内内容）；null = 非组拖拽 */
+  const groupDragStartsRef = useRef<WhiteboardElement[] | null>(null);
+  /** 组拖拽中按下的元素 id（位移不足阈值时收敛单选到它） */
+  const groupDragAnchorIdRef = useRef<string | null>(null);
+  /** 组拖拽累计位移（屏幕 px；< 3 视作点击不压快照） */
+  const groupDragMovedPxRef = useRef(0);
 
   // —— 内联文本输入（ZOO-159）——
   /** 当前草稿镜像（提交 / 取消以 ref 为准，state 只驱动渲染——blur 与卸载竞态下幂等） */
@@ -85,7 +92,7 @@ export default function Canvas() {
   const hoverRafRef = useRef<number | null>(null);
 
   const {
-    elements, selectedId, activeTool, strokeColor, strokeWidth, strokeDash, fillColor,
+    elements, selectedId, selectedIds, activeTool, strokeColor, strokeWidth, strokeDash, fillColor,
     viewport, addElement, setSelected, setViewport, pushOperations,
     pendingMathPlot, consumeMathPlotInsert, setTool,
     polylineEditId, polylineVertexIndex, selectPolylineVertex,
@@ -212,6 +219,27 @@ export default function Canvas() {
       });
     }
 
+    // 多选集合外框（ZOO-205）：非主选中元素画虚线包围框（主元素走完整选中框/控点，
+    // 避免控点成片堆叠）；元素已不存在（撤销等）自动跳过
+    for (const id of selectedIds) {
+      if (id === selectedId) continue;
+      const el = elements.find((e) => e.id === id);
+      if (!el || el.id === hiddenTextId) continue;
+      const bbox = getElementBounds(el);
+      if (!bbox) continue;
+      ctx.save();
+      ctx.strokeStyle = '#3B82F6';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(
+        bbox.x * viewport.scale + viewport.offsetX - 2,
+        bbox.y * viewport.scale + viewport.offsetY - 2,
+        bbox.width * viewport.scale + 4,
+        bbox.height * viewport.scale + 4,
+      );
+      ctx.restore();
+    }
+
     // —— POI 灰点提示层 + 悬停坐标标签（ZOO-199；屏幕 px 纯视觉层，最顶层，
     //    不参与元素命中）。灰点仅对「选中或悬停贴近」的元素出现；标签锚在
     //    吸附点（非光标）——平移缩放后位置依然正确 ——
@@ -264,7 +292,7 @@ export default function Canvas() {
         }
       }
     }
-  }, [elements, selectedId, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, t]);
+  }, [elements, selectedId, selectedIds, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, t]);
 
   useEffect(() => {
     render();
@@ -337,6 +365,17 @@ export default function Canvas() {
 
     const dragId = dragElementIdRef.current;
     const dragStart = dragElementStartRef.current;
+    // 组拖拽取消（ZOO-205）：恢复选中集合全组起手快照（帧含页内内容）
+    const groupStarts = groupDragStartsRef.current;
+    if (groupStarts) {
+      groupDragStartsRef.current = null;
+      groupDragAnchorIdRef.current = null;
+      groupDragMovedPxRef.current = 0;
+      const restoreGroup = new Map(groupStarts.map((g) => [g.id, g]));
+      useStore.setState({
+        elements: useStore.getState().elements.map((el) => restoreGroup.get(el.id) ?? el),
+      });
+    }
     if (dragId && dragStart) {
       dragElementIdRef.current = null;
       dragElementStartRef.current = null;
@@ -506,11 +545,31 @@ export default function Canvas() {
       for (let i = elements.length - 1; i >= 0; i--) {
         const hitEl = elements[i];
         if (hitTest(hitEl, point, viewport)) {
-          setSelected(hitEl.id);
-          dragElementStartRef.current = hitEl;
-          dragElementIdRef.current = hitEl.id;
-          // 帧整体拖动（ZOO-198）：快照页内内容，拖动中联动平移
-          frameDragContentsRef.current = isFrame(hitEl) ? frameContents(elements, hitEl) : null;
+          const multiSel = useStore.getState().selectedIds;
+          if (multiSel.length > 1 && multiSel.includes(hitEl.id)) {
+            // 组拖拽起手（ZOO-205）：保持集合选中，快照全组（帧含页内内容）；
+            // 单选收敛发生在抬指（位移 < 3 屏幕 px 视作点击）
+            const snaps: WhiteboardElement[] = [];
+            for (const id of multiSel) {
+              const member = elements.find((e2) => e2.id === id);
+              if (!member) continue;
+              snaps.push(member);
+              if (isFrame(member)) snaps.push(...frameContents(elements, member));
+            }
+            groupDragStartsRef.current = snaps;
+            groupDragAnchorIdRef.current = hitEl.id;
+            groupDragMovedPxRef.current = 0;
+            // 单元素通道同步填充（双指取消兜底路径读它；组路径优先分派）
+            dragElementStartRef.current = hitEl;
+            dragElementIdRef.current = hitEl.id;
+            frameDragContentsRef.current = null;
+          } else {
+            setSelected(hitEl.id);
+            dragElementStartRef.current = hitEl;
+            dragElementIdRef.current = hitEl.id;
+            // 帧整体拖动（ZOO-198）：快照页内内容，拖动中联动平移
+            frameDragContentsRef.current = isFrame(hitEl) ? frameContents(elements, hitEl) : null;
+          }
           found = true;
           break;
         }
@@ -778,6 +837,21 @@ export default function Canvas() {
     const point = getCanvasPoint(e);
     const temp = tempElementRef.current;
     if (!temp) {
+      // 组拖拽（ZOO-205）：选中集合整体平移——起手快照 + 位移重算（帧联动页内内容）
+      const groupStarts = groupDragStartsRef.current;
+      if (activeTool === 'select' && groupStarts) {
+        const dx = point.x - dragStartRef.current.x;
+        const dy = point.y - dragStartRef.current.y;
+        groupDragMovedPxRef.current = Math.max(
+          groupDragMovedPxRef.current,
+          Math.hypot(dx, dy) * useStore.getState().viewport.scale,
+        );
+        const movedById = new Map(groupStarts.map((g) => [g.id, translateElement(g, dx, dy)]));
+        useStore.setState({
+          elements: useStore.getState().elements.map((e2) => movedById.get(e2.id) ?? e2),
+        });
+        return;
+      }
       // Select tool dragging（ZOO-154：整体平移——以起手快照 + 位移重算，多锚点同步移动、形状不变）
       if (activeTool === 'select' && selectedId) {
         const dx = point.x - dragStartRef.current.x;
@@ -898,6 +972,31 @@ export default function Canvas() {
     if (temp) {
       addElement(temp);
       tempElementRef.current = null;
+    }
+
+    // 组拖拽收尾（ZOO-205）：位移 < 3 屏幕 px 视作点击 → 收敛单选到按下元素；
+    // 有位移 → 一次手势一条批量快照（含帧联动的页内内容），选中集合保持
+    const groupStarts = groupDragStartsRef.current;
+    if (groupStarts) {
+      const anchor = groupDragAnchorIdRef.current;
+      groupDragStartsRef.current = null;
+      groupDragAnchorIdRef.current = null;
+      const moved = groupDragMovedPxRef.current;
+      groupDragMovedPxRef.current = 0;
+      const st = useStore.getState();
+      if (moved < 3) {
+        if (anchor) st.setSelected(anchor);
+        return;
+      }
+      const ops: Operation[] = [];
+      for (const g of groupStarts) {
+        const cur = st.elements.find((el) => el.id === g.id);
+        if (cur && (cur.x !== g.x || cur.y !== g.y)) {
+          ops.push({ type: 'update', elementId: g.id, before: g, after: { ...cur } });
+        }
+      }
+      if (ops.length > 0) st.pushOperations(ops);
+      return;
     }
 
     // Commit select drag（before 取起手整元素快照——undo 按整元素回滚，多锚点不变形）

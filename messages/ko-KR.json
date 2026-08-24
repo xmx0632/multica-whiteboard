@@ -358,5 +358,34 @@
     "renameTip": "더블클릭하여 이름 변경",
     "jumpTip": "\"{name}\"(으)로 이동",
     "exportDisabledTip": "먼저 페이지 표시줄에서 페이지를 선택하세요"
+  },
+  "shortcuts": {
+    "title": "키보드 단축키",
+    "close": "닫기",
+    "sections": {
+      "tools": "도구",
+      "file": "파일",
+      "edit": "편집",
+      "view": "보기",
+      "general": "일반"
+    },
+    "copy": "복사",
+    "paste": "붙여넣기",
+    "cut": "잘라내기",
+    "duplicate": "복제하여 이동",
+    "selectAll": "모두 선택",
+    "delete": "선택 삭제",
+    "moveUp": "앞으로 가져오기",
+    "moveDown": "뒤로 보내기",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "zoomReset": "확대/축소 재설정",
+    "zoomFit": "내용에 맞춤",
+    "prevBoard": "이전 화이트보드",
+    "nextBoard": "다음 화이트보드",
+    "helpPanel": "단축키 도움말",
+    "escape": "선택 해제 / 편집 종료",
+    "noteInput": "입력란에 포커스가 있으면 단축키가 자동으로 비활성화됩니다",
+    "noteReserved": "브라우저 예약 키(Ctrl+N/T/W)는 웹페이지에서 사용할 수 없습니다. 새 화이트보드는 Alt+N을 사용하세요"
   }
 }
