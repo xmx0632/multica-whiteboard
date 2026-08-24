@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { zhT, type LibT } from '../i18n/lib';
 import { DEFAULT_PARAMETER_DOMAIN, sampleGeometry } from './math/sample';
 import { validateEquation } from './math/validate';
+import { cleanSliderMap, type ConstantSliderMap } from './math/slider';
 import type { EquationDraftPayload, MathPlotOverlay } from './math/types';
 import { DEFAULT_MATHPLOT, MathPlotElement } from './types';
 
@@ -59,6 +60,12 @@ export interface MathPlotPatch {
    * 字段）；undefined 不触碰既有叠加。
    */
   overlays?: MathPlotOverlay[] | undefined;
+  /**
+   * ZOO-197：仅当载荷携带滑块元数据草稿（payload.constantSliders !== undefined）
+   * 时出现——经 cleanSliderMap 裁剪（逐键 min/max/step 归一、剔除未绑定常量的
+   * 键）；undefined 不触碰元素既有元数据，清洗后为空 = 显式清空（undefined）。
+   */
+  constantSliders?: ConstantSliderMap | undefined;
 }
 
 /**
@@ -87,6 +94,10 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload, fallbac
   if (payload.overlays !== undefined) {
     // 空数组 = 显式清空（键置 undefined 覆盖旧值；非显式 undefined 不触碰既有叠加）
     base.overlays = payload.overlays.length > 0 ? payload.overlays.map((o) => ({ ...o })) : undefined;
+  }
+  // ZOO-197：滑块元数据随载荷落元素（裁剪 + 剔除未绑定键；空 = 显式清空不落键）
+  if (payload.constantSliders !== undefined) {
+    base.constantSliders = cleanSliderMap(payload.constantSliders, payload.constants);
   }
   if (outcome.kind === 'parametric' || outcome.kind === 'polar') {
     return { ...base, ...parametricFields(payload, fallbackDomain) };
@@ -168,5 +179,7 @@ export function createMathPlotElement(payload: EquationDraftPayload, place: Math
     // 漏套 fields.overlays，创建侧微积分叠加（f′/切线/定积分）静默丢失；与 constants
     // 同口径：非空数组才落键（空数组 = 显式清空 → 不落键，元素无空壳字段）
     ...(fields.overlays && fields.overlays.length > 0 ? { overlays: fields.overlays.map((o) => ({ ...o })) } : {}),
+    // ZOO-197：滑块元数据非空才落键（cleanSliderMap 已剔除未绑定常量的键）
+    ...(fields.constantSliders ? { constantSliders: fields.constantSliders } : {}),
   };
 }

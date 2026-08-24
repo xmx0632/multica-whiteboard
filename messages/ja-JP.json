@@ -175,8 +175,10 @@
     "previewUnavailable": "プレビューできません",
     "previewAria": "方程式のリアルタイムプレビュー",
     "kindParametric": "媒介変数方程式（パラメータ {v}）",
-    "kindPolar": "極方程式 r=f(θ)"
-  },
+    "kindPolar": "極方程式 r=f(θ)",
+    "sliderHint": "定数が未代入？ワンクリックでスライダー作成：",
+    "sliderChipAria": "{name} の定数スライダーを作成",
+    "sliderAll": "すべて"  },
   "params": {
     "title": "数学グラフ",
     "badgeExplicit": "陽関数",
@@ -277,15 +279,23 @@
     "paramDomainMin": "パラメータ下限",
     "paramDomainMax": "パラメータ上限",
     "parametricInactive": "現在の方程式は媒介変数・極座標ではありません——上のテンプレートを選ぶか、x=f(t),y=g(t) / r=f(θ) を入力してください",
-    "paramDomainOrder": "範囲は下限を上限より小さくしてください"
+    "paramDomainOrder": "範囲は下限を上限より小さくしてください",
+    "constantsSliderAria": "定数 {name} のスライダー",
+    "constantsPlayAria": "{name} のアニメーションを再生",
+    "constantsPauseAria": "{name} のアニメーションを一時停止",
+    "constantsSpeedAria": "アニメーション速度（現在 {speed}x、クリックで切り替え）",
+    "constantsMinAria": "定数 {name} のスライダー下限",
+    "constantsMaxAria": "定数 {name} のスライダー上限",
+    "constantsStepAria": "定数 {name} のスライダー刻み幅",
+    "constantsStepLabel": "刻み"
   },
   "phys": {
+
     "tplProjectile": "投射体の運動",
     "tplShm": "単振動",
     "tplCircular": "等速円運動",
     "marksDesc": "着地・頂点の注釈（飛程 R、最高到達点 H）",
-    "marksNotApplicable": "注釈は媒介変数表示の軌道（x=f(t),y=g(t)）のみ対応。単振動は通常の曲線描画を利用します。"
-  },
+    "marksNotApplicable": "注釈は媒介変数表示の軌道（x=f(t),y=g(t)）のみ対応。単振動は通常の曲線描画を利用します。"  },
   "math": {
     "join": "{a} と {b}",
     "openingRight": "右",

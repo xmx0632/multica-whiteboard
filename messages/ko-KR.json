@@ -175,8 +175,10 @@
     "previewUnavailable": "미리보기 불가",
     "previewAria": "방정식 실시간 미리보기",
     "kindParametric": "매개변수 방정식 (매개변수 {v})",
-    "kindPolar": "극방정식 r=f(θ)"
-  },
+    "kindPolar": "극방정식 r=f(θ)",
+    "sliderHint": "상수 값이 비었나요? 원클릭으로 슬라이더 만들기:",
+    "sliderChipAria": "{name} 상수 슬라이더 만들기",
+    "sliderAll": "전체"  },
   "params": {
     "title": "수학 그래프",
     "badgeExplicit": "명시적 함수",
@@ -277,15 +279,23 @@
     "paramDomainMin": "매개변수 하한",
     "paramDomainMax": "매개변수 상한",
     "parametricInactive": "현재 방정식은 매개변수 / 극좌표 형식이 아닙니다——위 템플릿을 선택하거나 x=f(t),y=g(t) / r=f(θ)를 입력하세요",
-    "paramDomainOrder": "범위는 하한이 상한보다 작아야 합니다"
+    "paramDomainOrder": "범위는 하한이 상한보다 작아야 합니다",
+    "constantsSliderAria": "상수 {name} 슬라이더",
+    "constantsPlayAria": "{name} 애니메이션 재생",
+    "constantsPauseAria": "{name} 애니메이션 일시정지",
+    "constantsSpeedAria": "애니메이션 속도(현재 {speed}x, 클릭해 전환)",
+    "constantsMinAria": "상수 {name} 슬라이더 하한",
+    "constantsMaxAria": "상수 {name} 슬라이더 상한",
+    "constantsStepAria": "상수 {name} 슬라이더 단계",
+    "constantsStepLabel": "단계"
   },
   "phys": {
+
     "tplProjectile": "발사체 운동",
     "tplShm": "단순 조화 진동",
     "tplCircular": "등속 원 운동",
     "marksDesc": "착지·최고점 표시(사거리 R, 높이 H)",
-    "marksNotApplicable": "표시는 매개변수 궤적(x=f(t),y=g(t))에만 적용됩니다. 단순 조화 진동은 기존 곡선 렌더링을 사용합니다."
-  },
+    "marksNotApplicable": "표시는 매개변수 궤적(x=f(t),y=g(t))에만 적용됩니다. 단순 조화 진동은 기존 곡선 렌더링을 사용합니다."  },
   "math": {
     "join": "{a} 및 {b}",
     "openingRight": "오른쪽",

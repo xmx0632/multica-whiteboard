@@ -175,8 +175,10 @@
     "previewUnavailable": "无法预览",
     "previewAria": "方程实时预览",
     "kindParametric": "参数方程（参数 {v}）",
-    "kindPolar": "极坐标方程 r=f(θ)"
-  },
+    "kindPolar": "极坐标方程 r=f(θ)",
+    "sliderHint": "缺常量赋值？一键建滑块：",
+    "sliderChipAria": "为 {name} 创建常量滑块",
+    "sliderAll": "全部"  },
   "params": {
     "title": "数学图形",
     "badgeExplicit": "显式函数",
@@ -277,15 +279,23 @@
     "paramDomainMin": "参数下限",
     "paramDomainMax": "参数上限",
     "parametricInactive": "当前方程不是参数式 / 极坐标方程——点选上方模板，或输入 x=f(t),y=g(t) / r=f(θ)",
-    "paramDomainOrder": "取值范围需下限小于上限"
+    "paramDomainOrder": "取值范围需下限小于上限",
+    "constantsSliderAria": "常量 {name} 滑杆",
+    "constantsPlayAria": "播放 {name} 动画",
+    "constantsPauseAria": "暂停 {name} 动画",
+    "constantsSpeedAria": "动画速度（当前 {speed}x，点击切换）",
+    "constantsMinAria": "常量 {name} 滑杆下限",
+    "constantsMaxAria": "常量 {name} 滑杆上限",
+    "constantsStepAria": "常量 {name} 滑杆步长",
+    "constantsStepLabel": "步长"
   },
   "phys": {
+
     "tplProjectile": "抛体运动",
     "tplShm": "简谐振动",
     "tplCircular": "匀速圆周运动",
     "marksDesc": "落地/峰值标注（射程 R、峰高 H）",
-    "marksNotApplicable": "标注仅对参数式轨迹（x=f(t),y=g(t)）生效；简谐振动走常规曲线渲染，改常量即实时联动。"
-  },
+    "marksNotApplicable": "标注仅对参数式轨迹（x=f(t),y=g(t)）生效；简谐振动走常规曲线渲染，改常量即实时联动。"  },
   "math": {
     "join": "{a} 与 {b}",
     "openingRight": "向右",

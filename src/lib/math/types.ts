@@ -115,6 +115,8 @@ export interface EllipseParams {
  * （ZOO-176 起文案经注入翻译器随语言，见 parse.ts / i18n/lib.ts）。
  * ZOO-166 方案 A：explicit 携带 variable（自变量字母，缺省即 x）——任意单字母
  * 可作自变量（y=4z ⟂ y=4x 同一条直线），图形与变量命名无关。
+ * ZOO-197：欠定 / 缺赋值引导类错误携带 missingConstants（可一键建滑块的
+ * 存储层符号名，已剔除自变量占位）——其余错误不带该字段（旧消费方零感知）。
  */
 export type StructuralOutcome =
   | { kind: 'explicit'; variable?: string }
@@ -127,7 +129,7 @@ export type StructuralOutcome =
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'parametric'; variable?: string }
   | { kind: 'polar'; variable?: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; missingConstants?: string[] };
 
 /**
  * 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数
@@ -144,7 +146,7 @@ export type ParseResult =
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'parametric'; fx: (t: number) => number; fy: (t: number) => number; variable?: string }
   | { kind: 'polar'; fn: (theta: number) => number; variable?: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; missingConstants?: string[] };
 
 /** 采样折线（数学坐标，4c sample.ts 产物；MiniPreview / 主画布 / SVG 导出共用）。 */
 export type Polyline = Point[];
@@ -211,4 +213,10 @@ export interface EquationDraftPayload {
   constants?: Record<string, number>;
   overlays?: MathPlotOverlay[];
   domain?: { min: number; max: number };
+  /**
+   * ZOO-197：常量滑块元数据草稿（高级面板常量区自定义过 min/max/step 的条目）。
+   * 语义与 constants 对齐——undefined 不触碰元素既有元数据；空字典 = 显式清空。
+   * 未自定义条目不落（元素回落 DEFAULT_SLIDER，零迁移）。
+   */
+  constantSliders?: Record<string, { min: number; max: number; step: number }>;
 }
