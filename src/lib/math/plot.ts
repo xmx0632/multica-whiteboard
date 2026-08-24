@@ -18,6 +18,8 @@ import { getPlotRender, plotSignature, setPlotRender } from './cache';
 import { derivativeOf, integralOf, tangentOf } from './calculus';
 import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
+import { extremaOf, formatPoiCoord, zerosOf, type Extremum } from './poi';
+import type { MathPoiAnnotation } from './types';
 import {
   PHYSICS_GUIDE_DASH,
   PHYSICS_MARK_RADIUS_PX,
@@ -51,6 +53,13 @@ export const PLOT_COLORS = {
   integralChipBg: 'rgba(255,255,255,0.92)',
   /** ZOO-190 T3 定积分奇点报错 chip（红字白底，口径同错误占位） */
   integralErrorText: '#ef4444',
+  /** ZOO-199 POI 灰点与标注文本（提示层 / 持久化标注统一中性灰，白底可读） */
+  poiDot: '#6b7280',
+  poiText: '#374151',
+  /** ZOO-199 悬停坐标标签（浮动 chip 底 / 文字） */
+  hoverChipBg: 'rgba(255,255,255,0.95)',
+  hoverChipBorder: '#d1d5db',
+  hoverChipText: '#111827',
 } as const;
 
 /** 网格线最小像素间距，低于此密度整层隐藏（亚像素网格，§6.1 第 2 层）。 */
@@ -157,6 +166,12 @@ export interface PlotRender {
   path2d: Path2D | null;
   /** ZOO-189 T2 叠加层产物（无叠加时缺省——既有渲染路径零变化） */
   overlays?: OverlayRender;
+  /**
+   * ZOO-199 自有 POI（仅显式函数；其余 kind / 错误态缺省）：零点 x 坐标
+   * （点即 (x,0)）与极值点。灰点提示层与点击命中共用本数据；由方程 / 域 /
+   * 常量推导——渲染签名已覆盖全部输入，缓存天然失效。
+   */
+  pois?: { zeros: number[]; extrema: Extremum[] };
 }
 
 /** 叠加层渲染产物（ZOO-189 T2）：与主曲线同视窗的 f′ 折线 + 切线演示数据；
@@ -341,6 +356,8 @@ export interface DrawGraphCoreOptions {
   gridTargetPx?: number;
   /** ZOO-189 T2 叠加层（缺省 = 无叠加，绘制路径零变化） */
   overlays?: OverlayRender;
+  /** ZOO-199 持久化 POI 标注（缺省 = 无标注，绘制路径零变化；灰点 + 坐标文本） */
+  poiLabels?: readonly MathPoiAnnotation[];
 }
 
 /**
@@ -348,7 +365,7 @@ export interface DrawGraphCoreOptions {
  * MiniPreview 与 drawMathPlot 共用 —— 预览即真实渲染（D3）。
  */
 export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCoreOptions): void {
-  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays } = opts;
+  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays, poiLabels } = opts;
   if (!(width > 0) || !(height > 0)) return;
 
   ctx.save();
@@ -695,8 +712,42 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     }
   }
 
+  // —— ZOO-199 持久化 POI 标注（末位顶层）：灰底白边圆点 + 坐标文本
+  //    （(x, y)，formatPoiCoord——canvas / SVG 导出同款），文本越界翻转 /
+  //    收拢口径与切线斜率标注一致；点越出视窗时收拢回卡片内缘——
+  //    快照语义的标注在域改动后仍恒可见（不因视图变化静默消失）。
+  if (poiLabels && poiLabels.length > 0) {
+    ctx.globalAlpha = style.opacity;
+    ctx.font = 'italic 10px system-ui, sans-serif';
+    for (const a of poiLabels) {
+      const px = Math.min(Math.max(t.toPxX(a.x), 4), width - 4);
+      const py = Math.min(Math.max(t.toPxY(a.y), 4), height - 4);
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fillStyle = PLOT_COLORS.poiDot;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      const label = formatPoiCoord(a.x, a.y);
+      const tw = ctx.measureText(label).width;
+      let lx = px + 9;
+      if (lx + tw > width - 3) lx = px - 9 - tw;
+      let ly = py - 8;
+      if (ly < 10) ly = py + 14;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = PLOT_COLORS.poiText;
+      ctx.fillText(label, lx, ly);
+    }
+  }
+
   ctx.restore();
 }
+
+/** 卡片绘图区内边距（drawMathPlot 内嵌区四周留白，ZOO-199 起导出供坐标映射共用）。 */
+export const PLOT_INNER_PAD = 6;
 
 export interface DrawMathPlotOptions {
   /** 卡片左上角（当前变换空间）与外框尺寸 */
@@ -714,6 +765,8 @@ export interface DrawMathPlotOptions {
   equation: string;
   /** ZOO-176：错误占位提示文案翻译器（缺省中文，画布 / 演示台按语言传入） */
   t?: LibT;
+  /** ZOO-199：持久化 POI 标注（缺省 = 无标注；非显式 kind 由调用方不传） */
+  poiAnnotations?: readonly MathPoiAnnotation[];
 }
 
 /**
@@ -742,7 +795,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
   }
 
   // 第 2–4 层：核心图（在卡片内嵌区域绘制，四周留 6px 内边距）
-  const pad = 6;
+  const pad = PLOT_INNER_PAD;
   ctx.translate(x + pad, y + pad);
   drawGraphCore(ctx, {
     width: width - pad * 2,
@@ -755,6 +808,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     showAxis: opts.showAxis,
     tickLabels: true,
     overlays: render.overlays,
+    poiLabels: opts.poiAnnotations,
   });
   ctx.translate(-x - pad, -y - pad);
 
@@ -928,6 +982,19 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
 
   const parsed = parseEquation(spec.equation, zhT, spec.constants);
 
+  // —— ZOO-199 自有 POI（零点 / 极值，仅显式函数）：由方程 + 域 + 常量推导，
+  //    全部输入已在渲染签名中——缓存命中不重算、改值即失效。极值走
+  //    derivativeOf（每次求导后必 simplify，calculus.ts 坑一）；求导不支持
+  //    （abs 等不可导函数）返回空极值、零点照常。视窗高作跳变过滤基准。
+  const explicitPois = (ySpan: number): { pois: { zeros: number[]; extrema: Extremum[] } } | undefined => {
+    if (parsed.kind !== 'explicit') return undefined;
+    const { min: xMin, max: xMax } = spec.xAxis;
+    const zeros = zerosOf(parsed.fn, xMin, xMax, ySpan);
+    const deriv = derivativeOf(spec.equation, { constants: spec.constants });
+    const extrema = deriv.ok ? extremaOf(parsed.fn, deriv.fn, xMin, xMax, ySpan) : [];
+    return { pois: { zeros, extrema } };
+  };
+
   // —— ZOO-189 T2 叠加路径：仅显式函数且 overlays 非空时进入（惰性求导——
   //    无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用一次求导；
   //    ZOO-190 T3：定积分只依赖 f 本身（纯数值辛普森），积分-only 时不求导。
@@ -987,6 +1054,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
         view,
         path2d: transform ? buildPlotPath2D(sampled.series[0], transform) : null,
         ...(Object.keys(overlays).length > 0 ? { overlays } : {}),
+        ...(explicitPois(sampled.yMax - sampled.yMin) ?? {}),
       };
     }
   }
@@ -1016,5 +1084,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
   //    常量 / t 域 / 叠加开关均进渲染签名——改值即重算（实时联动）。
   const physicsWanted = spec.overlays?.some((o) => o.type === 'physics');
   const marks = physicsWanted && parsed.kind === 'parametric' ? trajectoryMarks(parsed.fx, parsed.fy, spec.xAxis) : null;
-  return marks ? { polylines: sampled.polylines, view, path2d, overlays: { physics: marks } } : { polylines: sampled.polylines, view, path2d };
+  const pois = explicitPois(sampled.yMax - sampled.yMin);
+  const base = { polylines: sampled.polylines, view, path2d, ...(pois ?? {}) };
+  return marks ? { ...base, overlays: { physics: marks } } : base;
 }

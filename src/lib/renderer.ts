@@ -1,10 +1,28 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point } from './types';
-import { drawMathPlot, resolvePlotRender } from './math/plot';
+import { drawMathPlot, resolvePlotRender, type PlotSpec } from './math/plot';
 import type { LibT } from '../i18n/lib';
 import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
 import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
 import { FRAME_TITLE_HEIGHT } from './frame';
+
+/**
+ * MathPlotElement → PlotSpec（ZOO-199 提取共享）：drawMathPlotElement 与
+ * export / POI 交互层（lib/poi.ts）组装同一份数学输入——保证主画布渲染、
+ * SVG 导出、悬停 / 点击命中共用一份 resolvePlotRender 缓存。
+ */
+export function mathPlotSpecOf(el: MathPlotElement): PlotSpec {
+  return {
+    equation: el.equation,
+    kind: el.kind,
+    errorMessage: el.error ?? undefined,
+    xAxis: el.xAxis,
+    equalRatio: el.equalRatio,
+    sampleCount: el.sampleCount,
+    constants: el.constants,
+    overlays: el.overlays,
+  };
+}
 
 /**
  * 描边线型（ZOO-165）：按元素 dash + 线宽设 ctx 虚线数组（世界 px 模式 × scale →
@@ -225,22 +243,7 @@ function drawText(ctx: CanvasRenderingContext2D, el: TextElement, viewport: View
  */
 function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement, viewport: Viewport, t?: LibT) {
   if (!(el.width > 0) || !(el.height > 0)) return;
-  const render = resolvePlotRender(
-    {
-      equation: el.equation,
-      kind: el.kind,
-      errorMessage: el.error ?? undefined,
-      xAxis: el.xAxis,
-      equalRatio: el.equalRatio,
-      sampleCount: el.sampleCount,
-      // ZOO-188（T1）：符号常量随元素进解析（缺省 = 无常量，与现状一致）
-      constants: el.constants,
-      // ZOO-189（T2）：微积分叠加随元素进渲染（缺省 / 空 = 无叠加，走既有路径）
-      overlays: el.overlays,
-    },
-    { width: el.width, height: el.height },
-    plotTokenFor(el.id)
-  );
+  const render = resolvePlotRender(mathPlotSpecOf(el), { width: el.width, height: el.height }, plotTokenFor(el.id));
   const { offsetX, offsetY, scale } = viewport;
   ctx.save();
   ctx.translate(el.x * scale + offsetX, el.y * scale + offsetY);
@@ -258,6 +261,10 @@ function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement,
     equation: el.equation,
     // ZOO-176：错误占位提示文案随语言（缺省中文）
     t,
+    // ZOO-199：持久化 POI 标注仅显式函数绘制（其余 kind 数据保留、不绘制）
+    ...(el.kind === 'explicit' && !el.error && el.poiAnnotations && el.poiAnnotations.length > 0
+      ? { poiAnnotations: el.poiAnnotations }
+      : {}),
   });
   ctx.restore();
 }

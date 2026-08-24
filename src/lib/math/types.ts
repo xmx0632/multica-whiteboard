@@ -180,6 +180,23 @@ export type MathPlotOverlay =
   | { type: 'integral'; a: number; b: number }
   | { type: 'physics' };
 
+/**
+ * POI 标注条目（ZOO-199）：点击曲线上的灰点提示后持久化的坐标标注
+ * （元素可选字段 poiAnnotations 的成员类型）。快照语义——存点击时刻的精确
+ * 坐标，方程 / 常量后续改动不迁移标注（教学场景：标注是钉在板书上的笔记）。
+ * kind：zero 零点 / extremum 极值 / intersection 两曲线交点（withId 为配对
+ * 元素 id，仅供语义标注，渲染不依赖对方存在）。
+ */
+export interface MathPoiAnnotation {
+  id: string;
+  kind: 'zero' | 'extremum' | 'intersection';
+  x: number;
+  y: number;
+  /** intersection：配对曲线元素 id（展示语义；对方删除后标注仍在） */
+  withId?: string;
+}
+
+
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
  *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。
  *  ZOO-188（T1）：constants 为编辑器常量草稿全量快照——undefined 表示本次流程

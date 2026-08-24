@@ -1,5 +1,5 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement } from './types';
-import { renderElement, drawFrame, getAllElementsBounds } from './renderer';
+import { renderElement, drawFrame, getAllElementsBounds, mathPlotSpecOf } from './renderer';
 import { zhT, type LibT } from '../i18n/lib';
 import {
   formatAreaValue,
@@ -13,6 +13,7 @@ import {
   resolvePlotRender,
   stepForAxis,
 } from './math/plot';
+import { formatPoiCoord } from './math/poi';
 import { PHYSICS_GUIDE_DASH, PHYSICS_MARK_RADIUS_PX } from './math/physics';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
@@ -131,22 +132,7 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
   if (!(w > 0) || !(h > 0)) return '';
   const opacity = el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
 
-  const render = resolvePlotRender(
-    {
-      equation: el.equation,
-      kind: el.kind,
-      errorMessage: el.error ?? undefined,
-      xAxis: el.xAxis,
-      equalRatio: el.equalRatio,
-      sampleCount: el.sampleCount,
-      // ZOO-188（T1）：符号常量随元素进解析（与主画布渲染同一份数据）
-      constants: el.constants,
-      // ZOO-189（T2）：微积分叠加随元素进渲染管线（与主画布同一份数据）
-      overlays: el.overlays,
-    },
-    { width: w, height: h },
-    plotTokenFor(el.id)
-  );
+  const render = resolvePlotRender(mathPlotSpecOf(el), { width: w, height: h }, plotTokenFor(el.id));
 
   const parts: string[] = [
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="rgba(255,255,255,0.88)" stroke="#e5e7eb" stroke-width="1"${opacity}/>`
@@ -378,6 +364,28 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
         let ry = landPy - 3;
         if (ry < gy + 10) ry = landPy + 14;
         parts.push(markLabel(rLabel, rx, ry));
+      }
+    }
+
+    // —— ZOO-199 持久化 POI 标注（与 drawGraphCore 同一套数据 / 配色 / 越界
+    //    翻转口径）：灰底白边圆点 + 坐标文本；点收拢回绘图区内缘（快照标注
+    //    恒可见），标注随元素持久化——导出结果与画布所见一致 ——
+    if (el.kind === 'explicit' && !el.error && el.poiAnnotations && el.poiAnnotations.length > 0) {
+      for (const a of el.poiAnnotations) {
+        const px = Math.min(Math.max(toX(a.x), gx + 4), gx + gw - 4);
+        const py = Math.min(Math.max(toY(a.y), gy + 4), gy + gh - 4);
+        parts.push(
+          `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="4" fill="${PLOT_COLORS.poiDot}" stroke="#ffffff" stroke-width="1.5"${opacity}/>`,
+        );
+        const label = formatPoiCoord(a.x, a.y);
+        const labelW = label.length * 5.4;
+        let lx = px + 9;
+        if (lx + labelW > gx + gw - 3) lx = px - 9 - labelW;
+        let ly = py - 3;
+        if (ly < gy + 10) ly = py + 14;
+        parts.push(
+          `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.poiText}" text-anchor="start"${opacity}>${escapeXml(label)}</text>`,
+        );
       }
     }
   }
