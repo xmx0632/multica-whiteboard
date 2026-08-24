@@ -178,7 +178,8 @@
     "kindPolar": "极坐标方程 r=f(θ)",
     "sliderHint": "缺常量赋值？一键建滑块：",
     "sliderChipAria": "为 {name} 创建常量滑块",
-    "sliderAll": "全部"  },
+    "sliderAll": "全部"
+  },
   "params": {
     "title": "数学图形",
     "badgeExplicit": "显式函数",
@@ -287,15 +288,24 @@
     "constantsMinAria": "常量 {name} 滑杆下限",
     "constantsMaxAria": "常量 {name} 滑杆上限",
     "constantsStepAria": "常量 {name} 滑杆步长",
-    "constantsStepLabel": "步长"
+    "constantsStepLabel": "步长",
+    "pointsTitle": "可拖点",
+    "pointsOnCurve": "沿曲线",
+    "pointsFree": "自由",
+    "pointsAddOnCurve": "+ 曲线点",
+    "pointsAddFree": "+ 自由点",
+    "pointsPickAria": "沿曲线点绑定的常量",
+    "pointsFreeXAria": "自由点 x 绑定的常量",
+    "pointsFreeYAria": "自由点 y 绑定的常量",
+    "pointsRemoveAria": "移除可拖点 {name}"
   },
   "phys": {
-
     "tplProjectile": "抛体运动",
     "tplShm": "简谐振动",
     "tplCircular": "匀速圆周运动",
     "marksDesc": "落地/峰值标注（射程 R、峰高 H）",
-    "marksNotApplicable": "标注仅对参数式轨迹（x=f(t),y=g(t)）生效；简谐振动走常规曲线渲染，改常量即实时联动。"  },
+    "marksNotApplicable": "标注仅对参数式轨迹（x=f(t),y=g(t)）生效；简谐振动走常规曲线渲染，改常量即实时联动。"
+  },
   "math": {
     "join": "{a} 与 {b}",
     "openingRight": "向右",

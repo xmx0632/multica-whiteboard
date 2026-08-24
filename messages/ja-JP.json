@@ -178,7 +178,8 @@
     "kindPolar": "極方程式 r=f(θ)",
     "sliderHint": "定数が未代入？ワンクリックでスライダー作成：",
     "sliderChipAria": "{name} の定数スライダーを作成",
-    "sliderAll": "すべて"  },
+    "sliderAll": "すべて"
+  },
   "params": {
     "title": "数学グラフ",
     "badgeExplicit": "陽関数",
@@ -287,15 +288,24 @@
     "constantsMinAria": "定数 {name} のスライダー下限",
     "constantsMaxAria": "定数 {name} のスライダー上限",
     "constantsStepAria": "定数 {name} のスライダー刻み幅",
-    "constantsStepLabel": "刻み"
+    "constantsStepLabel": "刻み",
+    "pointsTitle": "ドラッグ可能点",
+    "pointsOnCurve": "曲線上",
+    "pointsFree": "自由",
+    "pointsAddOnCurve": "+ 曲線点",
+    "pointsAddFree": "+ 自由点",
+    "pointsPickAria": "曲線上の点に束縛する定数",
+    "pointsFreeXAria": "自由点の x に束縛する定数",
+    "pointsFreeYAria": "自由点の y に束縛する定数",
+    "pointsRemoveAria": "ドラッグ可能点 {name} を削除"
   },
   "phys": {
-
     "tplProjectile": "投射体の運動",
     "tplShm": "単振動",
     "tplCircular": "等速円運動",
     "marksDesc": "着地・頂点の注釈（飛程 R、最高到達点 H）",
-    "marksNotApplicable": "注釈は媒介変数表示の軌道（x=f(t),y=g(t)）のみ対応。単振動は通常の曲線描画を利用します。"  },
+    "marksNotApplicable": "注釈は媒介変数表示の軌道（x=f(t),y=g(t)）のみ対応。単振動は通常の曲線描画を利用します。"
+  },
   "math": {
     "join": "{a} と {b}",
     "openingRight": "右",

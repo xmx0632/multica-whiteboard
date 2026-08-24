@@ -178,7 +178,8 @@
     "kindPolar": "Polar equation r=f(θ)",
     "sliderHint": "Missing constant values? Create sliders in one click:",
     "sliderChipAria": "Create a constant slider for {name}",
-    "sliderAll": "All"  },
+    "sliderAll": "All"
+  },
   "params": {
     "title": "Math plot",
     "badgeExplicit": "Explicit",
@@ -287,15 +288,24 @@
     "constantsMinAria": "Constant {name} slider minimum",
     "constantsMaxAria": "Constant {name} slider maximum",
     "constantsStepAria": "Constant {name} slider step",
-    "constantsStepLabel": "step"
+    "constantsStepLabel": "step",
+    "pointsTitle": "Draggable points",
+    "pointsOnCurve": "on curve",
+    "pointsFree": "free",
+    "pointsAddOnCurve": "+ on-curve",
+    "pointsAddFree": "+ free point",
+    "pointsPickAria": "Constant bound to the on-curve point",
+    "pointsFreeXAria": "Constant bound to free point x",
+    "pointsFreeYAria": "Constant bound to free point y",
+    "pointsRemoveAria": "Remove draggable point {name}"
   },
   "phys": {
-
     "tplProjectile": "Projectile motion",
     "tplShm": "Simple harmonic motion",
     "tplCircular": "Uniform circular motion",
     "marksDesc": "Landing & peak marks (range R, height H)",
-    "marksNotApplicable": "Marks apply to parametric trajectories (x=f(t),y=g(t)) only; simple harmonic motion renders via the regular curve pipeline."  },
+    "marksNotApplicable": "Marks apply to parametric trajectories (x=f(t),y=g(t)) only; simple harmonic motion renders via the regular curve pipeline."
+  },
   "math": {
     "join": "{a} and {b}",
     "openingRight": "right",

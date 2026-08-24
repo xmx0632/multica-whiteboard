@@ -10,7 +10,7 @@ import { zhT, type LibT } from '../i18n/lib';
 import { DEFAULT_PARAMETER_DOMAIN, sampleGeometry } from './math/sample';
 import { validateEquation } from './math/validate';
 import { cleanSliderMap, type ConstantSliderMap } from './math/slider';
-import type { EquationDraftPayload, MathPlotOverlay } from './math/types';
+import type { DraggablePoint, EquationDraftPayload, MathPlotOverlay } from './math/types';
 import { DEFAULT_MATHPLOT, MathPlotElement } from './types';
 
 export interface MathPlotPlacement {
@@ -66,6 +66,12 @@ export interface MathPlotPatch {
    * 键）；undefined 不触碰元素既有元数据，清洗后为空 = 显式清空（undefined）。
    */
   constantSliders?: ConstantSliderMap | undefined;
+  /**
+   * ZOO-201：可拖点条目（载荷不携带——编辑器创建侧无点；原位替换流由调用方
+   * 对既有条目按新常量集清洗后附上，绑定常量消亡的条目剔除，见 pruneDragPoints）。
+   * undefined 不触碰元素既有条目；空结果 = 显式清空。
+   */
+  draggablePoints?: DraggablePoint[] | undefined;
 }
 
 /**

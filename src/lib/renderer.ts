@@ -1,5 +1,6 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point } from './types';
 import { drawMathPlot, resolvePlotRender, type PlotSpec } from './math/plot';
+import { resolveDragPoints } from './math/dragPoint';
 import type { LibT } from '../i18n/lib';
 import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
@@ -264,6 +265,10 @@ function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement,
     // ZOO-199：持久化 POI 标注仅显式函数绘制（其余 kind 数据保留、不绘制）
     ...(el.kind === 'explicit' && !el.error && el.poiAnnotations && el.poiAnnotations.length > 0
       ? { poiAnnotations: el.poiAnnotations }
+      : {}),
+    // ZOO-201：可拖点仅显式函数绘制（坐标由常量派生，随常量直改实时重绘）
+    ...(el.kind === 'explicit' && !el.error && el.draggablePoints && el.draggablePoints.length > 0
+      ? { dragPoints: resolveDragPoints(el) }
       : {}),
   });
   ctx.restore();

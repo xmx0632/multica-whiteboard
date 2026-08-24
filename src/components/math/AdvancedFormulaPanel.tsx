@@ -46,7 +46,8 @@ import { PHYSICS_CONSTANT_UNITS } from '@/lib/math/physics';
 import { PLOT_COLORS } from '@/lib/math/plot';
 import { constantDisplayName, normalizeConstantKey, parseConstantValue } from '@/lib/math/normalize';
 import { zoomNeighborhood } from '@/lib/advancedFormula';
-import type { MathPlotOverlay } from '@/lib/math/types';
+import { addDragPoint, removeDragPoint } from '@/lib/math/dragPoint';
+import type { DraggablePoint, MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
 import {
   ADVANCED_TEMPLATES,
@@ -77,6 +78,8 @@ import {
  * 不受渲染闭包过期影响，逐次叠加而非相互覆盖。
  * ZOO-197：sliders / onSlidersChange 透传滑块元数据（仅存自定义条目，缺省
  * 回落 DEFAULT_SLIDER；常量移除时调用方同步剔除对应键）。
+ * ZOO-201：points / onPointsChange 透传可拖点条目（仅显式函数方程渲染——
+ * 面板增删区同口径只在显式态出现；绑定常量移除时条目同步剔除）。
  */
 export interface AdvancedConstantsBinding {
   /** 当前方程文本（常量赋值后的解析状态行反馈） */
@@ -85,10 +88,18 @@ export interface AdvancedConstantsBinding {
   values: Record<string, number>;
   /** 滑块元数据（存储层键名；未自定义的常量缺省条目） */
   sliders?: ConstantSliderMap;
+  /**
+   * 可拖点条目（ZOO-201）：直连元素 draggablePoints（同为真实字段）。增删为
+   * 离散变更——本组件的增删处理自带一次 onCommit；常量移除时的同步剔除由
+   * removeConstant 附带（同批一次提交，不双压历史）。
+   */
+  points?: DraggablePoint[];
   /** 值变更（函数式更新：入参为当前值，返回下一值；直改实时预览，不上历史） */
   onChange: (update: (prev: Record<string, number>) => Record<string, number>) => void;
   /** 滑块元数据变更（函数式更新；直改实时生效，离散变更 / 失焦时 onCommit 收口） */
   onSlidersChange?: (update: (prev: ConstantSliderMap) => ConstantSliderMap) => void;
+  /** 可拖点变更（函数式更新；离散语义——提交由调用时机收口） */
+  onPointsChange?: (update: (prev: DraggablePoint[]) => DraggablePoint[]) => void;
   /** 一次可撤销操作边界（离散变更即时 / 输入失焦时）；创建侧可缺省 */
   onCommit?: () => void;
   /** 模板点选出口（回填方程输入）；缺省（无方程输入侧）不渲染模板行 */
@@ -235,7 +246,7 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
     binding.onCommit?.();
   };
 
-  /** 常量移除：值 + 滑块元数据同批剔除（元素不留悬挂键） */
+  /** 常量移除：值 + 滑块元数据 + 可拖点绑定同批剔除（元素不留悬挂键，一次提交） */
   const removeConstant = (key: string) => {
     if (playKey === key) setPlayKey(null);
     applyDiscrete((prev) => {
@@ -248,6 +259,10 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
       delete next[key];
       return next;
     });
+    // ZOO-201：引用该常量的可拖点条目一并剔除（applyDiscrete 已收口提交，不双压）
+    if (binding.points?.some((p) => p.xKey === key || p.yKey === key)) {
+      binding.onPointsChange?.((prev) => prev.filter((p) => p.xKey !== key && p.yKey !== key));
+    }
   };
 
   const togglePreset = (key: string, def: number) => {
@@ -322,6 +337,30 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
 
   const missing = outcome.kind === 'error' ? outcome.missingConstants : undefined;
 
+  // —— ZOO-201 可拖点增删（离散变更：一次 onChange + 一次 onCommit）——
+  /** 添加：同型重复（mode + 绑定键一致）无变化，不落键不提交 */
+  const addPoint = (cand: Omit<DraggablePoint, 'id'>) => {
+    const next = addDragPoint(binding.points, cand);
+    if (!next) return;
+    binding.onPointsChange?.(() => next);
+    binding.onCommit?.();
+  };
+  /** 移除：目标不存在无变化；移空归一由调用方（MathPlotParams 落 undefined） */
+  const removePoint = (id: string) => {
+    const next = removeDragPoint(binding.points, id);
+    if (next === null) return;
+    binding.onPointsChange?.(() => next ?? []);
+    binding.onCommit?.();
+  };
+  // 下拉草稿（纯 UI 态）：null = 未选，回落首个（第二个）常量；常量集变化自动跟从
+  const [onCurvePick, setOnCurvePick] = useState<string | null>(null);
+  const [freeXPick, setFreeXPick] = useState<string | null>(null);
+  const [freeYPick, setFreeYPick] = useState<string | null>(null);
+  const keys = entries.map(([k]) => k);
+  const effOnCurveKey = onCurvePick != null && keys.includes(onCurvePick) ? onCurvePick : keys[0];
+  const effFreeXKey = freeXPick != null && keys.includes(freeXPick) ? freeXPick : keys[0];
+  const effFreeYKey = freeYPick != null && keys.includes(freeYPick) ? freeYPick : keys[1] ?? keys[0];
+
   return (
     <div className="flex flex-col gap-1.5">
       {/* 示例模板：点选回填方程输入（三角变换联动教学，ZOO-188） */}
@@ -381,6 +420,87 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
             onRemove={() => removeConstant(key)}
           />
         ))
+      )}
+
+      {/* ZOO-201 可拖点：常量绑定的具象化——仅显式方程且有常量可配；沿曲线点
+          (a, f(a)) 拖动只写回 a，自由点 (a, b) 拖动写回 a、b，画布拖动全图联动 */}
+      {outcome.kind === 'explicit' && entries.length > 0 && (
+        <div className="flex flex-col gap-1 border-t border-gray-100 pt-1.5">
+          <span className="text-[10px] font-medium text-gray-500">{t('advFormula.pointsTitle')}</span>
+          {(binding.points ?? []).map((p) => {
+            const label = p.mode === 'onCurve'
+              ? `(${constantDisplayName(p.xKey)}, f(${constantDisplayName(p.xKey)}))`
+              : `(${constantDisplayName(p.xKey)}, ${constantDisplayName(p.yKey ?? '')})`;
+            return (
+              <div key={p.id} className="flex items-center gap-1.5">
+                <span className="font-serif italic text-[12px] text-blue-600 leading-none whitespace-nowrap">{label}</span>
+                <span className="text-[10px] text-gray-400">
+                  {t(p.mode === 'onCurve' ? 'advFormula.pointsOnCurve' : 'advFormula.pointsFree')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removePoint(p.id)}
+                  aria-label={t('advFormula.pointsRemoveAria', { name: label })}
+                  className="touch-target ml-auto border-none bg-transparent text-gray-400 text-base leading-none cursor-pointer hover:text-red-500 active:text-red-600 transition-colors"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          <div className="flex items-center gap-1">
+            <select
+              value={effOnCurveKey ?? ''}
+              onChange={(e) => setOnCurvePick(e.target.value)}
+              aria-label={t('advFormula.pointsPickAria')}
+              className="touch-target flex-1 min-w-0 px-1 py-1 border border-gray-200 rounded-md font-serif text-[11px] text-gray-700 outline-none focus:border-blue-500"
+            >
+              {keys.map((k) => (
+                <option key={k} value={k}>{constantDisplayName(k)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => effOnCurveKey && addPoint({ mode: 'onCurve', xKey: effOnCurveKey })}
+              disabled={!effOnCurveKey}
+              className="touch-target h-6 px-1.5 border border-blue-300 bg-blue-50/60 rounded-md text-[11px] text-blue-600 cursor-pointer hover:bg-blue-100 active:bg-blue-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {t('advFormula.pointsAddOnCurve')}
+            </button>
+          </div>
+          {entries.length >= 2 && (
+            <div className="flex items-center gap-1">
+              <select
+                value={effFreeXKey ?? ''}
+                onChange={(e) => setFreeXPick(e.target.value)}
+                aria-label={t('advFormula.pointsFreeXAria')}
+                className="touch-target flex-1 min-w-0 px-1 py-1 border border-gray-200 rounded-md font-serif text-[11px] text-gray-700 outline-none focus:border-blue-500"
+              >
+                {keys.map((k) => (
+                  <option key={k} value={k}>{constantDisplayName(k)}</option>
+                ))}
+              </select>
+              <select
+                value={effFreeYKey ?? ''}
+                onChange={(e) => setFreeYPick(e.target.value)}
+                aria-label={t('advFormula.pointsFreeYAria')}
+                className="touch-target flex-1 min-w-0 px-1 py-1 border border-gray-200 rounded-md font-serif text-[11px] text-gray-700 outline-none focus:border-blue-500"
+              >
+                {keys.map((k) => (
+                  <option key={k} value={k}>{constantDisplayName(k)}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => effFreeXKey && effFreeYKey && addPoint({ mode: 'free', xKey: effFreeXKey, yKey: effFreeYKey })}
+                disabled={!effFreeXKey || !effFreeYKey}
+                className="touch-target h-6 px-1.5 border border-blue-300 bg-blue-50/60 rounded-md text-[11px] text-blue-600 cursor-pointer hover:bg-blue-100 active:bg-blue-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t('advFormula.pointsAddFree')}
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* 自定义项：符号（支持 θ/v₀ 等书写原貌，归一化为存储键）+ 数值 */}

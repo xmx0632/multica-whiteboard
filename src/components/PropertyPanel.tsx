@@ -13,6 +13,7 @@ import { useStore } from '@/lib/store';
 import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
 import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
 import { validateEquation } from '@/lib/math/validate';
+import { pruneDragPoints } from '@/lib/math/dragPoint';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
 import { advancedFormulaState } from '@/lib/advancedFormula';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
@@ -153,7 +154,14 @@ export default function PropertyPanel() {
         initialConstantSliders={editingEl.constantSliders}
         onCancel={() => setEditingId(null)}
         onConfirm={(payload) => {
-          updateElement(editingEl.id, mathPlotFieldsFromPayload(payload, editingParamDomain));
+          const fields = mathPlotFieldsFromPayload(payload, editingParamDomain);
+          // ZOO-201：可拖点随常量集清洗——绑定常量在重编辑后被移除的条目剔除
+          //（载荷未触碰常量时按元素现集，条目原样保留）；空结果显式清空
+          const constantsAfter = fields.constants ?? editingEl.constants;
+          updateElement(editingEl.id, {
+            ...fields,
+            draggablePoints: pruneDragPoints(editingEl.draggablePoints, constantsAfter),
+          });
           setEditingId(null);
           setSelected(editingEl.id);
         }}
@@ -189,6 +197,8 @@ export default function PropertyPanel() {
       constants: el.constants,
       // ZOO-197：滑块元数据同为元素真实字段（不在派生剥除清单，直落元素）
       constantSliders: el.constantSliders,
+      // ZOO-201：可拖点同为元素真实字段（高级公式面板常量区增删，直落元素）
+      draggablePoints: el.draggablePoints,
       // ZOO-189（T2）：微积分叠加同为元素真实字段（不在派生剥除清单，直落元素）
       overlays: el.overlays,
       xAxis: el.xAxis,

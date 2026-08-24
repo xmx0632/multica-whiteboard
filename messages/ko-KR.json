@@ -178,7 +178,8 @@
     "kindPolar": "극방정식 r=f(θ)",
     "sliderHint": "상수 값이 비었나요? 원클릭으로 슬라이더 만들기:",
     "sliderChipAria": "{name} 상수 슬라이더 만들기",
-    "sliderAll": "전체"  },
+    "sliderAll": "전체"
+  },
   "params": {
     "title": "수학 그래프",
     "badgeExplicit": "명시적 함수",
@@ -287,15 +288,24 @@
     "constantsMinAria": "상수 {name} 슬라이더 하한",
     "constantsMaxAria": "상수 {name} 슬라이더 상한",
     "constantsStepAria": "상수 {name} 슬라이더 단계",
-    "constantsStepLabel": "단계"
+    "constantsStepLabel": "단계",
+    "pointsTitle": "드래그 가능한 점",
+    "pointsOnCurve": "곡선 위",
+    "pointsFree": "자유",
+    "pointsAddOnCurve": "+ 곡선 점",
+    "pointsAddFree": "+ 자유 점",
+    "pointsPickAria": "곡선 점에 묶을 상수",
+    "pointsFreeXAria": "자유 점 x에 묶을 상수",
+    "pointsFreeYAria": "자유 점 y에 묶을 상수",
+    "pointsRemoveAria": "드래그 가능한 점 {name} 제거"
   },
   "phys": {
-
     "tplProjectile": "발사체 운동",
     "tplShm": "단순 조화 진동",
     "tplCircular": "등속 원 운동",
     "marksDesc": "착지·최고점 표시(사거리 R, 높이 H)",
-    "marksNotApplicable": "표시는 매개변수 궤적(x=f(t),y=g(t))에만 적용됩니다. 단순 조화 진동은 기존 곡선 렌더링을 사용합니다."  },
+    "marksNotApplicable": "표시는 매개변수 궤적(x=f(t),y=g(t))에만 적용됩니다. 단순 조화 진동은 기존 곡선 렌더링을 사용합니다."
+  },
   "math": {
     "join": "{a} 및 {b}",
     "openingRight": "오른쪽",

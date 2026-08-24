@@ -91,6 +91,8 @@ export interface CursorContext {
   textEditing?: boolean;
   /** select 工具悬停命中元素（可拖动 → move） */
   hoverElement?: boolean;
+  /** select 工具悬停 / 拖动中可拖点（ZOO-201 → move，沿曲线点另有吸附高亮） */
+  hoverDragPoint?: boolean;
 }
 
 /**
@@ -104,6 +106,6 @@ export function canvasCursor(tool: ToolType, ctx: CursorContext = {}): string {
   if (ctx.spacePanning || tool === 'hand') return 'grab';
   if (tool === 'pen') return PEN_CURSOR_CSS;
   if (tool === 'eraser') return ERASER_CURSOR_CSS;
-  if (tool === 'select') return ctx.hoverElement ? 'move' : 'default';
+  if (tool === 'select') return ctx.hoverElement || ctx.hoverDragPoint ? 'move' : 'default';
   return KEYWORD_CURSORS[tool];
 }

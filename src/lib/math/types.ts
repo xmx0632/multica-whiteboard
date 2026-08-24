@@ -198,6 +198,24 @@ export interface MathPoiAnnotation {
   withId?: string;
 }
 
+/**
+ * 可拖点条目（ZOO-201）：元素可选字段 draggablePoints 的成员类型。
+ * 点不是独立坐标——是「常量绑定」的具象化：坐标永远由元素 constants 派生
+ * （free = (constants[xKey], constants[yKey])；onCurve = (constants[xKey],
+ * f(constants[xKey]))），拖动只写回常量、全图经既有常量重采样管线联动。
+ * 仅显式函数元素生效（渲染 / 命中同口径，见 math/dragPoint.ts）；绑定常量
+ * 被移除时条目同步剔除（pruneDragPoints），元素不留悬挂绑定。
+ */
+export interface DraggablePoint {
+  id: string;
+  /** free：自由点 (a, b)，拖动写回 x/y 两个常量；onCurve：沿曲线点 (a, f(a))，拖动只写回 x 常量 */
+  mode: 'free' | 'onCurve';
+  /** x 坐标绑定的常量名（存储层 ASCII 键，须存在于元素 constants） */
+  xKey: string;
+  /** free 专用：y 坐标绑定的常量名（onCurve 不携带——y 由方程求值） */
+  yKey?: string;
+}
+
 
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
  *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。
