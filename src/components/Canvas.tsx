@@ -14,6 +14,7 @@ import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { isEditableTarget } from '@/lib/keyboard';
 import { hitTestPoi, mathPlotMapper, nearestCurvePoint, poiHintsFor, togglePoiAnnotation, type HoverTrace } from '@/lib/poi';
 import { formatPoiCoord } from '@/lib/math/poi';
+import { canvasCursor } from '@/lib/cursors';
 import TextInputOverlay from './TextInputOverlay';
 import { v4 as uuidv4 } from 'uuid';
 import { useT } from '@/i18n/I18nProvider';
@@ -44,6 +45,11 @@ export default function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   // pan 进行中（ZOO-157 手型工具光标 grab → grabbing；空格 / 中键平移同享）
   const [panActive, setPanActive] = useState(false);
+  // select 悬停命中元素（ZOO-207 move 光标）：光标映射统一收口在 cursors.ts，
+  // 这里只维护命中态——值不变时 setState 自然 bail，不为光标多渲染一帧。
+  // 语义即「最后一次 pointermove 处的命中」：元素增删 / 切工具回 select 的陈旧值
+  // 由下一次 pointermove 重算兜底（指针未动则视觉本无变化），不留 effect 强同步
+  const [hoverHit, setHoverHit] = useState(false);
   const tempElementRef = useRef<WhiteboardElement | null>(null);
   const dragStartRef = useRef<Point>({ x: 0, y: 0 });
   /** select 拖拽起手元素快照（ZOO-154 整体平移）：多锚点类型须存整元素——移动 / 双指取消恢复 / 抬指 undo 快照三处共用 */
@@ -730,6 +736,15 @@ export default function Canvas() {
     }
   }, [renderFromHoverRaf]);
 
+  // select 悬停命中元素（ZOO-207）：命中口径与点击选中 / 橡皮擦除同一 hitTest；
+  // 仅 select 工具参与（画笔等工具光标不随命中变化），非 select 一律回落 false
+  const updateHoverHit = useCallback((local: Point) => {
+    const st = useStore.getState();
+    const next = st.activeTool === 'select'
+      && st.elements.some((el) => hitTest(el, screenToCanvas(local, st.viewport), st.viewport));
+    setHoverHit(next);
+  }, []);
+
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const local = getLocalPoint(e);
     const rec = activePointersRef.current.get(e.pointerId);
@@ -826,9 +841,11 @@ export default function Canvas() {
       return;
     }
 
-    // 无手势进行：悬停坐标追踪（ZOO-199）；画笔 / 拖拽等手势中清空标签
+    // 无手势进行：悬停坐标追踪（ZOO-199）+ select 悬停命中（ZOO-207 move 光标）；
+    // 画笔 / 拖拽等手势中清空标签（命中态保留起手值——拖动全程 move 光标不闪）
     if (!isDrawingRef.current) {
       updateHoverTrace(local, useStore.getState().activeTool);
+      updateHoverHit(local);
     } else if (hoverTraceRef.current !== null) {
       clearHoverTrace();
     }
@@ -893,7 +910,7 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, clearHoverTrace]);
+  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, clearHoverTrace]);
 
   /** 抬指 / 手势被系统打断（pointercancel）的统一收尾 */
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1100,12 +1117,19 @@ export default function Canvas() {
       <canvas
         ref={canvasRef}
         className="whiteboard-canvas absolute inset-0 w-full h-full"
-        style={{ cursor: panActive ? 'grabbing' : spaceDown || activeTool === 'hand' ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
+        // 光标映射统一收口 cursors.ts（ZOO-207）：工具 → 指针直观对应；
+        // 平移 / 空格 / 文本编辑 / 悬停命中作为上下文传入，覆盖链见 canvasCursor
+        style={{ cursor: canvasCursor(activeTool, {
+          panning: panActive,
+          spacePanning: spaceDown,
+          textEditing: textDraft !== null,
+          hoverElement: hoverHit,
+        }) }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        onPointerLeave={clearHoverTrace}
+        onPointerLeave={() => { clearHoverTrace(); setHoverHit(false); }}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
