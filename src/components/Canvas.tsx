@@ -16,6 +16,10 @@ import { isModalOpen } from '@/lib/modal';
 import { hitTestPoi, mathPlotMapper, nearestCurvePoint, poiHintsFor, togglePoiAnnotation, type HoverTrace } from '@/lib/poi';
 import { formatPoiCoord } from '@/lib/math/poi';
 import { canvasCursor } from '@/lib/cursors';
+import {
+  usePresentation, laserAlpha, laserTrailDone, laserShouldAppend, swipeDirection,
+  LASER_TOUCH_HOLD_MS, LASER_HOLD_CANCEL_PX, type LaserTrail,
+} from '@/lib/presentation';
 import TextInputOverlay from './TextInputOverlay';
 import { v4 as uuidv4 } from 'uuid';
 import { useT } from '@/i18n/I18nProvider';
@@ -35,6 +39,70 @@ interface TextDraft {
   value: string;
   fontSize: number;
   color: string;
+}
+
+/**
+ * 激光轨迹绘制（ZOO-200 演示态纯渲染层）：红色发光主轨迹 + 内芯提亮，
+ * 绘制中头部带光点；整体 alpha 由 laserAlpha 按绘制 / 渐隐态给出。
+ * 屏幕坐标直画（演示态视口锁定，坐标稳定）。
+ */
+function drawLaserTrail(ctx: CanvasRenderingContext2D, trail: LaserTrail, now: number) {
+  const alpha = laserAlpha(trail.drawing, trail.releasedAt, now);
+  if (alpha <= 0 || trail.points.length === 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(trail.points[0].x, trail.points[0].y);
+  for (let i = 1; i < trail.points.length; i++) ctx.lineTo(trail.points[i].x, trail.points[i].y);
+  ctx.strokeStyle = '#ef4444';
+  ctx.shadowColor = 'rgba(239, 68, 68, 0.85)';
+  ctx.shadowBlur = 14;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#fecaca';
+  ctx.lineWidth = 2;
+  ctx.stroke(); // 复用同一条 path，只换描边
+  if (trail.drawing) {
+    const head = trail.points[trail.points.length - 1];
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#ef4444';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 激光重绘循环（模块级单例，与 frameNav 同惯例）：绘制中跟手合并渲染，
+// 松开后按帧渐隐至 alpha 归零自动清空点集停帧；新调度取代进行中的循环
+let laserLoopRafId: number | null = null;
+
+function scheduleLaserFrame(
+  getTrail: () => LaserTrail,
+  setTrail: (t: LaserTrail) => void,
+  render: () => void,
+) {
+  if (laserLoopRafId !== null) return;
+  const tick = () => {
+    laserLoopRafId = null;
+    render();
+    const trail = getTrail();
+    if (!laserTrailDone(trail, performance.now())) {
+      if (laserLoopRafId === null) laserLoopRafId = requestAnimationFrame(tick);
+    } else if (trail.points.length > 0) {
+      setTrail({ points: [], drawing: false, releasedAt: null });
+    }
+  };
+  laserLoopRafId = requestAnimationFrame(tick);
+}
+
+function cancelLaserFrame() {
+  if (laserLoopRafId !== null) {
+    cancelAnimationFrame(laserLoopRafId);
+    laserLoopRafId = null;
+  }
 }
 
 export default function Canvas() {
@@ -98,6 +166,21 @@ export default function Canvas() {
   /** 悬停重绘 rAF 合并（每帧至多一次 render，与 pan / pinch 同构） */
   const hoverRafRef = useRef<number | null>(null);
 
+  // —— 演示模式（ZOO-200）——
+  /** 激光轨迹（纯渲染层，屏幕坐标）：不入 elements / 撤销栈 / 持久化 */
+  const laserRef = useRef<LaserTrail>({ points: [], drawing: false, releasedAt: null });
+  /** 演示态单指记录：触屏长按 → 激光；横滑 → 翻页；鼠标只走 L 键激光 */
+  const presentPointerRef = useRef<{
+    id: number;
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    touch: boolean;
+    laser: boolean;
+    holdTimer: number | null;
+  } | null>(null);
+
   const {
     elements, selectedId, selectedIds, activeTool, strokeColor, strokeWidth, strokeDash, fillColor,
     viewport, addElement, setSelected, setViewport, pushOperations,
@@ -105,6 +188,11 @@ export default function Canvas() {
     polylineEditId, polylineVertexIndex, selectPolylineVertex,
     activeFrameId,
   } = useStore();
+
+  // 演示模式（ZOO-200）：渲染分支与事件路由按 active 切换；frameId 驱动翻页重绘
+  const presenting = usePresentation((s) => s.active);
+  const presentationFrameId = usePresentation((s) => s.frameId);
+  const laserPointerActive = usePresentation((s) => s.laserPointerActive);
 
   // 容器宽（ZOO-159）：输入浮层右缘避让用；ResizeObserver 维护，渲染期不读 ref
   const [containerWidth, setContainerWidth] = useState(0);
@@ -200,6 +288,36 @@ export default function Canvas() {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, rect.width, rect.height);
+    // —— 演示态渲染（ZOO-200）：暗场底、无网格；当前帧白底等比铺满，帧外内容
+    //    一律裁掉（相邻页不可见）；选中 / 悬停 / POI 层不画（演示无编辑）；
+    //    激光轨迹最顶层（纯渲染层，不入 elements / 撤销栈）——
+    if (presenting) {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      const frames = elements.filter(isFrame);
+      const frame = frames.find((f) => f.id === presentationFrameId) ?? frames[0];
+      if (frame) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(
+          frame.x * viewport.scale + viewport.offsetX,
+          frame.y * viewport.scale + viewport.offsetY,
+          frame.width * viewport.scale,
+          frame.height * viewport.scale,
+        );
+        ctx.clip();
+        drawFrame(ctx, frame, viewport, { active: false, showTitle: false });
+        renderElements(
+          ctx,
+          elements.filter((e) => !isFrame(e)),
+          viewport,
+          { width: rect.width, height: rect.height, t },
+        );
+        ctx.restore();
+      }
+      drawLaserTrail(ctx, laserRef.current, performance.now());
+      return;
+    }
     renderGrid(ctx, rect.width, rect.height, viewport);
     // 帧是底图层（ZOO-198）：先画全部帧（当前页蓝框高亮），再画内容元素——帧不遮挡内容
     const frames = elements.filter(isFrame);
@@ -299,7 +417,7 @@ export default function Canvas() {
         }
       }
     }
-  }, [elements, selectedId, selectedIds, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, t]);
+  }, [elements, selectedId, selectedIds, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, presenting, presentationFrameId, t]);
 
   useEffect(() => {
     render();
@@ -431,12 +549,129 @@ export default function Canvas() {
       if (panRafRef.current !== null) cancelAnimationFrame(panRafRef.current);
       if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
       if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
+      cancelLaserFrame();
     };
   }, []);
+
+  // —— 激光轨迹操作（ZOO-200）：rAF 合并渲染；松开后渐隐循环至 alpha 归零自动清空 ——
+  const scheduleLaserRender = useCallback(() => {
+    scheduleLaserFrame(
+      () => laserRef.current,
+      (trail) => { laserRef.current = trail; },
+      render,
+    );
+  }, [render]);
+
+  const startLaser = useCallback((p: Point) => {
+    laserRef.current = { points: [p], drawing: true, releasedAt: null };
+    scheduleLaserRender();
+  }, [scheduleLaserRender]);
+
+  const appendLaser = useCallback((p: Point) => {
+    const trail = laserRef.current;
+    if (!trail.drawing) return;
+    if (laserShouldAppend(trail.points, p)) {
+      trail.points.push(p);
+      scheduleLaserRender();
+    }
+  }, [scheduleLaserRender]);
+
+  const releaseLaser = useCallback(() => {
+    const trail = laserRef.current;
+    if (!trail.drawing) return;
+    laserRef.current = { ...trail, drawing: false, releasedAt: performance.now() };
+    scheduleLaserRender();
+  }, [scheduleLaserRender]);
+
+  // L 键抬起 / 演示退出：鼠标通道的轨迹收尾（触屏通道在 pointerup 收尾）
+  useEffect(() => {
+    if (presenting && !laserPointerActive) releaseLaser();
+  }, [presenting, laserPointerActive, releaseLaser]);
+
+  // —— 演示态指针路由（ZOO-200）：触屏长按 → 激光、横滑 → 翻页；鼠标 L 键激光 ——
+  const handlePresentPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const local = getLocalPoint(e);
+    if (e.pointerType === 'touch') {
+      if (presentPointerRef.current) return; // 第二指不参与（演示态无双指手势）
+      try {
+        canvasRef.current?.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      presentPointerRef.current = {
+        id: e.pointerId,
+        startX: local.x,
+        startY: local.y,
+        x: local.x,
+        y: local.y,
+        touch: true,
+        laser: false,
+        // 长按未滑 → 进入激光：此后拖动即画轨迹，抬指渐隐
+        holdTimer: window.setTimeout(() => {
+          const r = presentPointerRef.current;
+          if (r && r.id === e.pointerId) {
+            r.holdTimer = null;
+            r.laser = true;
+            startLaser({ x: r.x, y: r.y });
+          }
+        }, LASER_TOUCH_HOLD_MS),
+      };
+      return;
+    }
+    // 鼠标 / 触控笔：L 按住中，落点即起笔（悬停移动起笔见 move 通道）
+    if (laserPointerActive && !laserRef.current.drawing) startLaser(local);
+  }, [getLocalPoint, laserPointerActive, startLaser]);
+
+  const handlePresentPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const local = getLocalPoint(e);
+    const rec = presentPointerRef.current;
+    if (rec && e.pointerId === rec.id) {
+      rec.x = local.x;
+      rec.y = local.y;
+      if (rec.laser) {
+        appendLaser(local);
+        return;
+      }
+      // 长按等待期内大幅移动 → 视作滑动开始，取消长按
+      if (
+        rec.holdTimer !== null &&
+        Math.hypot(local.x - rec.startX, local.y - rec.startY) > LASER_HOLD_CANCEL_PX
+      ) {
+        clearTimeout(rec.holdTimer);
+        rec.holdTimer = null;
+      }
+      return;
+    }
+    // 鼠标悬停移动（无按下记录）：L 按住中轨迹跟手
+    if (e.pointerType !== 'touch' && laserPointerActive) {
+      if (!laserRef.current.drawing) startLaser(local);
+      else appendLaser(local);
+    }
+  }, [getLocalPoint, appendLaser, startLaser, laserPointerActive]);
+
+  const handlePresentPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
+    const rec = presentPointerRef.current;
+    if (!rec || e.pointerId !== rec.id) return;
+    presentPointerRef.current = null;
+    if (rec.holdTimer !== null) clearTimeout(rec.holdTimer);
+    if (rec.laser) {
+      releaseLaser();
+      return;
+    }
+    if (cancelled) return; // 系统打断（pointercancel）：只收尾不翻页
+    // 横滑翻页（左滑 = 下一页，右滑 = 上一页）；垂向 / 位移不足不动作
+    const dir = swipeDirection(rec.x - rec.startX, rec.y - rec.startY);
+    if (dir) usePresentation.getState().step(dir);
+  }, [releaseLaser]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // 演示态路由（ZOO-200）：编辑手势全部让位（视口锁定），只走激光 / 横滑
+    if (presenting) {
+      handlePresentPointerDown(e);
+      return;
+    }
     const local = getLocalPoint(e);
     activePointersRef.current.set(e.pointerId, { x: local.x, y: local.y, type: e.pointerType });
 
@@ -658,7 +893,7 @@ export default function Canvas() {
           break;
       }
     }
-  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft, presenting, handlePresentPointerDown]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {
@@ -746,7 +981,13 @@ export default function Canvas() {
     setHoverHit(next);
   }, []);
 
+
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    // 演示态路由（ZOO-200）：激光跟手 / 横滑追踪，编辑手势与悬停层全部让位
+    if (presenting) {
+      handlePresentPointerMove(e);
+      return;
+    }
     const local = getLocalPoint(e);
     const rec = activePointersRef.current.get(e.pointerId);
     if (rec) {
@@ -911,10 +1152,15 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, clearHoverTrace]);
+  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, clearHoverTrace, presenting, handlePresentPointerMove]);
 
   /** 抬指 / 手势被系统打断（pointercancel）的统一收尾 */
-  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
+    // 演示态路由（ZOO-200）：激光收尾 / 横滑翻页（cancel 只收尾不翻页）
+    if (presenting) {
+      handlePresentPointerUp(e, cancelled);
+      return;
+    }
     activePointersRef.current.delete(e.pointerId);
 
     // 双指之一抬起：结束捏合并落定最终帧；残余触摸标记惰性（防止误画）
@@ -1042,7 +1288,7 @@ export default function Canvas() {
       }
       frameDragContentsRef.current = null;
     }
-  }, [activeTool, selectedId, addElement, setViewport, pushOperations]);
+  }, [activeTool, selectedId, addElement, setViewport, pushOperations, presenting, handlePresentPointerUp]);
 
   // 滚轮缩放：原生非 passive 监听（React 合成 onWheel 为 passive，preventDefault 无效）
   useEffect(() => {
@@ -1050,6 +1296,8 @@ export default function Canvas() {
     if (!canvas) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      // 演示态视口锁定（ZOO-200）：缩放让位，只吞滚动
+      if (usePresentation.getState().active) return;
       const { viewport, setViewport } = useStore.getState();
       const rect = canvas.getBoundingClientRect();
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
@@ -1062,6 +1310,8 @@ export default function Canvas() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return;
+      // 演示态空格 = 翻页（ZOO-200，useShortcuts 演示路由 preventDefault），不进平移态
+      if (usePresentation.getState().active) return;
       // 编辑态守卫（ZOO-163）：焦点在输入控件（内联文字浮层 textarea、方程输入框等）
       // 时空格归文本输入——不平移、不 preventDefault，否则空格字符被吞（a b 变 ab）。
       // keyup 不设守卫：按住空格中途点进输入框，抬键仍要解除平移态。
@@ -1087,6 +1337,7 @@ export default function Canvas() {
    * 距段端点过近（<12 屏幕 px）不插——双击落在端点 / 既有顶点手柄上防重合顶点。
    */
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (presenting) return; // 演示态无双击编辑（ZOO-200）
     if (activeTool !== 'select' || textDraftRef.current) return;
     const st = useStore.getState();
     const point = getCanvasPoint(e);
@@ -1114,7 +1365,7 @@ export default function Canvas() {
         return;
       }
     }
-  }, [activeTool, getCanvasPoint, openTextDraftForElement]);
+  }, [activeTool, getCanvasPoint, openTextDraftForElement, presenting]);
 
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden">
@@ -1122,17 +1373,20 @@ export default function Canvas() {
         ref={canvasRef}
         className="whiteboard-canvas absolute inset-0 w-full h-full"
         // 光标映射统一收口 cursors.ts（ZOO-207）：工具 → 指针直观对应；
-        // 平移 / 空格 / 文本编辑 / 悬停命中作为上下文传入，覆盖链见 canvasCursor
-        style={{ cursor: canvasCursor(activeTool, {
-          panning: panActive,
-          spacePanning: spaceDown,
-          textEditing: textDraft !== null,
-          hoverElement: hoverHit,
-        }) }}
+        // 平移 / 空格 / 文本编辑 / 悬停命中作为上下文传入，覆盖链见 canvasCursor。
+        // 演示态（ZOO-200）：激光按住中隐藏系统光标（激光点即光标），否则默认指针
+        style={{ cursor: presenting
+          ? (laserPointerActive ? 'none' : 'default')
+          : canvasCursor(activeTool, {
+            panning: panActive,
+            spacePanning: spaceDown,
+            textEditing: textDraft !== null,
+            hoverElement: hoverHit,
+          }) }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={(e) => handlePointerUp(e, true)}
         onPointerLeave={() => { clearHoverTrace(); setHoverHit(false); }}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}

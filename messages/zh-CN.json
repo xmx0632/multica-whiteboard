@@ -366,6 +366,17 @@
     "jumpTip": "跳转到「{name}」",
     "exportDisabledTip": "先在页条选中一页"
   },
+  "presentation": {
+    "enter": "▶ 演示",
+    "enterAria": "进入演示模式（翻页放映）",
+    "exit": "✕ 退出演示",
+    "exitAria": "退出演示模式",
+    "pageOf": "{current} / {total}",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "needPageTip": "先创建至少一页（帧）再开始演示",
+    "laserTip": "按住 L 移动 = 激光指针；触屏长按拖动同理"
+  },
   "shortcuts": {
     "title": "键盘快捷键",
     "close": "关闭",

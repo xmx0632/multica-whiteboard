@@ -11,6 +11,8 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { FrameElement } from '@/lib/types';
 import { useShortcutUI } from '@/lib/keymap';
 import { confirmDiscardNew } from '@/lib/confirmDialog';
+import { usePresentation } from '@/lib/presentation';
+import { framesOf } from '@/lib/frame';
 import ZoomControl from './ZoomControl';
 import LanguageSwitch from './LanguageSwitch';
 
@@ -173,6 +175,20 @@ export default function TopMenuBar() {
 
       {/* ZOO-176：语言切换（cookie 记住偏好，优先级高于自动检测） */}
       <LanguageSwitch />
+
+      <div className="w-px h-5 bg-gray-200" />
+
+      {/* 演示模式（ZOO-200）：帧序列放映 + 激光指针；点击即用户手势，
+          进入时顺带请求浏览器全屏（不支持则静默跳过）。无帧（未分页）禁用 */}
+      <button
+        onClick={() => usePresentation.getState().enter()}
+        disabled={framesOf(elements).length === 0}
+        aria-label={t('presentation.enterAria')}
+        title={framesOf(elements).length === 0 ? t('presentation.needPageTip') : t('presentation.enterAria')}
+        className="touch-target px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-md disabled:opacity-40"
+      >
+        {t('presentation.enter')}
+      </button>
 
       <div className="w-px h-5 bg-gray-200" />
 

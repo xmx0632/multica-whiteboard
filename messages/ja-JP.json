@@ -366,6 +366,17 @@
     "jumpTip": "「{name}」へ移動",
     "exportDisabledTip": "先にページバーでページを選択"
   },
+  "presentation": {
+    "enter": "▶ プレゼン",
+    "enterAria": "プレゼンテーションモードに入る（ページ送り）",
+    "exit": "✕ プレゼン終了",
+    "exitAria": "プレゼンテーションモードを終了",
+    "pageOf": "{current} / {total}",
+    "prevPage": "前のページ",
+    "nextPage": "次のページ",
+    "needPageTip": "プレゼン前に少なくとも 1 ページ（フレーム）を作成してください",
+    "laserTip": "L を押しながら移動 = レーザーポインター；タッチは長押ししてドラッグ"
+  },
   "shortcuts": {
     "title": "キーボードショートカット",
     "close": "閉じる",

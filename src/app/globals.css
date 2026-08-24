@@ -230,3 +230,15 @@ body {
     display: none;
   }
 }
+
+/* 演示模式（ZOO-200）：页面根挂 presentation-mode——隐藏全部编辑浮层（工具栏 / 面板 /
+   页条 / 沉浸与全屏钮），放映态操作面只剩 PresentationOverlay 的退出钮与页码翻页钮。
+   不限媒体查询（课堂放映桌面 / 移动同一形态）；与 immersive-mode 正交叠加互不干扰 */
+.presentation-mode .whiteboard-chrome {
+  display: none;
+}
+
+/* 沉浸唤回钮（非 whiteboard-chrome，沉浸中仍要显示的那枚）在演示中同样隐藏 */
+.presentation-mode .immersive-toggle {
+  display: none;
+}

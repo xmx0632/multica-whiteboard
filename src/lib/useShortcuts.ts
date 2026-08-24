@@ -11,6 +11,7 @@ import { getAllElementsBounds } from './renderer';
 import { saveToLocal, listLocalDocuments, listServerDocuments, loadFromLocal, loadFromServer } from './persistence';
 import { framesOf, neighborFrame, frameFocusViewport } from './frame';
 import { animateViewportTo } from './frameNav';
+import { usePresentation } from './presentation';
 import { useAutosaveStore } from './autosave';
 import { useT } from '@/i18n/I18nProvider';
 import type { ToolType } from './types';
@@ -188,6 +189,47 @@ export function useShortcuts() {
       // 守卫 1（ZOO-163）：编辑态全部放行——文本输入优先于一切快捷键
       if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
 
+      // —— 演示态路由（ZOO-200）：全部编辑快捷键让位，只认翻页 / 首末页 / 退出 /
+      //    激光指针。空格在此 preventDefault → 不触发页面滚动与按钮激活 ——
+      const pres = usePresentation.getState();
+      if (pres.active) {
+        if (e.key === 'Escape') {
+          if (isModalOpen()) return; // 模态自身关闭优先（演示态正常不可开，防御）
+          e.preventDefault();
+          pres.exit();
+          return;
+        }
+        switch (e.code) {
+          case 'ArrowRight':
+            e.preventDefault();
+            pres.step(1);
+            return;
+          case 'ArrowLeft':
+            e.preventDefault();
+            pres.step(-1);
+            return;
+          case 'Space':
+            e.preventDefault();
+            pres.step(1);
+            return;
+          case 'Home':
+            e.preventDefault();
+            pres.jumpToEdge('home');
+            return;
+          case 'End':
+            e.preventDefault();
+            pres.jumpToEdge('end');
+            return;
+          case 'KeyL':
+            if (!e.repeat) {
+              e.preventDefault();
+              pres.setLaserPointer(true);
+            }
+            return;
+        }
+        return; // 其余键（含 Alt 工具 / Ctrl 编辑 / Alt+/ 帮助）演示态一律不动作
+      }
+
       const { helpOpen, setHelpOpen } = useShortcutUI.getState();
 
       // Esc 优先级链（见文件头注释）；Escape 不在 KEY_BINDINGS 分派里匹配（防 modifier 误配）
@@ -221,7 +263,20 @@ export function useShortcuts() {
       runAction(binding.id);
     };
 
+    // L 键抬键（ZOO-200 演示激光）：按住画轨迹、抬起渐隐——与 keydown 的
+    // setLaserPointer(true) 成对；窗口失焦兜底松开（防 L 粘滞）
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'KeyL') usePresentation.getState().setLaserPointer(false);
+    };
+    const handleBlur = () => usePresentation.getState().setLaserPointer(false);
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [t]);
 }
