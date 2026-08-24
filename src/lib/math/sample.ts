@@ -54,6 +54,13 @@ function percentile(sorted: number[], p: number): number {
  * 稳健 y 视窗自适应（四分位距）：以中位数为中心、1.5×IQR 为半宽，
  * 避免渐近线邻域的极端值（tan 可达数百）把视窗撑爆；退化（常数函数）时
  * 给出 ±max(|中位数|/2, 1) 的最小视窗。
+ *
+ * ZOO-206 修复：数据自身贴近 0（距 0 不超过其正向幅度的 10%）时把视窗扩展
+ * 到含 0 并留 8% 边距——保证横轴与原点可见（y=√x 原点起笔、曲线过原点可
+ * 检验）。此前四分位拟合会把单侧值域函数（√x 的 [0.53,3.96]）的 0 挤出视窗，
+ * 横轴整条不可见、原点无从谈起。远离 0 的函数（y=x²+100，数据最小 100）不
+ * 受影响，仍保持数据居中视窗。参数式 / 极坐标的 xy 双向拟合复用本函数，同
+ * 口径受益。
  */
 function fitYWindow(finiteYs: number[]): { min: number; max: number } {
   const sorted = [...finiteYs].sort((a, b) => a - b);
@@ -62,7 +69,13 @@ function fitYWindow(finiteYs: number[]): { min: number; max: number } {
   const q3 = percentile(sorted, 0.75);
   let spread = 1.5 * (q3 - q1);
   if (!(spread > 1e-9)) spread = Math.max(Math.abs(med) * 0.5, 1);
-  return { min: med - spread, max: med + spread };
+  let min = med - spread;
+  let max = med + spread;
+  const dataMin = sorted[0];
+  const dataMax = sorted[sorted.length - 1];
+  if (min > 0 && dataMin <= 0.1 * dataMax) min = -0.08 * max;
+  else if (max < 0 && dataMax >= 0.1 * dataMin) max = -0.08 * min;
+  return { min, max };
 }
 
 /**
