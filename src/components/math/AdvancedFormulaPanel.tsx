@@ -28,7 +28,11 @@
  * - T5 物理区（ZOO-192，physics 绑定时渲染）：抛体 / 简谐 / 圆周模板行（点选
  *   回填方程 + 常量预置 + t 域预置 + 标注预置，插入即出图）+ 落地/峰值标注
  *   开关（仅参数式轨迹生效，标注数值随常量改值实时联动）+ 常量单位显示行
- *   （单位仅显示，不做量纲运算）。
+ *   （单位仅显示，不做量纲运算）；
+ * - T6 极限邻域放大（ZOO-193，微积分区尾部）：中心数值输入（缺省取定义域
+ *   中心）+ ×10 预设按钮，经 zoomNeighborhood 换算后一次 onChange + 一次
+ *   onCommit（离散变更，D5）；仅显式函数可用（非显式沿既有禁用态，不做
+ *   特殊分支）；创建侧无元素域（缺 onDomainChange）不渲染本控件。
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -36,6 +40,7 @@ import { useT } from '@/i18n/I18nProvider';
 import { PHYSICS_CONSTANT_UNITS } from '@/lib/math/physics';
 import { PLOT_COLORS } from '@/lib/math/plot';
 import { constantDisplayName, normalizeConstantKey, parseConstantValue } from '@/lib/math/normalize';
+import { zoomNeighborhood } from '@/lib/advancedFormula';
 import type { MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
 import {
@@ -142,6 +147,11 @@ export interface AdvancedCalculusBinding {
   applicable: boolean;
   /** x 定义域（a/b 越界校验；创建侧缺省 = 不校验定义域） */
   domain?: { min: number; max: number };
+  /**
+   * T6 邻域放大（ZOO-193）：定义域变更出口——×10 预设为离散变更，面板内
+   * 一次 onChange + 一次 onCommit。缺省（创建侧无元素域）不渲染放大控件。
+   */
+  onDomainChange?: (domain: { min: number; max: number }) => void;
 }
 
 /** 四分区骨架（组序即面板展示序）：字形为语言无关数学记号，名称 / 描述走资源键 */
@@ -363,9 +373,12 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
 }
 
 /** T2 微积分编辑区（ZOO-189）：f′ 叠加开关 + 切线演示（开关 + x₀ 数值输入）；
- *  T3 积分区（ZOO-190）：定积分开关 + a/b 数值输入（a<b 且定义域内校验）。 */
+ *  T3 积分区（ZOO-190）：定积分开关 + a/b 数值输入（a<b 且定义域内校验）；
+ *  T6 邻域放大（ZOO-193）：中心数值输入（缺省取定义域中心）+ ×10 预设。 */
 function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
   const t = useT();
+  // T6 中心输入草稿（纯 UI 态）：只在点 ×10 时参与换算，本身不改定义域
+  const [centerDraft, setCenterDraft] = useState('');
   const hasDerivative = binding.values.some((o) => o.type === 'derivative');
   const tangent = binding.values.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
   const integral = binding.values.find((o): o is { type: 'integral'; a: number; b: number } => o.type === 'integral');
@@ -401,6 +414,15 @@ function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
     binding.onChange(
       binding.values.map((o) => (o.type === 'integral' ? { type: 'integral' as const, a: o.a, b: o.b, ...patch } : o)),
     );
+  };
+
+  /** T6 ×10 邻域放大（ZOO-193）：离散变更一次 onChange + 一次 onCommit（D5）；
+   *  中心输入空 / 非法时取定义域中心（zoomNeighborhood 内缺省口径） */
+  const applyZoom = () => {
+    if (disabled || !binding.domain || !binding.onDomainChange) return;
+    const center = parseFloat(centerDraft);
+    binding.onDomainChange(zoomNeighborhood(binding.domain, Number.isFinite(center) ? center : undefined));
+    binding.onCommit?.();
   };
 
   // T3 校验（ZOO-190）：a<b 必检；编辑侧带定义域时加越界检查（渲染层另有
@@ -513,6 +535,40 @@ function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
               ⚠ {t('advFormula.calcIntegralRange')}
             </div>
           )}
+        </div>
+      )}
+
+      {/* T6 极限邻域放大（ZOO-193）：中心数值输入（缺省取定义域中心）+ ×10 预设；
+          非显式函数沿既有禁用态；创建侧无元素域（缺 onDomainChange / domain）不渲染 */}
+      {binding.domain && binding.onDomainChange && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-gray-500">{t('advFormula.calcLimitZoom')}</span>
+          <input
+            type="number"
+            step="any"
+            value={centerDraft}
+            disabled={disabled}
+            onChange={(e) => setCenterDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyZoom();
+              }
+            }}
+            placeholder={String((binding.domain.min + binding.domain.max) / 2)}
+            aria-label={t('advFormula.calcLimitCenter')}
+            autoComplete="off"
+            className="touch-target flex-1 min-w-0 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+          />
+          <button
+            type="button"
+            onClick={applyZoom}
+            disabled={disabled}
+            aria-label={t('advFormula.calcLimitZoomAria')}
+            className="touch-target px-2.5 py-0.5 border border-blue-200 rounded-md bg-blue-50/60 font-serif text-[11px] font-medium text-blue-600 cursor-pointer hover:bg-blue-50 active:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ×10
+          </button>
         </div>
       )}
     </div>
