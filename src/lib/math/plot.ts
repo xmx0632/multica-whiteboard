@@ -973,6 +973,16 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
     return { polylines: [], view: nominal, error: spec.errorMessage || zhT('math.unrecognized'), path2d: null };
   }
 
+  // ZOO-206 修复：path2d 在 drawMathPlot 的内嵌绘图区（外框四周让 PLOT_INNER_PAD）
+  // 里 stroke——变换必须按内嵌尺寸构建，与网格 / 轴 / 折线回退 / POI / SVG 导出同
+  // 口径。此前按完整外框构建，浏览器（有 Path2D）下所有方程相对坐标轴系统性
+  // 偏移数 px（原点处约 ±6px，卡片越小越明显）；Node 单测无 Path2D 走折线回退
+  // （变换一致）故未暴露。MiniPreview 直连 drawGraphCore 且恒传 path2d:null，不受影响。
+  const innerFrame: PlotFrame = {
+    width: Math.max(1, frame.width - PLOT_INNER_PAD * 2),
+    height: Math.max(1, frame.height - PLOT_INNER_PAD * 2),
+  };
+
   const yWindow = spec.equalRatio
     ? (() => {
         const span = (spec.xAxis.max - spec.xAxis.min) * (frame.height / Math.max(frame.width, 1));
@@ -1024,7 +1034,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
         yMax: sampled.yMax,
       };
       const transform =
-        typeof Path2D !== 'undefined' ? createPlotTransform(view, frame.width, frame.height) : null;
+        typeof Path2D !== 'undefined' ? createPlotTransform(view, innerFrame.width, innerFrame.height) : null;
       const overlays: OverlayRender = {};
       if (wantsDerivative && dfn && sampled.series[1]) {
         overlays.derivative = {
@@ -1077,7 +1087,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
     yMax: sampled.yMax,
   };
   const path2d =
-    typeof Path2D !== 'undefined' ? buildPlotPath2D(sampled.polylines, createPlotTransform(view, frame.width, frame.height)) : null;
+    typeof Path2D !== 'undefined' ? buildPlotPath2D(sampled.polylines, createPlotTransform(view, innerFrame.width, innerFrame.height)) : null;
   // —— ZOO-192 T5 物理标注：仅参数式轨迹生效（physics 叠加条目 + parametric
   //    kind 双条件）——显式（简谐）/几何/极坐标/错误态静默忽略、数据保留；
   //    轨迹非抛体形（无域内峰值 / 无落地越零）时 marks 为 null，同样不产出。
