@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { useStore } from './store';
 import { isEditableTarget } from './keyboard';
 import { matchEvent, useShortcutUI, ShortcutId } from './keymap';
+import { isModalOpen } from './modal';
+import { confirmDiscardNew } from './confirmDialog';
 import { zoomAt, stepZoomScale, fitViewport } from './gestures';
 import { getAllElementsBounds } from './renderer';
 import { saveToLocal, listLocalDocuments, listServerDocuments, loadFromLocal, loadFromServer } from './persistence';
@@ -21,11 +23,13 @@ import type { ToolType } from './types';
  * 1. 编辑态守卫（ZOO-163 单一来源）：焦点在 input/textarea/contenteditable 时全部
  *    放行（不 preventDefault、不动作）——单字母工具键（现 Alt 系）、Ctrl 系编辑键、
  *    删除键不得劫持文本输入；输入框内 Option/Alt+字母继续原生输入数学符号（√ ≈ ≤）。
- * 2. 模态守卫：帮助面板 / 高级公式面板（role=dialog）打开期间除 Esc / Alt+/ 外全部
- *    失效——防后台切工具、误触发保存。
+ * 2. 模态守卫：帮助面板 / 高级公式面板（role=dialog）/ 确认弹窗（role=alertdialog，
+ *    ZOO-209）打开期间除 Esc / Alt+/ 外全部失效——防后台切工具、误触发保存
+ *    （判定单一来源 modal.ts，Canvas 空格平移共用）。
  *
- * Esc 优先级（一次按下只做一件事）：关帮助面板 > 折线编辑退出（ZOO-168）>
- * 其他模态自身关闭（此处放行不动作）> 取消选中。
+ * Esc 优先级（一次按下只做一件事）：关帮助面板 > 其他模态自身关闭（此处放行不动作，
+ * ZOO-209 起优先于折线编辑——确认弹窗打开时 Esc 只关弹窗）> 折线编辑退出（ZOO-168）
+ * > 取消选中。
  */
 const TOOL_OF_BINDING: Partial<Record<ShortcutId, ToolType>> = {
   'tool.select': 'select', 'tool.hand': 'hand', 'tool.pen': 'pen', 'tool.penAlias': 'pen',
@@ -114,8 +118,14 @@ export function useShortcuts() {
           st.moveDown();
           return;
         case 'file.new':
-          if (st.isDirty && !confirm(t('menu.confirmDiscard'))) return;
-          st.newDocument(t('common.untitled'));
+          // 未保存确认改自定义弹窗（ZOO-209）：Enter 放弃并新建 / Esc 留在当前画布
+          if (!st.isDirty) {
+            st.newDocument(t('common.untitled'));
+            return;
+          }
+          void confirmDiscardNew(t).then((ok) => {
+            if (ok) useStore.getState().newDocument(t('common.untitled'));
+          });
           return;
         case 'file.save': {
           // 手动保存 = 立即落盘（ZOO-170 协同：签名未变则自动保存不再重复写）
@@ -187,14 +197,15 @@ export function useShortcuts() {
           setHelpOpen(false);
           return;
         }
-        const modalOpen = typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]');
+        // 模态（含确认弹窗 alertdialog，ZOO-209）优先于折线编辑：Esc 一次只关一层，
+        // 不得在关弹窗的同时退出折线编辑（画布动作）
+        if (isModalOpen()) return; // 高级公式面板 / 确认弹窗：其自身监听关闭，此处不叠加动作
         const st = useStore.getState();
         if (st.polylineEditId) {
           e.preventDefault();
           st.endPolylineEdit();
           return;
         }
-        if (modalOpen) return; // 高级公式面板等模态：其自身监听关闭，此处不叠加动作
         e.preventDefault();
         st.setSelected(null);
         return;
@@ -204,8 +215,7 @@ export function useShortcuts() {
       if (!binding) return;
 
       // 守卫 2：模态打开期间仅保留帮助面板开合
-      const modalOpen = typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]');
-      if ((helpOpen || modalOpen) && binding.id !== 'ui.help') return;
+      if ((helpOpen || isModalOpen()) && binding.id !== 'ui.help') return;
 
       e.preventDefault();
       runAction(binding.id);

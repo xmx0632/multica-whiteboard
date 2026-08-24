@@ -25,6 +25,13 @@
     "eraser": "지우개",
     "equation": "방정식"
   },
+  "confirm": {
+    "discardTitle": "저장하지 않은 변경 사항을 버리시겠습니까?",
+    "discardBody": "새 화이트보드를 만들면 저장하지 않은 변경 사항이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "discardConfirm": "변경 사항 버리기",
+    "ok": "확인",
+    "cancel": "취소"
+  },
   "menu": {
     "new": "새로 만들기",
     "undo": "실행 취소",

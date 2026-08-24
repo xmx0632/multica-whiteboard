@@ -25,6 +25,13 @@
     "eraser": "消しゴム",
     "equation": "方程式"
   },
+  "confirm": {
+    "discardTitle": "未保存の変更を破棄しますか？",
+    "discardBody": "新しいホワイトボードを作成すると、未保存の変更は破棄されます。この操作は元に戻せません。",
+    "discardConfirm": "変更を破棄",
+    "ok": "OK",
+    "cancel": "キャンセル"
+  },
   "menu": {
     "new": "新規",
     "undo": "元に戻す",

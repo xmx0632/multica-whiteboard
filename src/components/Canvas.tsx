@@ -12,6 +12,7 @@ import { parseVertexHandle, vertexDragPatch, insertVertexPatch } from '@/lib/pol
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt, panBy } from '@/lib/gestures';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { isEditableTarget } from '@/lib/keyboard';
+import { isModalOpen } from '@/lib/modal';
 import { hitTestPoi, mathPlotMapper, nearestCurvePoint, poiHintsFor, togglePoiAnnotation, type HoverTrace } from '@/lib/poi';
 import { formatPoiCoord } from '@/lib/math/poi';
 import { canvasCursor } from '@/lib/cursors';
@@ -1065,6 +1066,9 @@ export default function Canvas() {
       // 时空格归文本输入——不平移、不 preventDefault，否则空格字符被吞（a b 变 ab）。
       // keyup 不设守卫：按住空格中途点进输入框，抬键仍要解除平移态。
       if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+      // 模态守卫（ZOO-209）：确认弹窗 / 帮助面板打开时空格归弹窗按钮激活，
+      // 不进平移态（判定单一来源 modal.ts，与 useShortcuts 共用）。
+      if (isModalOpen()) return;
       e.preventDefault();
       setSpaceDown(true);
     };
