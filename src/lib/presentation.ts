@@ -8,11 +8,13 @@
  * 分层惯例（与 gestures / frame 同构）：
  * - 纯函数（presentationViewport / stepPresentationIndex / swipeDirection /
  *   laser 系列）→ 单测覆盖；
- * - usePresentation zustand store → 演示态会话状态机（进入 / 翻页 / 退出 / 激光）；
+ * - usePresentation zustand store → 演示态会话状态机（进入 / 翻页 / 退出）；
  * - Canvas / PresentationOverlay / useShortcuts 只做事件接线。
  *
  * 激光轨迹是纯渲染层：点集只存在于 Canvas 的 ref（屏幕坐标），不入 elements、
  * 不压撤销栈、不持久化——翻页 / 激光全程 undoStack 长度与文档内容零变化。
+ * 触发通道（ZOO-200 评审修订）：鼠标 / 触控笔 = 按住右键拖动（单手可达，
+ * 不占键盘）；触屏 = 长按 350ms 后拖动。键盘不参与。
  */
 import { create } from 'zustand';
 import { FrameElement, Point, Viewport } from './types';
@@ -123,8 +125,6 @@ interface PresentationState {
   active: boolean;
   /** 当前放映页帧 id（悬空时消费方按 framesOf 兜底首页） */
   frameId: string | null;
-  /** L 键按住中（鼠标激光通道；触屏激光走长按，不经此标志） */
-  laserPointerActive: boolean;
   /** 进入时的还原快照；active 期间非空 */
   restore: PresentationSnapshot | null;
   /** 本次演示会话由我们发起的浏览器全屏（退出时才还原；用户先于进入的全屏不动） */
@@ -142,14 +142,11 @@ interface PresentationState {
   refit: (viewSize?: { width: number; height: number }) => void;
   /** 退出演示：还原进入前视口与选中态、还原我们发起的全屏 */
   exit: () => void;
-  /** L 键按下 / 抬起（鼠标激光通道） */
-  setLaserPointer: (on: boolean) => void;
 }
 
 export const usePresentation = create<PresentationState>((set, get) => ({
   active: false,
   frameId: null,
-  laserPointerActive: false,
   restore: null,
   requestedFullscreen: false,
 
@@ -166,7 +163,6 @@ export const usePresentation = create<PresentationState>((set, get) => ({
     set({
       active: true,
       frameId: start.id,
-      laserPointerActive: false,
       restore: {
         viewport: { ...st.viewport },
         selectedId: st.selectedId,
@@ -240,7 +236,6 @@ export const usePresentation = create<PresentationState>((set, get) => ({
     set({
       active: false,
       frameId: null,
-      laserPointerActive: false,
       restore: null,
       requestedFullscreen: false,
     });
@@ -257,8 +252,4 @@ export const usePresentation = create<PresentationState>((set, get) => ({
     }
   },
 
-  setLaserPointer: (on) => {
-    if (get().laserPointerActive === on) return;
-    set({ laserPointerActive: on });
-  },
 }));

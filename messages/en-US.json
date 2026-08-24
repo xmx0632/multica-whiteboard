@@ -375,7 +375,7 @@
     "prevPage": "Previous page",
     "nextPage": "Next page",
     "needPageTip": "Create at least one page (frame) before presenting",
-    "laserTip": "Hold L and move = laser pointer; touch: press and hold, then drag"
+    "laserTip": "Hold the right mouse button and drag = laser pointer; touch: press and hold, then drag"
   },
   "shortcuts": {
     "title": "Keyboard Shortcuts",

@@ -189,8 +189,9 @@ export function useShortcuts() {
       // 守卫 1（ZOO-163）：编辑态全部放行——文本输入优先于一切快捷键
       if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
 
-      // —— 演示态路由（ZOO-200）：全部编辑快捷键让位，只认翻页 / 首末页 / 退出 /
-      //    激光指针。空格在此 preventDefault → 不触发页面滚动与按钮激活 ——
+      // —— 演示态路由（ZOO-200）：全部编辑快捷键让位，只认翻页 / 首末页 / 退出。
+      //    空格在此 preventDefault → 不触发页面滚动与按钮激活。
+      //    激光指针不经键盘（评审修订）：鼠标右键 / 触屏长按，见 Canvas ——
       const pres = usePresentation.getState();
       if (pres.active) {
         if (e.key === 'Escape') {
@@ -219,12 +220,6 @@ export function useShortcuts() {
           case 'End':
             e.preventDefault();
             pres.jumpToEdge('end');
-            return;
-          case 'KeyL':
-            if (!e.repeat) {
-              e.preventDefault();
-              pres.setLaserPointer(true);
-            }
             return;
         }
         return; // 其余键（含 Alt 工具 / Ctrl 编辑 / Alt+/ 帮助）演示态一律不动作
@@ -263,20 +258,7 @@ export function useShortcuts() {
       runAction(binding.id);
     };
 
-    // L 键抬键（ZOO-200 演示激光）：按住画轨迹、抬起渐隐——与 keydown 的
-    // setLaserPointer(true) 成对；窗口失焦兜底松开（防 L 粘滞）
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'KeyL') usePresentation.getState().setLaserPointer(false);
-    };
-    const handleBlur = () => usePresentation.getState().setLaserPointer(false);
-
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', handleBlur);
-    };
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [t]);
 }
