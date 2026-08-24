@@ -13,6 +13,7 @@
 | [`prototype/whiteboard-prototype.html`](./prototype/whiteboard-prototype.html) | 可交互原型（单文件零依赖，浏览器直接打开；内置「评审演示」面板一键切换状态） | v1.0 |
 | [`design/mathplot-technical-design.md`](./design/mathplot-technical-design.md) | 技术方案：选型 ADR、MathPlotElement 数据模型、渲染管线、解析器设计、逐文件改动清单、PR0–PR5 计划、风险登记册 | v1.0 · 已评审通过 |
 | [`dev/architecture.md`](./dev/architecture.md) | 开发指南：现有代码结构（迭代一单机版）、运行/构建说明、已知技术债、MathPlot 开发路标 | v1.0 |
+| [`advanced-formula-guide.md`](./advanced-formula-guide.md) | 使用指南：高级公式面板四分区（微积分 / 物理模板 / 常量 / 参数式）的关系与组合用法、6 个实测例子、决策速查表 | v1.0 |
 
 ## 按角色的阅读路径
 
