@@ -25,6 +25,13 @@
     "eraser": "Eraser",
     "equation": "Equation"
   },
+  "confirm": {
+    "discardTitle": "Discard unsaved changes?",
+    "discardBody": "Creating a new whiteboard will discard your unsaved changes. This cannot be undone.",
+    "discardConfirm": "Discard changes",
+    "ok": "OK",
+    "cancel": "Cancel"
+  },
   "menu": {
     "new": "New",
     "undo": "Undo",

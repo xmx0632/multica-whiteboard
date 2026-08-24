@@ -10,6 +10,7 @@ import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { useI18n } from '@/i18n/I18nProvider';
 import { FrameElement } from '@/lib/types';
 import { useShortcutUI } from '@/lib/keymap';
+import { confirmDiscardNew } from '@/lib/confirmDialog';
 import ZoomControl from './ZoomControl';
 import LanguageSwitch from './LanguageSwitch';
 
@@ -105,9 +106,15 @@ export default function TopMenuBar() {
   }, [clearAll, t]);
 
   const handleNew = useCallback(() => {
-    if (isDirty && !confirm(t('menu.confirmDiscard'))) return;
-    // ZOO-176：默认标题随语言（新建即入历史列表的可见文案）
-    newDocument(t('common.untitled'));
+    // 未保存确认改自定义弹窗（ZOO-209）：Enter 放弃并新建 / Esc 留在当前画布
+    if (!isDirty) {
+      // ZOO-176：默认标题随语言（新建即入历史列表的可见文案）
+      newDocument(t('common.untitled'));
+      return;
+    }
+    void confirmDiscardNew(t).then((ok) => {
+      if (ok) newDocument(t('common.untitled'));
+    });
   }, [isDirty, newDocument, t]);
 
   const barContent = (

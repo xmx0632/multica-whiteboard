@@ -11,6 +11,7 @@ import ImmersiveToggle from '@/components/ImmersiveToggle';
 import PageBar from '@/components/PageBar';
 import { useShortcuts } from '@/lib/useShortcuts';
 import ShortcutsHelpPanel from '@/components/ShortcutsHelpPanel';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useAutosave } from '@/lib/useAutosave';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
 
@@ -38,6 +39,8 @@ export default function WhiteboardApp() {
       <PageBar />
       {/* 快捷键帮助面板（ZOO-205）：Alt+/ 或顶栏 ? 呼出，portal 到 body */}
       <ShortcutsHelpPanel />
+      {/* 自定义确认弹窗（ZOO-209）：confirmDialog() 命令式发起，单例 portal 到 body */}
+      <ConfirmDialog />
       {phonePortrait ? (
         /* 手机竖屏（ZOO-152 追加）：右下角操作行——沉浸与横屏全屏同行，不再两行叠放；
          * 沉浸中全屏钮随 whiteboard-chrome 隐藏，行内仅剩退出沉浸 */

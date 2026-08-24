@@ -25,6 +25,13 @@
     "eraser": "橡皮",
     "equation": "方程"
   },
+  "confirm": {
+    "discardTitle": "放弃未保存的修改？",
+    "discardBody": "新建白板将丢弃当前未保存的修改，此操作无法撤销。",
+    "discardConfirm": "放弃修改",
+    "ok": "确认",
+    "cancel": "取消"
+  },
   "menu": {
     "new": "新建",
     "undo": "撤销",

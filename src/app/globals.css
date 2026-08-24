@@ -46,6 +46,38 @@ body {
   visibility: hidden;
 }
 
+/* —— ZOO-209 确认弹窗过渡 ——
+ * 遮罩淡入淡出 + 卡片轻缩放，各 ~150ms（ConfirmDialog.tsx 的 EXIT_MS 同源）；
+ * data-leaving 由组件在关闭时打上，动画放完组件即卸载 */
+.confirm-overlay {
+  animation: confirm-overlay-in 150ms ease-out;
+}
+.confirm-card {
+  animation: confirm-card-in 150ms ease-out;
+}
+.confirm-overlay[data-leaving='true'] {
+  animation: confirm-overlay-out 150ms ease-in forwards;
+}
+.confirm-card[data-leaving='true'] {
+  animation: confirm-card-out 150ms ease-in forwards;
+}
+@keyframes confirm-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes confirm-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes confirm-card-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes confirm-card-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+
 * {
   box-sizing: border-box;
 }
