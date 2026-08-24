@@ -60,6 +60,9 @@ export const PLOT_COLORS = {
   hoverChipBg: 'rgba(255,255,255,0.95)',
   hoverChipBorder: '#d1d5db',
   hoverChipText: '#111827',
+  /** ZOO-201 可拖点：蓝底白边实心圆（自由点 / 沿曲线点共用）；沿曲线点另加外圈 */
+  dragPoint: '#3B82F6',
+  dragPointRing: 'rgba(59,130,246,0.45)',
 } as const;
 
 /** 网格线最小像素间距，低于此密度整层隐藏（亚像素网格，§6.1 第 2 层）。 */
@@ -358,6 +361,8 @@ export interface DrawGraphCoreOptions {
   overlays?: OverlayRender;
   /** ZOO-199 持久化 POI 标注（缺省 = 无标注，绘制路径零变化；灰点 + 坐标文本） */
   poiLabels?: readonly MathPoiAnnotation[];
+  /** ZOO-201 可拖点（缺省 = 无点，绘制路径零变化；蓝底白边圆点，沿曲线点加吸附外圈） */
+  dragPoints?: readonly { id: string; mode: 'free' | 'onCurve'; x: number; y: number }[];
 }
 
 /**
@@ -365,7 +370,7 @@ export interface DrawGraphCoreOptions {
  * MiniPreview 与 drawMathPlot 共用 —— 预览即真实渲染（D3）。
  */
 export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCoreOptions): void {
-  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays, poiLabels } = opts;
+  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays, poiLabels, dragPoints } = opts;
   if (!(width > 0) || !(height > 0)) return;
 
   ctx.save();
@@ -743,6 +748,32 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     }
   }
 
+  // —— ZOO-201 可拖点（末位顶层）：蓝底白边实心圆；沿曲线点加浅蓝外圈
+  //    （吸附视觉提示——点恒在曲线上）。不 clamp 到内缘：点位由常量派生，
+  //    越出视窗随裁剪自然不可见（与命中层同口径，所见即所拖）。
+  if (dragPoints && dragPoints.length > 0) {
+    ctx.globalAlpha = style.opacity;
+    for (const p of dragPoints) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      const px = t.toPxX(p.x);
+      const py = t.toPxY(p.y);
+      if (p.mode === 'onCurve') {
+        ctx.beginPath();
+        ctx.arc(px, py, 7.5, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = PLOT_COLORS.dragPointRing;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fillStyle = PLOT_COLORS.dragPoint;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+    }
+  }
+
   ctx.restore();
 }
 
@@ -767,6 +798,8 @@ export interface DrawMathPlotOptions {
   t?: LibT;
   /** ZOO-199：持久化 POI 标注（缺省 = 无标注；非显式 kind 由调用方不传） */
   poiAnnotations?: readonly MathPoiAnnotation[];
+  /** ZOO-201：可拖点（缺省 = 无点；非显式 kind 由调用方不传——解析见 math/dragPoint.ts） */
+  dragPoints?: readonly { id: string; mode: 'free' | 'onCurve'; x: number; y: number }[];
 }
 
 /**
@@ -809,6 +842,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     tickLabels: true,
     overlays: render.overlays,
     poiLabels: opts.poiAnnotations,
+    dragPoints: opts.dragPoints,
   });
   ctx.translate(-x - pad, -y - pad);
 

@@ -175,7 +175,10 @@
     "previewUnavailable": "Preview unavailable",
     "previewAria": "Equation live preview",
     "kindParametric": "Parametric equation (parameter {v})",
-    "kindPolar": "Polar equation r=f(θ)"
+    "kindPolar": "Polar equation r=f(θ)",
+    "sliderHint": "Missing constant values? Create sliders in one click:",
+    "sliderChipAria": "Create a constant slider for {name}",
+    "sliderAll": "All"
   },
   "params": {
     "title": "Math plot",
@@ -277,7 +280,24 @@
     "paramDomainMin": "Parameter lower bound",
     "paramDomainMax": "Parameter upper bound",
     "parametricInactive": "Current equation is not parametric / polar — pick a template above, or type x=f(t),y=g(t) / r=f(θ)",
-    "paramDomainOrder": "Range needs lower bound less than upper bound"
+    "paramDomainOrder": "Range needs lower bound less than upper bound",
+    "constantsSliderAria": "Constant {name} slider",
+    "constantsPlayAria": "Play {name} animation",
+    "constantsPauseAria": "Pause {name} animation",
+    "constantsSpeedAria": "Animation speed (now {speed}x, click to change)",
+    "constantsMinAria": "Constant {name} slider minimum",
+    "constantsMaxAria": "Constant {name} slider maximum",
+    "constantsStepAria": "Constant {name} slider step",
+    "constantsStepLabel": "step",
+    "pointsTitle": "Draggable points",
+    "pointsOnCurve": "on curve",
+    "pointsFree": "free",
+    "pointsAddOnCurve": "+ on-curve",
+    "pointsAddFree": "+ free point",
+    "pointsPickAria": "Constant bound to the on-curve point",
+    "pointsFreeXAria": "Constant bound to free point x",
+    "pointsFreeYAria": "Constant bound to free point y",
+    "pointsRemoveAria": "Remove draggable point {name}"
   },
   "phys": {
     "tplProjectile": "Projectile motion",

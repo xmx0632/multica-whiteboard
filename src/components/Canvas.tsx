@@ -14,6 +14,8 @@ import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
 import { isEditableTarget } from '@/lib/keyboard';
 import { isModalOpen } from '@/lib/modal';
 import { hitTestPoi, mathPlotMapper, nearestCurvePoint, poiHintsFor, togglePoiAnnotation, type HoverTrace } from '@/lib/poi';
+import { dragPointSpots, dragStepPatch, hitTestDragPoint, DRAG_POINT_HIT_PX } from '@/lib/dragPoints';
+import { constantsEqual } from '@/lib/math/dragPoint';
 import { formatPoiCoord } from '@/lib/math/poi';
 import { canvasCursor } from '@/lib/cursors';
 import {
@@ -165,6 +167,13 @@ export default function Canvas() {
   const hoverTraceRef = useRef<HoverTrace | null>(null);
   /** 悬停重绘 rAF 合并（每帧至多一次 render，与 pan / pinch 同构） */
   const hoverRafRef = useRef<number | null>(null);
+
+  // —— 可拖点（ZOO-201）——
+  /** 拖动手势态（ref 为准）：before 为起手整元素快照——抬指压一条 update 快照 */
+  const pointDragRef = useRef<{ elementId: string; pointId: string; before: MathPlotElement } | null>(null);
+  /** 悬停点（ref 为准，渲染层直读高亮外圈）；state 只驱动光标（与 hoverHit 同构） */
+  const pointHoverRef = useRef<{ elementId: string; pointId: string } | null>(null);
+  const [pointCursor, setPointCursor] = useState(false);
 
   // —— 演示模式（ZOO-200）——
   /** 激光轨迹（纯渲染层，屏幕坐标）：不入 elements / 撤销栈 / 持久化 */
@@ -418,6 +427,23 @@ export default function Canvas() {
         }
       }
     }
+
+    // —— 可拖点高亮层（ZOO-201；屏幕 px 纯视觉层）：悬停 / 拖动中的点画放大
+    //    外圈——沿曲线点的吸附视觉提示（点恒在曲线上，外圈即「可沿曲线拖」） ——
+    const pointActive = pointDragRef.current ?? pointHoverRef.current;
+    if (pointActive) {
+      const ptEl = elements.find((e) => e.id === pointActive.elementId);
+      if (ptEl && ptEl.type === 'mathPlot') {
+        const spot = dragPointSpots(ptEl, viewport).find((s) => s.pointId === pointActive.pointId);
+        if (spot) {
+          ctx.beginPath();
+          ctx.arc(spot.screen.x, spot.screen.y, 10, 0, Math.PI * 2);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#3B82F6';
+          ctx.stroke();
+        }
+      }
+    }
   }, [elements, selectedId, selectedIds, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, presenting, presentationFrameId, t]);
 
   useEffect(() => {
@@ -485,6 +511,18 @@ export default function Canvas() {
       if (st.elements.some((el) => restore.has(el.id))) {
         useStore.setState({
           elements: st.elements.map((el) => restore.get(el.id) ?? el),
+        });
+      }
+    }
+
+    // 可拖点取消（ZOO-201）：恢复起手整元素（丢弃拖动中的常量直改，不入历史）
+    const pd = pointDragRef.current;
+    if (pd) {
+      pointDragRef.current = null;
+      const st = useStore.getState();
+      if (st.elements.some((el) => el.id === pd.elementId)) {
+        useStore.setState({
+          elements: st.elements.map((el) => (el.id === pd.elementId ? pd.before : el)),
         });
       }
     }
@@ -722,7 +760,7 @@ export default function Canvas() {
 
     // 双指提升（ZOO-144 验收：双指落下不产生元素）：取消工具手势，进入画布平移缩放
     if (e.pointerType === 'touch' && shouldPromoteToPinch(touchCount())) {
-      if (isDrawingRef.current || resizeRef.current || dragElementIdRef.current) cancelToolGesture();
+      if (isDrawingRef.current || resizeRef.current || dragElementIdRef.current || pointDragRef.current) cancelToolGesture();
       // 手型 / 空格单指平移进行中提升为双指：终止单指 pan（含未决 rAF 帧），双指手势全量接管视口
       if (isPanningRef.current) {
         isPanningRef.current = false;
@@ -781,6 +819,25 @@ export default function Canvas() {
           isDrawingRef.current = false; // 缩放手势独立提交，防止滞留的 select-drag 在抬指时用陈旧起点压脏快照
           return;
         }
+      }
+
+      // 可拖点命中（ZOO-201）：优先于 POI / 元素命中——点是常量绑定的持久交互件。
+      // 命中即起拖动手势（选中父元素查看 / 修改绑定）；拖动直改常量全图联动，
+      // 抬指压一条快照（D5 与控点缩放同构）。触摸命中半径放大（44px 等效口径）。
+      const pointHit = hitTestDragPoint(elements, local, viewport, {
+        radiusPx: e.pointerType === 'touch' ? DRAG_POINT_HIT_PX + 10 : undefined,
+      });
+      if (pointHit) {
+        const pointTarget = elements.find((el) => el.id === pointHit.elementId);
+        if (pointTarget && pointTarget.type === 'mathPlot') {
+          setSelected(pointTarget.id);
+          pointDragRef.current = { elementId: pointTarget.id, pointId: pointHit.pointId, before: { ...pointTarget } };
+          pointHoverRef.current = { elementId: pointTarget.id, pointId: pointHit.pointId };
+          setPointCursor(true);
+          hoverTraceRef.current = null; // 选中态变化即触发重绘，无需 rAF 排帧
+        }
+        isDrawingRef.current = false; // 点拖动手势独立提交，防滞留 select-drag 压脏快照
+        return;
       }
 
       // POI 点击（ZOO-199）：已持久化标注优先（再点即删）、次灰点提示（点即标注），
@@ -999,6 +1056,29 @@ export default function Canvas() {
     setHoverHit(next);
   }, []);
 
+  // 可拖点悬停（ZOO-201）：命中点 → move 光标（state）+ 高亮外圈（ref + rAF 重绘，
+  // 与悬停坐标追踪同构）；非 select 工具一律清空。仅无手势时更新（拖动中恒命中起手点）
+  const updatePointHover = useCallback((local: Point) => {
+    const st = useStore.getState();
+    const next = st.activeTool === 'select' ? hitTestDragPoint(st.elements, local, st.viewport) : null;
+    setPointCursor(next !== null);
+    const prev = pointHoverRef.current;
+    const same =
+      (prev === null && next === null) ||
+      (prev !== null && next !== null && prev.elementId === next.elementId && prev.pointId === next.pointId);
+    if (same) return;
+    pointHoverRef.current = next ? { elementId: next.elementId, pointId: next.pointId } : null;
+    if (hoverRafRef.current === null) {
+      hoverRafRef.current = requestAnimationFrame(renderFromHoverRaf);
+    }
+  }, [renderFromHoverRaf]);
+
+  /** 悬停态清空（pointerleave / 手势起手）：光标与高亮一并收回 */
+  const clearPointHover = useCallback(() => {
+    pointHoverRef.current = null;
+    setPointCursor(false);
+  }, []);
+
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     // 演示态路由（ZOO-200）：激光跟手 / 横滑追踪，编辑手势与悬停层全部让位
@@ -1029,6 +1109,20 @@ export default function Canvas() {
       panPendingRef.current = { x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y };
       if (panRafRef.current === null) {
         panRafRef.current = requestAnimationFrame(applyPanFromRaf);
+      }
+      return;
+    }
+
+    // 可拖点拖动（ZOO-201）：屏幕 → 数学坐标（沿曲线点经折线吸附）→ 常量直改
+    // （D5 静默直改实时重采样，全图联动；抬指统一压一条快照）。渲染缓存 / 编译
+    // 缓存均按签名命中，逐帧直改零重采样开销。
+    const pointDrag = pointDragRef.current;
+    if (pointDrag) {
+      const st = useStore.getState();
+      const ptEl = st.elements.find((e) => e.id === pointDrag.elementId);
+      if (ptEl && ptEl.type === 'mathPlot') {
+        const patch = dragStepPatch(ptEl, pointDrag.pointId, local, st.viewport);
+        if (patch) st.updateElementTransient(ptEl.id, patch);
       }
       return;
     }
@@ -1101,11 +1195,13 @@ export default function Canvas() {
       return;
     }
 
-    // 无手势进行：悬停坐标追踪（ZOO-199）+ select 悬停命中（ZOO-207 move 光标）；
-    // 画笔 / 拖拽等手势中清空标签（命中态保留起手值——拖动全程 move 光标不闪）
+    // 无手势进行：悬停坐标追踪（ZOO-199）+ select 悬停命中（ZOO-207 move 光标）+
+    // 可拖点悬停（ZOO-201 move 光标 + 高亮外圈）；画笔 / 拖拽等手势中清空标签
+    // （命中态保留起手值——拖动全程 move 光标不闪）
     if (!isDrawingRef.current) {
       updateHoverTrace(local, useStore.getState().activeTool);
       updateHoverHit(local);
+      updatePointHover(local);
     } else if (hoverTraceRef.current !== null) {
       clearHoverTrace();
     }
@@ -1170,7 +1266,7 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, clearHoverTrace, presenting, handlePresentPointerMove]);
+  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, updatePointHover, clearHoverTrace, presenting, handlePresentPointerMove]);
 
   /** 抬指 / 手势被系统打断（pointercancel）的统一收尾 */
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
@@ -1202,6 +1298,19 @@ export default function Canvas() {
 
     if (toolPointerIdRef.current !== e.pointerId) return; // 非工具指针（第三指等）抬指不影响手势
     toolPointerIdRef.current = null;
+
+    // 可拖点收口（ZOO-201）：一次拖动 = 一条可撤销快照（before 取起手整元素，
+    // undo 一次回拖动前）；无实效（常量逐键相等）不压栈。系统打断（cancel）
+    // 同样收口——直改已可见，快照保证撤销一致。
+    const pointDrag = pointDragRef.current;
+    if (pointDrag) {
+      pointDragRef.current = null;
+      const cur = useStore.getState().elements.find((e) => e.id === pointDrag.elementId);
+      if (cur && cur.type === 'mathPlot' && !constantsEqual(cur.constants, pointDrag.before.constants)) {
+        pushOperations([{ type: 'update', elementId: pointDrag.elementId, before: pointDrag.before, after: { ...cur } }]);
+      }
+      return;
+    }
 
     if (isPanningRef.current) {
       isPanningRef.current = false;
@@ -1400,12 +1509,13 @@ export default function Canvas() {
             spacePanning: spaceDown,
             textEditing: textDraft !== null,
             hoverElement: hoverHit,
+            hoverDragPoint: pointCursor,
           }) }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={(e) => handlePointerUp(e, true)}
-        onPointerLeave={() => { clearHoverTrace(); setHoverHit(false); }}
+        onPointerLeave={() => { clearHoverTrace(); setHoverHit(false); clearPointHover(); }}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />

@@ -14,6 +14,7 @@ import {
   stepForAxis,
 } from './math/plot';
 import { formatPoiCoord } from './math/poi';
+import { resolveDragPoints } from './math/dragPoint';
 import { PHYSICS_GUIDE_DASH, PHYSICS_MARK_RADIUS_PX } from './math/physics';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
@@ -385,6 +386,23 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
         if (ly < gy + 10) ly = py + 14;
         parts.push(
           `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.poiText}" text-anchor="start"${opacity}>${escapeXml(label)}</text>`,
+        );
+      }
+    }
+
+    // —— ZOO-201 可拖点（与 drawGraphCore 同一套数据 / 配色）：蓝底白边圆点，
+    //    沿曲线点加浅蓝外圈；不 clamp（越出视窗随 clip 不可见，画布 / 导出同口径） ——
+    if (el.kind === 'explicit' && !el.error && el.draggablePoints && el.draggablePoints.length > 0) {
+      for (const p of resolveDragPoints(el)) {
+        const px = toX(p.x);
+        const py = toY(p.y);
+        if (p.mode === 'onCurve') {
+          parts.push(
+            `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="7.5" fill="none" stroke="${PLOT_COLORS.dragPointRing}" stroke-width="1.5" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+          );
+        }
+        parts.push(
+          `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="4" fill="${PLOT_COLORS.dragPoint}" stroke="#ffffff" stroke-width="1.5" clip-path="url(#mpc-${el.id})"${opacity}/>`,
         );
       }
     }

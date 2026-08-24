@@ -35,6 +35,8 @@ export interface MathToScreen {
   /** 内嵌绘图区尺寸（局部 px）——clamp / 反解共用 */
   innerWidth: number;
   innerHeight: number;
+  /** 屏幕 px → 数学坐标（ZOO-201 可拖点；toScreen 的逆映射，越界不裁剪） */
+  toMath: (sx: number, sy: number) => Point;
 }
 
 /**
@@ -58,7 +60,18 @@ export function mathPlotMapper(el: MathPlotElement, viewport: Viewport): MathToS
       y: (el.y + PLOT_INNER_PAD + p.y) * scale + offsetY,
     };
   };
-  return { toScreen, toInnerPx, view: render.view, innerWidth: iw, innerHeight: ih };
+  // 逆映射（线性变换直接反解；unitPx 为 transform 内部比例，按视窗跨度重建）
+  const spanX = render.view.xMax - render.view.xMin || 1;
+  const spanY = render.view.yMax - render.view.yMin || 1;
+  const toMath = (sx: number, sy: number): Point => {
+    const px = (sx - offsetX) / scale - el.x - PLOT_INNER_PAD;
+    const py = (sy - offsetY) / scale - el.y - PLOT_INNER_PAD;
+    return {
+      x: render.view.xMin + (px / iw) * spanX,
+      y: render.view.yMin + ((ih - py) / ih) * spanY,
+    };
+  };
+  return { toScreen, toInnerPx, toMath, view: render.view, innerWidth: iw, innerHeight: ih };
 }
 
 /** 数学点是否落在元素可视视窗内（提示灰点只出现在卡片可见区）。 */

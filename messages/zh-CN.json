@@ -175,7 +175,10 @@
     "previewUnavailable": "无法预览",
     "previewAria": "方程实时预览",
     "kindParametric": "参数方程（参数 {v}）",
-    "kindPolar": "极坐标方程 r=f(θ)"
+    "kindPolar": "极坐标方程 r=f(θ)",
+    "sliderHint": "缺常量赋值？一键建滑块：",
+    "sliderChipAria": "为 {name} 创建常量滑块",
+    "sliderAll": "全部"
   },
   "params": {
     "title": "数学图形",
@@ -277,7 +280,24 @@
     "paramDomainMin": "参数下限",
     "paramDomainMax": "参数上限",
     "parametricInactive": "当前方程不是参数式 / 极坐标方程——点选上方模板，或输入 x=f(t),y=g(t) / r=f(θ)",
-    "paramDomainOrder": "取值范围需下限小于上限"
+    "paramDomainOrder": "取值范围需下限小于上限",
+    "constantsSliderAria": "常量 {name} 滑杆",
+    "constantsPlayAria": "播放 {name} 动画",
+    "constantsPauseAria": "暂停 {name} 动画",
+    "constantsSpeedAria": "动画速度（当前 {speed}x，点击切换）",
+    "constantsMinAria": "常量 {name} 滑杆下限",
+    "constantsMaxAria": "常量 {name} 滑杆上限",
+    "constantsStepAria": "常量 {name} 滑杆步长",
+    "constantsStepLabel": "步长",
+    "pointsTitle": "可拖点",
+    "pointsOnCurve": "沿曲线",
+    "pointsFree": "自由",
+    "pointsAddOnCurve": "+ 曲线点",
+    "pointsAddFree": "+ 自由点",
+    "pointsPickAria": "沿曲线点绑定的常量",
+    "pointsFreeXAria": "自由点 x 绑定的常量",
+    "pointsFreeYAria": "自由点 y 绑定的常量",
+    "pointsRemoveAria": "移除可拖点 {name}"
   },
   "phys": {
     "tplProjectile": "抛体运动",

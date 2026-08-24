@@ -115,6 +115,8 @@ export interface EllipseParams {
  * （ZOO-176 起文案经注入翻译器随语言，见 parse.ts / i18n/lib.ts）。
  * ZOO-166 方案 A：explicit 携带 variable（自变量字母，缺省即 x）——任意单字母
  * 可作自变量（y=4z ⟂ y=4x 同一条直线），图形与变量命名无关。
+ * ZOO-197：欠定 / 缺赋值引导类错误携带 missingConstants（可一键建滑块的
+ * 存储层符号名，已剔除自变量占位）——其余错误不带该字段（旧消费方零感知）。
  */
 export type StructuralOutcome =
   | { kind: 'explicit'; variable?: string }
@@ -127,7 +129,7 @@ export type StructuralOutcome =
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'parametric'; variable?: string }
   | { kind: 'polar'; variable?: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; missingConstants?: string[] };
 
 /**
  * 4b 解析契约（mathjs parse→compile，禁 eval）。explicit 在此基础上补齐求值函数
@@ -144,7 +146,7 @@ export type ParseResult =
   | { kind: 'ellipse'; params: EllipseParams }
   | { kind: 'parametric'; fx: (t: number) => number; fy: (t: number) => number; variable?: string }
   | { kind: 'polar'; fn: (theta: number) => number; variable?: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; missingConstants?: string[] };
 
 /** 采样折线（数学坐标，4c sample.ts 产物；MiniPreview / 主画布 / SVG 导出共用）。 */
 export type Polyline = Point[];
@@ -196,6 +198,24 @@ export interface MathPoiAnnotation {
   withId?: string;
 }
 
+/**
+ * 可拖点条目（ZOO-201）：元素可选字段 draggablePoints 的成员类型。
+ * 点不是独立坐标——是「常量绑定」的具象化：坐标永远由元素 constants 派生
+ * （free = (constants[xKey], constants[yKey])；onCurve = (constants[xKey],
+ * f(constants[xKey]))），拖动只写回常量、全图经既有常量重采样管线联动。
+ * 仅显式函数元素生效（渲染 / 命中同口径，见 math/dragPoint.ts）；绑定常量
+ * 被移除时条目同步剔除（pruneDragPoints），元素不留悬挂绑定。
+ */
+export interface DraggablePoint {
+  id: string;
+  /** free：自由点 (a, b)，拖动写回 x/y 两个常量；onCurve：沿曲线点 (a, f(a))，拖动只写回 x 常量 */
+  mode: 'free' | 'onCurve';
+  /** x 坐标绑定的常量名（存储层 ASCII 键，须存在于元素 constants） */
+  xKey: string;
+  /** free 专用：y 坐标绑定的常量名（onCurve 不携带——y 由方程求值） */
+  yKey?: string;
+}
+
 
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
  *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。
@@ -211,4 +231,10 @@ export interface EquationDraftPayload {
   constants?: Record<string, number>;
   overlays?: MathPlotOverlay[];
   domain?: { min: number; max: number };
+  /**
+   * ZOO-197：常量滑块元数据草稿（高级面板常量区自定义过 min/max/step 的条目）。
+   * 语义与 constants 对齐——undefined 不触碰元素既有元数据；空字典 = 显式清空。
+   * 未自定义条目不落（元素回落 DEFAULT_SLIDER，零迁移）。
+   */
+  constantSliders?: Record<string, { min: number; max: number; step: number }>;
 }

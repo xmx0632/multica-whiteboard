@@ -1,4 +1,5 @@
-import type { MathPlotOverlay, MathPoiAnnotation } from './math/types';
+import type { MathPlotOverlay, MathPoiAnnotation, DraggablePoint } from './math/types';
+import type { ConstantSliderMap } from './math/slider';
 
 export type ToolType = 'hand' | 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
 
@@ -120,6 +121,21 @@ export interface MathPlotElement extends BaseElement {
    * 随元素序列化并出现在 SVG 导出，撤销 / 重做按整元素快照天然兼容。
    */
   poiAnnotations?: MathPoiAnnotation[];
+  /**
+   * 常量滑块元数据（ZOO-197）：键为存储层常量名（constants 的子集），值为
+   * min/max/step（math/slider.ts 的 ConstantSliderMeta）。仅存用户自定义过的
+   * 条目——缺省 / 无条目的常量播放与拖动一律回落 DEFAULT_SLIDER（-10~10、
+   * 0.1），旧文档零迁移；常量移除时对应条目同步剔除，元素不留悬挂键。
+   */
+  constantSliders?: ConstantSliderMap;
+  /**
+   * 可拖点（ZOO-201）：Desmos 式具象化交互——点是常量绑定的具象化（坐标由
+   * constants 派生，见 math/types.ts 的 DraggablePoint），拖动把坐标写回常量、
+   * 全图经常量 scope 注入 + 渲染缓存重采样实时联动。缺省 / 空数组 = 无点
+   * （旧文档零迁移）；仅显式函数元素渲染 / 命中，其余 kind 数据保留不生效；
+   * 随元素序列化并出现在 SVG 导出，撤销 / 重做按整元素快照天然兼容。
+   */
+  draggablePoints?: DraggablePoint[];
 
   // —— 数学视窗（局部坐标系定义，数学单位）——
   xAxis: { min: number; max: number };

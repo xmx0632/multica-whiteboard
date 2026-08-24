@@ -21,8 +21,10 @@ import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
 import { constantDisplayName } from '@/lib/math/normalize';
+import type { DraggablePoint } from '@/lib/math/types';
 import type { PhysicsTemplate } from '@/lib/math/templates';
 import { validateEquation } from '@/lib/math/validate';
+import type { ConstantSliderMap } from '@/lib/math/slider';
 import {
   ellipseTeachingInfo,
   formatCoef,
@@ -77,6 +79,18 @@ export interface MathPlotParamsValue {
    * 键为存储层 ASCII 名，显示层经 constantDisplayName 还原（θ/ω/φ/v₀）。
    */
   constants?: Record<string, number>;
+  /**
+   * 常量滑块元数据（ZOO-197）：元素真实字段——高级公式面板常量区滑杆范围 /
+   * 步长编辑与播放直改（onChange 直改实时生效 / 离散变更 onCommit 提交一条）。
+   * 仅存自定义条目，缺省常量回落 DEFAULT_SLIDER。
+   */
+  constantSliders?: ConstantSliderMap;
+  /**
+   * 可拖点（ZOO-201）：元素真实字段——高级公式面板常量区增删（离散变更一次
+   * 提交一条）；画布拖动经 Canvas 直改常量（点位由常量派生，本字段只在
+   * 增删 / 清洗时变化）。仅显式函数元素渲染 / 命中。
+   */
+  draggablePoints?: DraggablePoint[];
   /**
    * 微积分叠加（ZOO-189 T2）：元素真实字段（f′ 叠加 / 切线 x₀）——高级公式
    * 面板微积分区直改；清空全部叠加时归一为 undefined（元素不留空壳字段）。
@@ -520,14 +534,29 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
           ZOO-192 T5：物理区直连元素——标注开关读写 overlays physics 条目，模板
           点选整包回填（方程 / 常量 / t 域 / 标注）并一次离散提交。
           ZOO-193 T6：微积分区增 ×10 邻域放大预设（onDomainChange 写元素 xAxis，
-          离散变更面板内即提交一条）。 */}
+          离散变更面板内即提交一条）。
+          ZOO-197：常量区滑块元数据直连元素 constantSliders（同为真实字段；
+          清空归一 undefined）。
+          ZOO-201：常量区可拖点直连元素 draggablePoints（增删为离散变更，
+          一次提交一条；空归一 undefined）。 */}
+
       {advancedOpen && (
         <AdvancedFormulaPanel
           onClose={() => setAdvancedOpen(false)}
           constants={{
             equation: value.equation,
             values: value.constants ?? {},
+            sliders: value.constantSliders,
+            points: value.draggablePoints,
             onChange: (update) => patch({ constants: update(value.constants ?? {}) }),
+            onSlidersChange: (update) => {
+              const next = update(value.constantSliders ?? {});
+              patch({ constantSliders: Object.keys(next).length > 0 ? next : undefined });
+            },
+            onPointsChange: (update) => {
+              const next = update(value.draggablePoints ?? []);
+              patch({ draggablePoints: next.length > 0 ? next : undefined });
+            },
             onCommit: () => onCommit?.(),
             onApplyTemplate: (equation) => patch({ equation }),
           }}
