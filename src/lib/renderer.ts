@@ -232,6 +232,10 @@ function drawMathPlotElement(ctx: CanvasRenderingContext2D, el: MathPlotElement,
       xAxis: el.xAxis,
       equalRatio: el.equalRatio,
       sampleCount: el.sampleCount,
+      // ZOO-188（T1）：符号常量随元素进解析（缺省 = 无常量，与现状一致）
+      constants: el.constants,
+      // ZOO-189（T2）：微积分叠加随元素进渲染（缺省 / 空 = 无叠加，走既有路径）
+      overlays: el.overlays,
     },
     { width: el.width, height: el.height },
     plotTokenFor(el.id)

@@ -1,7 +1,19 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement } from './types';
 import { renderElement, getAllElementsBounds } from './renderer';
 import { zhT, type LibT } from '../i18n/lib';
-import { resolvePlotRender, stepForAxis, formatTickLabel, MIN_GRID_PX, MIN_TICK_LABEL_PX } from './math/plot';
+import {
+  formatAreaValue,
+  formatOverlayNumber,
+  formatTickLabel,
+  MIN_GRID_PX,
+  MIN_TICK_LABEL_PX,
+  OVERLAY_DERIVATIVE_DASH,
+  OVERLAY_INTEGRAL_FILL_ALPHA,
+  PLOT_COLORS,
+  resolvePlotRender,
+  stepForAxis,
+} from './math/plot';
+import { PHYSICS_GUIDE_DASH, PHYSICS_MARK_RADIUS_PX } from './math/physics';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
@@ -122,6 +134,10 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
       xAxis: el.xAxis,
       equalRatio: el.equalRatio,
       sampleCount: el.sampleCount,
+      // ZOO-188（T1）：符号常量随元素进解析（与主画布渲染同一份数据）
+      constants: el.constants,
+      // ZOO-189（T2）：微积分叠加随元素进渲染管线（与主画布同一份数据）
+      overlays: el.overlays,
     },
     { width: w, height: h },
     plotTokenFor(el.id)
@@ -212,9 +228,10 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     parts.push(...labels);
   }
 
-  if (render.polylines.length > 0) {
+  // 折线 → path d（主曲线与 f′ 叠加共用；断笔 = M，与 canvas buildPlotPath2D 同款）
+  const polylinesToD = (polylines: { x: number; y: number }[][]) => {
     let d = '';
-    for (const pl of render.polylines) {
+    for (const pl of polylines) {
       let drawing = false;
       for (const p of pl) {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
@@ -231,11 +248,132 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
         drawing = true;
       }
     }
+    return d.trim();
+  };
+  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent || render.overlays?.integral || render.overlays?.physics);
+  const d = polylinesToD(render.polylines);
+  if (d || hasOverlayDraw) {
+    // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
+    // canvas 有 ctx.clip 而 SVG 需显式 clipPath，否则导出的直线/双曲线溢出卡片
+    parts.push(`<defs><clipPath id="mpc-${el.id}"><rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/></clipPath></defs>`);
+
+    // —— ZOO-190 T3 定积分着色区（主曲线之下，与 canvas 绘制序一致）：曲线
+    //    [a,b] 段 + 基线 y=0 闭合 → <polygon>；元素色 × fill-opacity 组合元素透明度——
+    if (render.overlays?.integral?.ok) {
+      const pts = render.overlays.integral.region
+        .map((p) => `${toX(p.x).toFixed(2)},${toY(p.y).toFixed(2)}`)
+        .join(' ');
+      parts.push(
+        `<polygon points="${pts}" fill="${el.strokeColor}" fill-opacity="${OVERLAY_INTEGRAL_FILL_ALPHA}" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+      );
+    }
+
     if (d) {
-      // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
-      // canvas 有 ctx.clip 而 SVG 需显式 clipPath，否则导出的直线/双曲线溢出卡片
-      parts.push(`<defs><clipPath id="mpc-${el.id}"><rect x="${gx}" y="${gy}" width="${gw}" height="${gh}"/></clipPath></defs>`);
-      parts.push(`<path d="${d.trim()}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
+      parts.push(`<path d="${d}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
+    }
+
+    // —— ZOO-189 T2 叠加层（与 drawGraphCore 同一套数据与配色）——
+    if (render.overlays?.derivative) {
+      const dd = polylinesToD(render.overlays.derivative.polylines);
+      if (dd) {
+        parts.push(
+          `<path d="${dd}" stroke="${PLOT_COLORS.overlayDerivative}" stroke-width="${el.strokeWidth}" stroke-dasharray="${OVERLAY_DERIVATIVE_DASH.join(',')}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+        );
+      }
+    }
+    if (render.overlays?.tangent) {
+      const tg = render.overlays.tangent;
+      const a = tg.polyline[0];
+      const b = tg.polyline[1];
+      parts.push(
+        `<line x1="${toX(a.x).toFixed(2)}" y1="${toY(a.y).toFixed(2)}" x2="${toX(b.x).toFixed(2)}" y2="${toY(b.y).toFixed(2)}" stroke="${PLOT_COLORS.overlayTangent}" stroke-width="${Math.max(el.strokeWidth * 0.75, 1)}" stroke-linecap="round" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+      );
+      const px = toX(tg.x0);
+      const py = toY(tg.y0);
+      parts.push(
+        `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="4" fill="${PLOT_COLORS.overlayTangent}" stroke="#ffffff" stroke-width="1.5"${opacity}/>`,
+      );
+      // 斜率标注（与 canvas 同格式；越界时向左翻转）
+      const label = `f′(${formatOverlayNumber(tg.x0)}) = ${formatOverlayNumber(tg.slope)}`;
+      const labelW = label.length * 5.4;
+      let lx = px + 9;
+      if (lx + labelW > gx + gw - 3) lx = px - 9 - labelW;
+      let ly = py - 3;
+      if (ly < gy + 10) ly = py + 14;
+      parts.push(
+        `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.overlayTangent}" text-anchor="start">${escapeXml(label)}</text>`,
+      );
+    }
+
+    // —— ZOO-190 T3 面积 chip / 奇点报错 chip（与 canvas 同一套锚点与配色）——
+    if (render.overlays?.integral) {
+      const ig = render.overlays.integral;
+      if (ig.ok) {
+        const chip = `∫ = ${formatAreaValue(ig.value)}`;
+        const tw = chip.length * 6.2 + 10; // italic serif 11px 估宽（图例 chip 同款口径）
+        const ch = 16;
+        let cx = toX(ig.anchor.x);
+        let cy = toY(ig.anchor.y);
+        cx = Math.min(Math.max(cx, gx + tw / 2 + 4), gx + gw - tw / 2 - 4);
+        cy = Math.min(Math.max(cy, gy + ch / 2 + 4), gy + gh - ch / 2 - 4);
+        parts.push(
+          `<rect x="${(cx - tw / 2).toFixed(2)}" y="${(cy - ch / 2).toFixed(2)}" width="${tw.toFixed(2)}" height="${ch}" rx="8" fill="${PLOT_COLORS.integralChipBg}"${opacity}/>`,
+        );
+        parts.push(
+          `<text x="${cx.toFixed(2)}" y="${(cy + 4).toFixed(2)}" font-size="11" font-style="italic" font-family="serif" fill="${el.strokeColor}" text-anchor="middle"${opacity}>${escapeXml(chip)}</text>`,
+        );
+      } else {
+        // 奇点 / 非法区间：顶部报错 chip（截断到绘图区宽，红字白底）
+        const msg = `⚠ ${ig.error}`.slice(0, 44);
+        const tw = Math.min(msg.length * 5.4 + 10, gw - 8);
+        const lx = gx + (gw - tw) / 2;
+        parts.push(
+          `<rect x="${lx.toFixed(1)}" y="${(gy + 6).toFixed(1)}" width="${tw.toFixed(1)}" height="18" rx="6" fill="${PLOT_COLORS.integralChipBg}"${opacity}/>`,
+        );
+        parts.push(
+          `<text x="${(gx + gw / 2).toFixed(1)}" y="${(gy + 18).toFixed(1)}" font-size="10" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.integralErrorText}" text-anchor="middle" clip-path="url(#mpc-${el.id})"${opacity}>${escapeXml(msg)}</text>`,
+        );
+      }
+    }
+
+    // —— ZOO-192 T5 物理标注（与 drawGraphCore 同一套数据 / 配色 / 越界翻转口径）：
+    //    导引虚线（峰值垂线 + 射程水平线）→ 峰值点 + H 标注 → 落地点 + R 标注 ——
+    if (render.overlays?.physics) {
+      const ph = render.overlays.physics;
+      const guide = (x1: number, y1: number, x2: number, y2: number) =>
+        `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${PLOT_COLORS.overlayPhysics}" stroke-width="1" stroke-dasharray="${PHYSICS_GUIDE_DASH.join(',')}" clip-path="url(#mpc-${el.id})"${opacity}/>`;
+      parts.push(guide(toX(ph.peak.x), toY(ph.peak.y), toX(ph.peak.x), toY(ph.launch.y)));
+      if (ph.landing) {
+        parts.push(guide(toX(ph.launch.x), toY(ph.launch.y), toX(ph.landing.x), toY(ph.landing.y)));
+      }
+      const mark = (mx: number, my: number) =>
+        `<circle cx="${mx.toFixed(2)}" cy="${my.toFixed(2)}" r="${PHYSICS_MARK_RADIUS_PX}" fill="${PLOT_COLORS.overlayPhysics}" stroke="#ffffff" stroke-width="1.5"${opacity}/>`;
+      const markLabel = (text: string, px2: number, py2: number) =>
+        `<text x="${px2.toFixed(2)}" y="${py2.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.overlayPhysics}" text-anchor="start"${opacity}>${escapeXml(text)}</text>`;
+
+      const peakPx = toX(ph.peak.x);
+      const peakPy = toY(ph.peak.y);
+      parts.push(mark(peakPx, peakPy));
+      const hLabel = `H = ${formatOverlayNumber(ph.peak.height)}`;
+      const hW = hLabel.length * 5.4;
+      let hx = peakPx + 9;
+      if (hx + hW > gx + gw - 3) hx = peakPx - 9 - hW;
+      let hy = peakPy - 3;
+      if (hy < gy + 10) hy = peakPy + 14;
+      parts.push(markLabel(hLabel, hx, hy));
+
+      if (ph.landing) {
+        const landPx = toX(ph.landing.x);
+        const landPy = toY(ph.landing.y);
+        parts.push(mark(landPx, landPy));
+        const rLabel = `R = ${formatOverlayNumber(ph.landing.range)}`;
+        const rW = rLabel.length * 5.4;
+        let rx = landPx - 9 - rW;
+        if (rx < gx + 3) rx = landPx + 9;
+        let ry = landPy - 3;
+        if (ry < gy + 10) ry = landPy + 14;
+        parts.push(markLabel(rLabel, rx, ry));
+      }
     }
   }
 
@@ -244,6 +382,22 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     const cw = text.length * 6.6 + 14;
     parts.push(`<rect x="${x + 6}" y="${y + h - 22}" width="${cw.toFixed(0)}" height="18" rx="9" fill="rgba(59,130,246,0.08)"/>`);
     parts.push(`<text x="${x + 13}" y="${y + h - 9}" font-size="11" font-family="serif" fill="#3B82F6">${escapeXml(text)}</text>`);
+    // 双色图例 chip（ZOO-189）：f 实线（元素色）/ f′ 虚线橙，仅 f′ 叠加时出现
+    if (render.overlays?.derivative) {
+      const sw = 14;
+      const gap = 8;
+      const lw = 7 + sw + 3 + 5 + gap + sw + 3 + 10 + 5;
+      const lx = x + 6 + cw + 6;
+      const midY = y + h - 13;
+      const swLine = Math.min(Math.max(el.strokeWidth, 1.5), 3);
+      parts.push(`<rect x="${lx.toFixed(1)}" y="${y + h - 22}" width="${lw.toFixed(0)}" height="18" rx="9" fill="rgba(59,130,246,0.08)"/>`);
+      let cx0 = lx + 7;
+      parts.push(`<line x1="${cx0.toFixed(1)}" y1="${midY.toFixed(1)}" x2="${(cx0 + sw).toFixed(1)}" y2="${midY.toFixed(1)}" stroke="${el.strokeColor}" stroke-width="${swLine}"/>`);
+      parts.push(`<text x="${(cx0 + sw + 3).toFixed(1)}" y="${(midY + 4).toFixed(1)}" font-size="11" font-style="italic" font-family="serif" fill="${el.strokeColor}">f</text>`);
+      cx0 += sw + 3 + 5 + gap;
+      parts.push(`<line x1="${cx0.toFixed(1)}" y1="${midY.toFixed(1)}" x2="${(cx0 + sw).toFixed(1)}" y2="${midY.toFixed(1)}" stroke="${PLOT_COLORS.overlayDerivative}" stroke-width="${swLine}" stroke-dasharray="${OVERLAY_DERIVATIVE_DASH.join(',')}"/>`);
+      parts.push(`<text x="${(cx0 + sw + 3).toFixed(1)}" y="${(midY + 4).toFixed(1)}" font-size="11" font-style="italic" font-family="serif" fill="${PLOT_COLORS.overlayDerivative}">f′</text>`);
+    }
   }
 
   return parts.join('');

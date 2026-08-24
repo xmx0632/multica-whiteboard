@@ -1,3 +1,5 @@
+import type { MathPlotOverlay } from './math/types';
+
 export type ToolType = 'hand' | 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
 
 export interface Point {
@@ -89,9 +91,28 @@ export interface MathPlotElement extends BaseElement {
 
   // —— 方程 ——
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+  /**
+   * ZOO-191（T4）：parametric（x=f(t),y=g(t)）/ polar（r=f(θ)）新 kind。
+   * xAxis 字段复用为参数 t/θ 域（缺省 [0,2π]，高级公式面板参数式区编辑）；
+   * equalRatio 强制 true（参数圆不画成椭圆，与几何 kind 同口径）。
+   */
+  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   error?: string | null;
+  /**
+   * 符号常量绑定（ZOO-188 T1）：键为存储层 ASCII 名（v0/theta/omega…），值参与
+   * 显式路径符号三分法与求值 scope 注入；显示层经 constantDisplayName 还原原貌
+   * （θ/ω/φ/v₀，见 math/normalize.ts）。缺省 = 无常量（行为与现状逐字节一致，
+   * 旧文档零迁移）；空字典视为未启用（advancedFormulaState 判定口径）。
+   */
+  constants?: Record<string, number>;
+  /**
+   * 微积分叠加（ZOO-189 T2）：f′ 导函数叠加 / 切线演示（条目类型见
+   * math/types.ts 的 MathPlotOverlay，开放式联合——T3 定积分将复用本字段追加
+   * integral 形态）。缺省 / 空数组 = 无叠加（advancedFormulaState 判定口径，
+   * 旧文档零迁移）；渲染层仅对显式函数生效，几何 / 错误态静默忽略、数据保留。
+   */
+  overlays?: MathPlotOverlay[];
 
   // —— 数学视窗（局部坐标系定义，数学单位）——
   xAxis: { min: number; max: number };

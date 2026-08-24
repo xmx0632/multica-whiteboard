@@ -15,10 +15,17 @@
  * （Node 单测环境无 Path2D → path2d 为 null，绘制自动回退逐点折线）。
  */
 import { getPlotRender, plotSignature, setPlotRender } from './cache';
+import { derivativeOf, integralOf, tangentOf } from './calculus';
 import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
-import { sampleEquation } from './sample';
-import type { MathViewport, Polyline } from './types';
+import {
+  PHYSICS_GUIDE_DASH,
+  PHYSICS_MARK_RADIUS_PX,
+  trajectoryMarks,
+  type TrajectoryMarks,
+} from './physics';
+import { sampleEquation, sampleExplicitMulti } from './sample';
+import type { MathPlotOverlay, MathViewport, Polyline } from './types';
 import { zhT, type LibT } from '../../i18n/lib';
 
 /** §6.1 各层默认色（与 MiniPreview / 交互原型一致）。 */
@@ -35,6 +42,15 @@ export const PLOT_COLORS = {
   errorText: '#ef4444',
   errorSub: '#6b7280',
   errorHint: '#9ca3af',
+  /** ZOO-189 T2 叠加层色：f′ 虚线橙 / 切线绿（与 12 色板同源，白底可读） */
+  overlayDerivative: '#F97316',
+  overlayTangent: '#22C55E',
+  /** ZOO-192 T5 物理标注层色：紫（导引虚线 / 标注点 / H·R 文字，白底可读） */
+  overlayPhysics: '#A855F7',
+  /** ZOO-190 T3 定积分：着色区上面积 chip 的底色（元素色文字、白底可读） */
+  integralChipBg: 'rgba(255,255,255,0.92)',
+  /** ZOO-190 T3 定积分奇点报错 chip（红字白底，口径同错误占位） */
+  integralErrorText: '#ef4444',
 } as const;
 
 /** 网格线最小像素间距，低于此密度整层隐藏（亚像素网格，§6.1 第 2 层）。 */
@@ -49,16 +65,57 @@ export interface PlotStyle {
   opacity: number;
 }
 
+/** f′ 叠加虚线节律（局部 px；SVG 导出 join(',') 同款）。 */
+export const OVERLAY_DERIVATIVE_DASH: readonly number[] = [8, 5];
+
+/**
+ * ZOO-190 T3 定积分着色透明度（元素色 × 0.18；颜色不进渲染缓存签名——
+ * 改颜色只重新 fill，不触发重采样，性能契约延续 §6.3）。
+ */
+export const OVERLAY_INTEGRAL_FILL_ALPHA = 0.18;
+
+/**
+ * 叠加层数字标注格式（切线斜率 / 切点，ZOO-189）：≤2 位小数、去尾零——
+ * canvas 与 SVG 导出共用，保证两渲染面文本一致。
+ */
+export function formatOverlayNumber(v: number): string {
+  let s = v.toFixed(2);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
+
+/**
+ * 面积值格式化（ZOO-190 T3，风格对齐 formatTickLabel：按数值量级定小数位
+ * 〔0.001 级 3 位、1/3 级 3 位、百级 0–2 位〕、去尾零、−0 归 0）——canvas 与
+ * SVG 导出共用，保证两渲染面文本一致。
+ */
+export function formatAreaValue(v: number): string {
+  const decimals = Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(Math.abs(v) || 1))));
+  let s = v.toFixed(decimals);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
+
 /** 解析输入契约（4d 的 MathPlotElement 数学字段的子集）。 */
 export interface PlotSpec {
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   errorMessage?: string;
-  /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定） */
+  /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定；参数式 / 极坐标复用为 t/θ 域〔ZOO-191 T4〕） */
   xAxis: { min: number; max: number };
   /** x/y 单位等比（圆/椭圆强制 true）：y 视窗 = 定义域按宽高比推导 */
   equalRatio: boolean;
   sampleCount: number;
+  /** 符号常量绑定（ZOO-188 T1）：显式路径求值 scope 注入；缺省 = 无常量 */
+  constants?: Record<string, number>;
+  /**
+   * 微积分叠加（ZOO-189 T2）：仅显式函数生效（几何/错误态忽略——parametric /
+   * polar 同口径静默忽略、数据保留，方程改回显式即恢复生效〔ZOO-191 T4〕）；
+   * physics 条目（ZOO-192 T5）反之——仅 parametric 轨迹生效，其余 kind 静默
+   * 忽略、数据保留。缺省 / 空 = 无叠加，走既有渲染路径（零变化）。
+   * 进渲染缓存签名（叠加参数是数学输入）。
+   */
+  overlays?: readonly MathPlotOverlay[];
 }
 
 /** 元素外框（局部 px，语义同 rectangle 的 width/height）。 */
@@ -67,12 +124,62 @@ export interface PlotFrame {
   height: number;
 }
 
+/** 常量绑定的稳定签名（ZOO-188）：键排序后序列化，同内容恒同签名（进渲染 sig）。 */
+function constantsSig(constants?: Record<string, number>): string {
+  if (!constants) return '';
+  return JSON.stringify(
+    Object.keys(constants)
+      .sort()
+      .map((k) => [k, constants[k]]),
+  );
+}
+
+/**
+ * 叠加列表的稳定签名（ZOO-189）：条目字段键排序后序列化，同内容恒同签名
+ * （进渲染 sig——切线 x₀ 变化必须重采样，改颜色线宽不在此列、不触发重采样）。
+ */
+function overlaysSig(overlays?: readonly MathPlotOverlay[]): string {
+  if (!overlays || overlays.length === 0) return '';
+  return JSON.stringify(
+    overlays.map((o) =>
+      Object.keys(o)
+        .sort()
+        .map((k) => [k, (o as unknown as Record<string, unknown>)[k]]),
+    ),
+  );
+}
+
 /** 解析 + 采样 + Path2D 的缓存产物（错误态 error 非空、折线为空）。 */
 export interface PlotRender {
   polylines: Polyline[];
   view: MathViewport;
   error?: string;
   path2d: Path2D | null;
+  /** ZOO-189 T2 叠加层产物（无叠加时缺省——既有渲染路径零变化） */
+  overlays?: OverlayRender;
+}
+
+/** 叠加层渲染产物（ZOO-189 T2）：与主曲线同视窗的 f′ 折线 + 切线演示数据；
+ *  ZOO-190 T3 定积分着色区 / ZOO-192 T5 物理标注数据并列增补。 */
+export interface OverlayRender {
+  /** f′ 折线（数学坐标）与缓存 Path2D（Node 环境无 Path2D 时为 null） */
+  derivative?: { polylines: Polyline[]; path2d: Path2D | null };
+  /** 切线：切点 / 斜率 / 贯穿定义域的直线折线（数学坐标） */
+  tangent?: { x0: number; y0: number; slope: number; polyline: Polyline };
+  /**
+   * 定积分（ZOO-190 T3）：着色区闭合折线 + 面积值 + chip 锚点（数学坐标）
+   * 与缓存 Path2D；奇点 / 非法区间 → ok:false 携「现象 + 怎么办」文案
+   * （画 chip 报错，不产出错误区域，主曲线照常渲染）。
+   */
+  integral?:
+    | { ok: true; value: number; region: Polyline; anchor: { x: number; y: number }; path2d: Path2D | null }
+    | { ok: false; error: string };
+  /**
+   * 物理标注（ZOO-192 T5）：抛体参数轨迹的落地/峰值数据（数学坐标，纯数据无
+   * Path2D——标注是点/文字，无需折线缓存）；数值随常量 / t 域改值经渲染签名
+   * 失效自动重算。仅 parametric kind 生效，其余 kind（含显式简谐）静默忽略。
+   */
+  physics?: TrajectoryMarks;
 }
 
 /** 「好看刻度」步长（1/2/2.5/5×10^k，原型 niceStep 平移共享）。 */
@@ -183,6 +290,25 @@ export function buildPlotPath2D(polylines: Polyline[], t: PlotTransform): Path2D
   return path;
 }
 
+/**
+ * 闭合折线 → 元素局部 px 的填充 Path2D（ZOO-190 T3 定积分着色区）：整段连续
+ * （无断笔语义——区域折线由 integralOf 预扫保证全有限），末尾 closePath 闭合。
+ */
+export function buildClosedPath2D(points: Polyline, t: PlotTransform): Path2D {
+  const path = new Path2D();
+  let started = false;
+  for (const p of points) {
+    const px = t.toPxX(p.x);
+    const py = t.toPxY(p.y);
+    if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+    if (started) path.lineTo(px, py);
+    else path.moveTo(px, py);
+    started = true;
+  }
+  path.closePath();
+  return path;
+}
+
 /** 圆角矩形路径（手工构建，兼容无 ctx.roundRect 的环境）。 */
 function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   const rr = Math.min(r, w / 2, h / 2);
@@ -213,6 +339,8 @@ export interface DrawGraphCoreOptions {
   tickLabels?: boolean;
   /** 目标格宽：主画布 45px；MiniPreview 传 8 保持原密度 */
   gridTargetPx?: number;
+  /** ZOO-189 T2 叠加层（缺省 = 无叠加，绘制路径零变化） */
+  overlays?: OverlayRender;
 }
 
 /**
@@ -220,7 +348,7 @@ export interface DrawGraphCoreOptions {
  * MiniPreview 与 drawMathPlot 共用 —— 预览即真实渲染（D3）。
  */
 export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCoreOptions): void {
-  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45 } = opts;
+  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays } = opts;
   if (!(width > 0) || !(height > 0)) return;
 
   ctx.save();
@@ -315,6 +443,30 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     }
   }
 
+  // —— ZOO-190 T3 定积分着色（主曲线之下、网格轴之上）：元素色半透明填充，
+  //    颜色不进渲染签名——改色仅重新 fill（缓存 Path2D 优先，回退逐点闭合折线）——
+  if (overlays?.integral?.ok) {
+    const ig = overlays.integral;
+    ctx.globalAlpha = style.opacity * OVERLAY_INTEGRAL_FILL_ALPHA;
+    ctx.fillStyle = style.strokeColor;
+    if (ig.path2d) {
+      ctx.fill(ig.path2d);
+    } else {
+      ctx.beginPath();
+      let started = false;
+      for (const p of ig.region) {
+        const px = t.toPxX(p.x);
+        const py = t.toPxY(p.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+        if (started) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+        started = true;
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
   // —— 曲线（缓存 Path2D 优先；颜色线宽不进签名，改样式仅重 stroke）——
   if (polylines.length > 0) {
     ctx.globalAlpha = style.opacity;
@@ -345,6 +497,201 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
         }
       }
       ctx.stroke();
+    }
+  }
+
+  // —— ZOO-190 T3 面积 chip（主曲线之上）：∫ = 面积值，锚在着色区中线附近、
+  //    越界时收拢回卡片内；奇点 / 非法区间 → 顶部报错 chip（现象 + 怎么办）——
+  if (overlays?.integral) {
+    const ig = overlays.integral;
+    ctx.globalAlpha = style.opacity;
+    if (ig.ok) {
+      const label = `∫ = ${formatAreaValue(ig.value)}`;
+      ctx.font = 'italic 11px serif';
+      const tw = ctx.measureText(label).width;
+      const ch = 16;
+      const cx = Math.min(Math.max(t.toPxX(ig.anchor.x), tw / 2 + 4), width - tw / 2 - 4);
+      const cy = Math.min(Math.max(t.toPxY(ig.anchor.y), ch / 2 + 4), height - ch / 2 - 4);
+      ctx.fillStyle = PLOT_COLORS.integralChipBg;
+      roundedRectPath(ctx, cx - tw / 2 - 5, cy - ch / 2, tw + 10, ch, 8);
+      ctx.fill();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = style.strokeColor;
+      ctx.fillText(label, cx, cy + 0.5);
+    } else {
+      const wrapChip = (text: string, maxWidth: number): string[] => {
+        const lines: string[] = [];
+        let line = '';
+        for (const ch of text) {
+          if (ctx.measureText(line + ch).width > maxWidth) {
+            lines.push(line);
+            line = ch;
+          } else {
+            line += ch;
+          }
+        }
+        if (line) lines.push(line);
+        return lines.slice(0, 2); // 与错误占位同款：至多两行，超长截断
+      };
+      ctx.font = '10px system-ui, sans-serif';
+      const lines = wrapChip(`⚠ ${ig.error}`, width - 16);
+      const lw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 10;
+      const lh = lines.length * 12 + 6;
+      const bx = Math.min(Math.max(width / 2 - lw / 2, 4), Math.max(width - lw - 4, 4));
+      ctx.fillStyle = PLOT_COLORS.integralChipBg;
+      roundedRectPath(ctx, bx, 6, lw, lh, 6);
+      ctx.fill();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = PLOT_COLORS.integralErrorText;
+      let ly = 6 + 3;
+      for (const l of lines) {
+        ctx.fillText(l, bx + lw / 2, ly);
+        ly += 12;
+      }
+    }
+  }
+
+  // —— ZOO-189 T2 叠加层（主曲线之后）：f′ 虚线橙 → 切线绿（切点标记 + 斜率标注）——
+  if (overlays?.derivative) {
+    const d = overlays.derivative;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayDerivative;
+    ctx.lineWidth = style.strokeWidth;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash([...OVERLAY_DERIVATIVE_DASH]);
+    if (d.path2d) {
+      ctx.stroke(d.path2d);
+    } else {
+      ctx.beginPath();
+      for (const pl of d.polylines) {
+        let drawing = false;
+        for (const p of pl) {
+          if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+            drawing = false;
+            continue;
+          }
+          const px = t.toPxX(p.x);
+          const py = t.toPxY(p.y);
+          if (!Number.isFinite(px) || !Number.isFinite(py) || Math.abs(py) > 1e6) {
+            drawing = false;
+            continue;
+          }
+          if (drawing) ctx.lineTo(px, py);
+          else ctx.moveTo(px, py);
+          drawing = true;
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  if (overlays?.tangent) {
+    const tg = overlays.tangent;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayTangent;
+    ctx.lineWidth = Math.max(style.strokeWidth * 0.75, 1);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(t.toPxX(tg.polyline[0].x), t.toPxY(tg.polyline[0].y));
+    ctx.lineTo(t.toPxX(tg.polyline[1].x), t.toPxY(tg.polyline[1].y));
+    ctx.stroke();
+
+    // 切点标记：绿底白边圆点
+    const px = t.toPxX(tg.x0);
+    const py = t.toPxY(tg.y0);
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = PLOT_COLORS.overlayTangent;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+
+    // 斜率标注（数学记号，语言无关）：f′(x₀) = k，越界时向左翻转
+    const label = `f′(${formatOverlayNumber(tg.x0)}) = ${formatOverlayNumber(tg.slope)}`;
+    ctx.font = 'italic 10px system-ui, sans-serif';
+    const tw = ctx.measureText(label).width;
+    let lx = px + 9;
+    if (lx + tw > width - 3) lx = px - 9 - tw;
+    let ly = py - 8;
+    if (ly < 10) ly = py + 14;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = PLOT_COLORS.overlayTangent;
+    ctx.fillText(label, lx, ly);
+  }
+
+  // —— ZOO-192 T5 物理标注（叠加层末位）：导引虚线（峰值垂线 / 射程水平线）→
+  //    峰值点标记 + H 标注 → 落地点标记 + R 标注。数字不带单位（不做量纲运算，
+  //    单位仅面板显示）；文字越界翻转口径与切线斜率标注同款 ——
+  if (overlays?.physics) {
+    const ph = overlays.physics;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayPhysics;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([...PHYSICS_GUIDE_DASH]);
+    ctx.beginPath();
+    // 峰值垂线：峰点 → 抛出高度基准线
+    ctx.moveTo(t.toPxX(ph.peak.x), t.toPxY(ph.peak.y));
+    ctx.lineTo(t.toPxX(ph.peak.x), t.toPxY(ph.launch.y));
+    // 射程水平线：抛出点 → 落地点（沿抛出高度）
+    if (ph.landing) {
+      ctx.moveTo(t.toPxX(ph.launch.x), t.toPxY(ph.launch.y));
+      ctx.lineTo(t.toPxX(ph.landing.x), t.toPxY(ph.landing.y));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 峰值点标记（紫底白边圆点，切点标记同规格）+ H 标注
+    const peakPx = t.toPxX(ph.peak.x);
+    const peakPy = t.toPxY(ph.peak.y);
+    ctx.beginPath();
+    ctx.arc(peakPx, peakPy, PHYSICS_MARK_RADIUS_PX, 0, Math.PI * 2);
+    ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+
+    const hLabel = `H = ${formatOverlayNumber(ph.peak.height)}`;
+    ctx.font = 'italic 10px system-ui, sans-serif';
+    const hTw = ctx.measureText(hLabel).width;
+    let hx = peakPx + 9;
+    if (hx + hTw > width - 3) hx = peakPx - 9 - hTw;
+    let hy = peakPy - 8;
+    if (hy < 10) hy = peakPy + 14;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+    ctx.fillText(hLabel, hx, hy);
+
+    // 落地点标记 + R 标注（落点常在卡片右缘，标注默认放左上侧）
+    if (ph.landing) {
+      const landPx = t.toPxX(ph.landing.x);
+      const landPy = t.toPxY(ph.landing.y);
+      ctx.beginPath();
+      ctx.arc(landPx, landPy, PHYSICS_MARK_RADIUS_PX, 0, Math.PI * 2);
+      ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      const rLabel = `R = ${formatOverlayNumber(ph.landing.range)}`;
+      const rTw = ctx.measureText(rLabel).width;
+      let rx = landPx - 9 - rTw;
+      if (rx < 3) rx = landPx + 9;
+      let ry = landPy - 8;
+      if (ry < 10) ry = landPy + 14;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = PLOT_COLORS.overlayPhysics;
+      ctx.fillText(rLabel, rx, ry);
     }
   }
 
@@ -407,6 +754,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     showGrid: opts.showGrid,
     showAxis: opts.showAxis,
     tickLabels: true,
+    overlays: render.overlays,
   });
   ctx.translate(-x - pad, -y - pad);
 
@@ -425,6 +773,47 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     ctx.fill();
     ctx.fillStyle = PLOT_COLORS.chipText;
     ctx.fillText(text, x + 13, cy - 4);
+
+    // 双色图例 chip（ZOO-189）：f 实线（元素色）/ f′ 虚线橙，紧随方程 chip，
+    // 仅 f′ 叠加时出现。先量宽 → chip 底 → 样本线 → 标签（底在下、线在上）。
+    if (render.overlays?.derivative) {
+      const sw = 14; // 样本线长
+      ctx.font = 'italic 11px serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const fW = ctx.measureText('f').width;
+      const fdW = ctx.measureText('f′').width;
+      const swLine = Math.min(Math.max(style.strokeWidth, 1.5), 3);
+      const gap = 8;
+      const lw = 7 + sw + 3 + fW + gap + sw + 3 + fdW + 5;
+      const lx = x + 6 + cw + 6;
+      const midY = cy - ch / 2;
+      ctx.fillStyle = PLOT_COLORS.chipBg;
+      roundedRectPath(ctx, lx, cy - ch, lw, ch, 9);
+      ctx.fill();
+
+      let cx0 = lx + 7;
+      ctx.lineWidth = swLine;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = style.strokeColor;
+      ctx.beginPath();
+      ctx.moveTo(cx0, midY);
+      ctx.lineTo(cx0 + sw, midY);
+      ctx.stroke();
+      ctx.fillStyle = style.strokeColor;
+      ctx.fillText('f', cx0 + sw + 3, midY + 0.5);
+      cx0 += sw + 3 + fW + gap;
+
+      ctx.strokeStyle = PLOT_COLORS.overlayDerivative;
+      ctx.setLineDash([...OVERLAY_DERIVATIVE_DASH]);
+      ctx.beginPath();
+      ctx.moveTo(cx0, midY);
+      ctx.lineTo(cx0 + sw, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = PLOT_COLORS.overlayDerivative;
+      ctx.fillText('f′', cx0 + sw + 3, midY + 0.5);
+    }
   }
   ctx.restore();
 }
@@ -508,6 +897,11 @@ export function resolvePlotRender(spec: PlotSpec, frame: PlotFrame, cacheKey: ob
     xMax: spec.xAxis.max,
     equalRatio: spec.equalRatio,
     sampleCount: spec.sampleCount,
+    // ZOO-188：常量是数学输入（改值必须重采样）；键序规范化，避免同内容异序误判失效
+    constants: constantsSig(spec.constants),
+    // ZOO-189：叠加参数是数学输入（f′ 开关 / 切线 x₀ 变化必须重算）；改颜色
+    // 线宽不在 sig——不触发重采样（性能契约延续 §6.3）
+    overlays: overlaysSig(spec.overlays),
     width: frame.width,
     height: frame.height,
   });
@@ -532,7 +926,71 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
       })()
     : undefined;
 
-  const parsed = parseEquation(spec.equation);
+  const parsed = parseEquation(spec.equation, zhT, spec.constants);
+
+  // —— ZOO-189 T2 叠加路径：仅显式函数且 overlays 非空时进入（惰性求导——
+  //    无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用一次求导；
+  //    ZOO-190 T3：定积分只依赖 f 本身（纯数值辛普森），积分-only 时不求导。
+  if (parsed.kind === 'explicit' && spec.overlays && spec.overlays.length > 0) {
+    const wantsDerivative = spec.overlays.some((o) => o.type === 'derivative');
+    const tangentOverlay = spec.overlays.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
+    const integralOverlay = spec.overlays.find((o): o is { type: 'integral'; a: number; b: number } => o.type === 'integral');
+    const deriv = wantsDerivative || tangentOverlay ? derivativeOf(spec.equation, { constants: spec.constants }) : null;
+    const dfn = deriv && deriv.ok ? deriv.fn : null;
+    if (wantsDerivative || tangentOverlay || integralOverlay) {
+      const sampled = sampleExplicitMulti(
+        [parsed.fn, ...(wantsDerivative && dfn ? [dfn] : [])],
+        {
+          xMin: spec.xAxis.min,
+          xMax: spec.xAxis.max,
+          ...(yWindow ?? {}),
+        },
+        spec.sampleCount,
+      );
+      if ('error' in sampled) {
+        return { polylines: [], view: nominal, error: sampled.error, path2d: null };
+      }
+      const view: MathViewport = {
+        xMin: sampled.xMin ?? spec.xAxis.min,
+        xMax: sampled.xMax ?? spec.xAxis.max,
+        yMin: sampled.yMin,
+        yMax: sampled.yMax,
+      };
+      const transform =
+        typeof Path2D !== 'undefined' ? createPlotTransform(view, frame.width, frame.height) : null;
+      const overlays: OverlayRender = {};
+      if (wantsDerivative && dfn && sampled.series[1]) {
+        overlays.derivative = {
+          polylines: sampled.series[1],
+          path2d: transform ? buildPlotPath2D(sampled.series[1], transform) : null,
+        };
+      }
+      if (tangentOverlay && dfn) {
+        const tg = tangentOf(parsed.fn, dfn, tangentOverlay.x0, view.xMin, view.xMax);
+        if (tg) overlays.tangent = tg;
+      }
+      // ZOO-190 T3：f 与积分带共窗（着色区跟随主曲线视窗）；奇点 → 错误 chip 载荷
+      if (integralOverlay) {
+        const ig = integralOf(parsed.fn, integralOverlay.a, integralOverlay.b);
+        overlays.integral = ig.ok
+          ? {
+              ok: true,
+              value: ig.value,
+              region: ig.region,
+              anchor: ig.anchor,
+              path2d: transform ? buildClosedPath2D(ig.region, transform) : null,
+            }
+          : { ok: false, error: ig.message };
+      }
+      return {
+        polylines: sampled.series[0],
+        view,
+        path2d: transform ? buildPlotPath2D(sampled.series[0], transform) : null,
+        ...(Object.keys(overlays).length > 0 ? { overlays } : {}),
+      };
+    }
+  }
+
   const sampled = sampleEquation(parsed, {
     xMin: spec.xAxis.min,
     xMax: spec.xAxis.max,
@@ -552,5 +1010,11 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
   };
   const path2d =
     typeof Path2D !== 'undefined' ? buildPlotPath2D(sampled.polylines, createPlotTransform(view, frame.width, frame.height)) : null;
-  return { polylines: sampled.polylines, view, path2d };
+  // —— ZOO-192 T5 物理标注：仅参数式轨迹生效（physics 叠加条目 + parametric
+  //    kind 双条件）——显式（简谐）/几何/极坐标/错误态静默忽略、数据保留；
+  //    轨迹非抛体形（无域内峰值 / 无落地越零）时 marks 为 null，同样不产出。
+  //    常量 / t 域 / 叠加开关均进渲染签名——改值即重算（实时联动）。
+  const physicsWanted = spec.overlays?.some((o) => o.type === 'physics');
+  const marks = physicsWanted && parsed.kind === 'parametric' ? trajectoryMarks(parsed.fx, parsed.fy, spec.xAxis) : null;
+  return marks ? { polylines: sampled.polylines, view, path2d, overlays: { physics: marks } } : { polylines: sampled.polylines, view, path2d };
 }

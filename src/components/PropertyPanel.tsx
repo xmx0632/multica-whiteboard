@@ -14,6 +14,7 @@ import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, TEXT_MIN_F
 import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
 import { validateEquation } from '@/lib/math/validate';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
+import { advancedFormulaState } from '@/lib/advancedFormula';
 import { CANVAS_INTERACT_EVENT, nextPanelFold, type PanelState } from '@/lib/landscape';
 import { usePhoneLandscape } from '@/lib/usePhoneLandscape';
 import { usePhonePortrait } from '@/lib/usePhonePortrait';
@@ -139,13 +140,19 @@ export default function PropertyPanel() {
 
   // —— 态 1.5：原位替换（错误占位 / 既有元素「重新编辑方程」）——
   if (editingEl && editingEl.type === 'mathPlot') {
+    // ZOO-191（T4）：参数式 / 极坐标元素重编辑回填 t/θ 域草稿；载荷未携带域
+    // （未触碰）时以元素现域兜底——方程微调不重置参数域
+    const editingParamDomain = editingEl.kind === 'parametric' || editingEl.kind === 'polar' ? editingEl.xAxis : undefined;
     return renderFoldable(
       <EquationEditor
         key={editingEl.id}
         initialEquation={editingEl.equation}
+        initialConstants={editingEl.constants}
+        initialOverlays={editingEl.overlays}
+        initialDomain={editingParamDomain}
         onCancel={() => setEditingId(null)}
         onConfirm={(payload) => {
-          updateElement(editingEl.id, mathPlotFieldsFromPayload(payload));
+          updateElement(editingEl.id, mathPlotFieldsFromPayload(payload, editingParamDomain));
           setEditingId(null);
           setSelected(editingEl.id);
         }}
@@ -162,6 +169,10 @@ export default function PropertyPanel() {
       el.kind === 'line' || el.kind === 'linePair' || el.kind === 'point' || el.kind === 'parabola' || el.kind === 'hyperbola' || el.kind === 'ellipse'
         ? validateEquation(el.equation, t)
         : null;
+    // ZOO-194：高级公式入口信号（overlays/constants/新 kind 才点亮；普通元素
+    // undefined → MathPlotParams 不渲染「公式设置」按钮，面板与现状逐像素一致。
+    // 结构化最小形状透传，T1/T2/T4 给元素增补可选字段后自动生效，无需改此处）
+    const advanced = advancedFormulaState(el);
     const value: MathPlotParamsValue = {
       equation: el.equation,
       kind: el.kind,
@@ -172,6 +183,11 @@ export default function PropertyPanel() {
       parabolaParams: revalidated?.kind === 'parabola' ? revalidated.params : undefined,
       hyperbolaParams: revalidated?.kind === 'hyperbola' ? revalidated.params : undefined,
       ellipseParams: revalidated?.kind === 'ellipse' ? revalidated.params : undefined,
+      advanced: advanced.visible ? { overlayCount: advanced.overlayCount } : undefined,
+      // ZOO-188（T1）：常量绑定是元素真实字段（经 onChange 落元素、参与解析裁决）
+      constants: el.constants,
+      // ZOO-189（T2）：微积分叠加同为元素真实字段（不在派生剥除清单，直落元素）
+      overlays: el.overlays,
       xAxis: el.xAxis,
       sampleCount: el.sampleCount,
       equalRatio: el.equalRatio,
@@ -186,7 +202,7 @@ export default function PropertyPanel() {
     const handleParamsChange = (patch: Partial<MathPlotParamsValue>) => {
       if (!gestureStartRef.current) gestureStartRef.current = el;
       if (patch.equation !== undefined) setEquationError(null);
-      // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams / ellipseParams 为面板派生字段（元素不落盘），剥除后落元素
+      // errorMessage / lineParams / linePairParams / pointParams / parabolaParams / hyperbolaParams / ellipseParams / advanced（ZOO-194）为面板派生字段（元素不落盘），剥除后落元素
       const rest: Partial<MathPlotParamsValue> = { ...patch };
       const errorMessage = rest.errorMessage;
       delete rest.errorMessage;
@@ -196,6 +212,7 @@ export default function PropertyPanel() {
       delete rest.parabolaParams;
       delete rest.hyperbolaParams;
       delete rest.ellipseParams;
+      delete rest.advanced;
       updateElementTransient(el.id, { ...rest, ...(errorMessage !== undefined ? { error: errorMessage } : {}) } as Partial<WhiteboardElement>);
     };
 
@@ -204,8 +221,20 @@ export default function PropertyPanel() {
       gestureStartRef.current = null;
       const cur = useStore.getState().elements.find((e) => e.id === el.id) as MathPlotElement | undefined;
       if (!cur) return;
-      // 方程文本收敛：重新校验分类与错误信息（几何方程同步推导定义域）
-      const converged = convergeEquationCommit(cur.equation, t);
+      // 方程文本收敛：重新校验分类与错误信息（几何方程同步推导定义域）。
+      // ZOO-188：按元素当前常量绑定裁决——含常量的合法方程（y=A·sin(ωx+φ)）不会
+      // 被误判非法而回滚；常量变化使 kind 翻转（欠定 → explicit）也在此收敛。
+      // ZOO-191（T4）：参数式 / 极坐标元素以现 t/θ 域兜底——方程微调不重置参数域。
+      // ZOO-192（T5）：fallback 域改按「收敛后」的方程判定——物理模板把显式元素
+      // 切到参数式时，模板预置 t 域（瞬态已落 xAxis）不被默认 [0,2π] 覆盖
+      const outcomeNow = validateEquation(cur.equation, t, cur.constants);
+      const paramAfter = outcomeNow.kind === 'parametric' || outcomeNow.kind === 'polar';
+      const converged = convergeEquationCommit(
+        cur.equation,
+        t,
+        cur.constants,
+        cur.kind === 'parametric' || cur.kind === 'polar' || paramAfter ? cur.xAxis : undefined,
+      );
       if (!converged.fields) {
         // ZOO-155：非法方程不落错误占位 —— 元素回滚到手势前快照（曲线保持原样），面板提示原因
         setEquationError(converged.error ?? t('math.unrecognized'));

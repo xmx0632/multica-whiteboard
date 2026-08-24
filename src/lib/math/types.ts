@@ -5,11 +5,27 @@
  * 这里固定编辑器/参数面板与未来解析层之间的类型边界：
  * - StructuralOutcome：4a 结构校验（validate.ts）的返回，explicit 暂无求值函数；
  * - ParseResult：4b mathjs 安全解析（parse.ts）须满足的完整契约（含 fn）；
+ * - MathPlotOverlay：T2 起的微积分叠加条目（calculus.ts / plot.ts / 面板共用）；
  * - Polyline / MathViewport：采样折线与数学视窗，MiniPreview 与 4c 采样（sample.ts）共用。
  */
 import type { Point } from '../types';
 
-export type EquationKind = 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+/**
+ * ZOO-191（T4）：parametric（x=f(t),y=g(t) 顶层逗号双等式）与 polar（r= 前缀）。
+ * 求值函数约定与 explicit 同款——异常 / 非 number 返回 NaN（采样期按断笔处理）。
+ */
+export type EquationKind =
+  | 'explicit'
+  | 'line'
+  | 'linePair'
+  | 'point'
+  | 'parabola'
+  | 'hyperbola'
+  | 'circle'
+  | 'ellipse'
+  | 'parametric'
+  | 'polar'
+  | 'error';
 
 /** 二元一次方程一般式 ax+by=c 的探针系数（ZOO-146 / D7，含 b=0 竖线）。 */
 export interface LineParams {
@@ -109,6 +125,8 @@ export type StructuralOutcome =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
+  | { kind: 'parametric'; variable?: string }
+  | { kind: 'polar'; variable?: string }
   | { kind: 'error'; message: string };
 
 /**
@@ -124,6 +142,8 @@ export type ParseResult =
   | { kind: 'hyperbola'; params: HyperbolaParams }
   | { kind: 'circle'; params: CircleParams }
   | { kind: 'ellipse'; params: EllipseParams }
+  | { kind: 'parametric'; fx: (t: number) => number; fy: (t: number) => number; variable?: string }
+  | { kind: 'polar'; fn: (theta: number) => number; variable?: string }
   | { kind: 'error'; message: string };
 
 /** 采样折线（数学坐标，4c sample.ts 产物；MiniPreview / 主画布 / SVG 导出共用）。 */
@@ -146,9 +166,32 @@ export interface PreviewData {
   yMax?: number;
 }
 
+/**
+ * 微积分叠加条目（ZOO-189 T2）：元素可选字段 overlays 的成员类型。
+ * type 联合为开放式——T3（ZOO-190）已追加 `{ type: 'integral'; a; b }` 定积分
+ * 形态、T5（ZOO-192）追加 `{ type: 'physics' }` 物理标注形态、后续按需扩展，
+ * 均在本联合上并列增补，不改既有条目结构。
+ * 渲染层生效范围：derivative / tangent / integral 仅显式函数；physics 仅
+ * parametric 轨迹；其余 kind 静默忽略、数据保留（方程改回生效形态即恢复）。
+ */
+export type MathPlotOverlay =
+  | { type: 'derivative' }
+  | { type: 'tangent'; x0: number }
+  | { type: 'integral'; a: number; b: number }
+  | { type: 'physics' };
+
 /** 方程确认（回车 / 插入按钮）时编辑器向外提交的载荷。
- *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。 */
+ *  kind 为 'error' 时同样允许确认 —— 4d 据此生成错误占位元素（交互原型决策 4）。
+ *  ZOO-188（T1）：constants 为编辑器常量草稿全量快照——undefined 表示本次流程
+ *  无常量参与（不触碰元素既有绑定）；空字典表示显式清空（原位替换时清掉元素常量）。
+ *  ZOO-189（T2）：overlays 语义与 constants 对齐——undefined 不触碰、数组（含空）
+ *  为全量快照（空数组 = 显式清空，落元素前归一为 undefined）。
+ *  ZOO-191（T4）：domain 为参数式 / 极坐标的参数域草稿（元素 xAxis 字段复用为
+ *  t/θ 域）——undefined 表示未触碰（创建落默认 [0,2π]，原位替换保持元素现值）。 */
 export interface EquationDraftPayload {
   equation: string;
   outcome: StructuralOutcome;
+  constants?: Record<string, number>;
+  overlays?: MathPlotOverlay[];
+  domain?: { min: number; max: number };
 }

@@ -7,6 +7,8 @@
  * ZOO-176 i18n：模板 / 分组 / 符号只存稳定 id，显示名经资源键
  * （equation.tpl<Id> / equation.group<Id> / equation.symbol<Id>）按语言渲染，
  * 新增语言无需改本文件。
+ * ZOO-192（T5）：PHYSICS_TEMPLATES 物理三件套（抛体/简谐/圆周）落高级公式
+ * 面板物理分区——模板自带常量 / 参数域 / 标注预置，显示名走 phys.* 命名空间。
  */
 
 export interface EquationTemplate {
@@ -91,6 +93,80 @@ export interface SymbolButton {
   /** 悬停提示资源键后缀 id（见 symbolTitleKey） */
   id: string;
 }
+
+/**
+ * 高级公式面板模板（ZOO-188 T1）：只进 AdvancedFormulaPanel，不进
+ * EQUATION_TEMPLATES / TEMPLATE_GROUPS——19 模板面板零改动（零回归硬约束）。
+ * 方程原文保留书写原貌（希腊字母 / 下标），归一化层负责翻译（normalize.ts）。
+ */
+export const ADVANCED_TEMPLATES: EquationTemplate[] = [
+  { id: 'sineConstants', equation: 'y=A·sin(ωx+φ)' },
+];
+
+/** 高级面板模板显示名资源键（advFormula.tpl<Id>）。 */
+export const advancedTemplateNameKey = (id: string) => `advFormula.tpl${keySuffix(id)}`;
+
+/**
+ * 参数式模板（ZOO-191 T4）：落高级公式面板参数式分区（复用 T1 的
+ * advancedTemplateNameKey 机制），不进 EQUATION_TEMPLATES / TEMPLATE_GROUPS
+ * ——19 模板面板零改动（零回归硬约束）。方程原文保留书写原貌（θ 归一化层
+ * 翻译 theta），默认参数域 [0,2π] 即参数圆 / 心形线 / 李萨如的整周期
+ * （摆线出一段完整拱）。
+ */
+export const PARAMETRIC_TEMPLATES: EquationTemplate[] = [
+  { id: 'parametricCircle', equation: 'x=cos(t),y=sin(t)' },
+  { id: 'cardioid', equation: 'r=1+cos(θ)' },
+  { id: 'cycloid', equation: 'x=t-sin(t),y=1-cos(t)' },
+  { id: 'lissajous', equation: 'x=sin(3t),y=sin(5t)' },
+];
+
+/**
+ * 物理模板（ZOO-192 T5）：落高级公式面板物理分区，不进 EQUATION_TEMPLATES /
+ * TEMPLATE_GROUPS（零回归硬约束）。与常量 / 参数式模板的差异：模板自带
+ * 「常量预置 + 参数域预置 + 标注预置」三件载荷——点选即回填全部草稿，插入即
+ * 出图（抛体 t 域预置到落地时间 T≈2.04s，θ 预置 30° 的弧度值 π/6——存储层
+ * 弧度口径与 T1 预置槽 θ=π/4 一致）。
+ */
+export interface PhysicsTemplate extends EquationTemplate {
+  /** 常量预置（存储层 ASCII 键 → 值）：点选即绑定，出图即生效 */
+  constants: Record<string, number>;
+  /** 参数 / 自变量域预置（元素 xAxis；抛体取落地时间、圆周取整圈、简谐取两个周期） */
+  domain: { min: number; max: number };
+  /** 插入即带落地/峰值标注（physics 叠加条目；仅抛体模板为 true） */
+  marks: boolean;
+}
+
+/** 抛体预置（PoC 基准：v₀=20、θ=30°、g=9.8 → T≈2.04s、R≈35.35、H≈5.1）。 */
+const PROJECTILE_V0 = 20;
+const PROJECTILE_THETA = Math.PI / 6; // 30°（弧度存储，显示层由常量区呈现原值）
+const PROJECTILE_G = 9.8;
+
+export const PHYSICS_TEMPLATES: PhysicsTemplate[] = [
+  {
+    id: 'projectile',
+    equation: 'x=v₀·cos(θ)·t,y=v₀·sin(θ)·t-0.5·g·t²',
+    constants: { v0: PROJECTILE_V0, theta: PROJECTILE_THETA, g: PROJECTILE_G },
+    domain: { min: 0, max: (2 * PROJECTILE_V0 * Math.sin(PROJECTILE_THETA)) / PROJECTILE_G },
+    marks: true,
+  },
+  {
+    id: 'shm',
+    equation: 'x(t)=A·cos(ωt+φ)',
+    constants: { a: 2, omega: 1, phi: 0 },
+    domain: { min: 0, max: Math.PI * 4 },
+    marks: false,
+  },
+  {
+    id: 'circular',
+    equation: 'x=A·cos(ωt),y=A·sin(ωt)',
+    constants: { a: 2, omega: 1 },
+    domain: { min: 0, max: Math.PI * 2 },
+    marks: false,
+  },
+];
+
+/** 物理模板显示名资源键（phys.tpl<Id>——独立命名空间，避免与他区新增键冲突）。 */
+export const physicsTemplateNameKey = (id: string) => `phys.tpl${keySuffix(id)}`;
 
 /** 符号悬停提示资源键（equation.symbol<Id>）。 */
 export const symbolTitleKey = (id: string) => `equation.symbol${keySuffix(id)}`;

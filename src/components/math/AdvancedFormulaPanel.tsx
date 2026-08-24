@@ -1,0 +1,764 @@
+'use client';
+
+/**
+ * 高级公式二级面板（ZOO-194 T0：框架与四分区；ZOO-188 T1：常量分区落地）。
+ *
+ * UI 分层（ZOO-186 报告 v1.1 §四）：微积分 / 物理能力独立入口 + 二级面板，
+ * 现有 EquationEditor / MathPlotParams 的既有控件零改动。两个入口共用本组件：
+ * - 入口 1（创建侧）：EquationEditor 模板分组区底部「微积分 / 物理公式…」；
+ * - 入口 2（编辑侧）：MathPlotParams 条件出现的「公式设置」按钮。
+ *
+ * - 经 portal 挂 document.body：不进入侧面板的 transform 定位上下文，
+ *   也不挤占既有面板布局（空间独立）；
+ * - 开合是纯 UI 态（调用方 useState），不入元素数据、不入撤销历史；
+ * - T1 常量区（constants 绑定非空时渲染，缺省保持 T0 占位）：预置槽
+ *   （g/v₀/θ/ω/A/φ）+ 自定义项，值变更走「静默直改 + 提交一条」调参历史
+ *   （技术方案 D5，onChange 实时预览 / onBlur·离散点击 onCommit 压快照）；
+ *   存储层键为 ASCII 名（theta/v0），显示层经 constantDisplayName 还原原貌；
+ * - T2 微积分区（ZOO-189，calculus 绑定时渲染）：f′ 叠加开关 + 切线演示开关
+ *   与 x₀ 数值输入。求导惰性——渲染管线仅 overlays 非空时求导（勿逐键求导）；
+ *   x₀ 输入 onChange 实时预览 / onBlur 提交一条（D5 同款）；非显式函数时控件
+ *   禁用并提示（叠加数据保留，方程改回显式即恢复生效）；
+ * - T3 积分区（ZOO-190，同微积分区）：定积分开关 + a/b 数值输入（a<b 且在
+ *   定义域内校验，编辑侧经 binding.domain 传入；区间内无定义点由渲染层
+ *   奇点防护报错 chip 兜底）；
+ * - T4 参数式区（ZOO-191，parametric 绑定时渲染）：参数圆 / 心形线 / 摆线 /
+ *   李萨如模板行（点选回填方程输入）+ t/θ 取值范围数值输入（当前方程是
+ *   参数式 / 极坐标时激活，直改实时预览、失焦提交一条，D5 同款）；
+ * - T5 物理区（ZOO-192，physics 绑定时渲染）：抛体 / 简谐 / 圆周模板行（点选
+ *   回填方程 + 常量预置 + t 域预置 + 标注预置，插入即出图）+ 落地/峰值标注
+ *   开关（仅参数式轨迹生效，标注数值随常量改值实时联动）+ 常量单位显示行
+ *   （单位仅显示，不做量纲运算）。
+ */
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useT } from '@/i18n/I18nProvider';
+import { PHYSICS_CONSTANT_UNITS } from '@/lib/math/physics';
+import { PLOT_COLORS } from '@/lib/math/plot';
+import { constantDisplayName, normalizeConstantKey, parseConstantValue } from '@/lib/math/normalize';
+import type { MathPlotOverlay } from '@/lib/math/types';
+import { validateEquation } from '@/lib/math/validate';
+import {
+  ADVANCED_TEMPLATES,
+  PARAMETRIC_TEMPLATES,
+  PHYSICS_TEMPLATES,
+  advancedTemplateNameKey,
+  physicsTemplateNameKey,
+  type PhysicsTemplate,
+} from '@/lib/math/templates';
+
+/**
+ * T1 常量编辑区绑定（两入口共用）：创建侧由 EquationEditor 持草稿态，
+ * 编辑侧由 MathPlotParams 直连元素（onChange → updateElementTransient 直改、
+ * onCommit → 提交一条历史）。onApplyTemplate 供模板点选回填方程输入。
+ * onChange 为函数式更新（prev → next）：同一批次内多次离散变更（连点预置槽）
+ * 不受渲染闭包过期影响，逐次叠加而非相互覆盖。
+ */
+export interface AdvancedConstantsBinding {
+  /** 当前方程文本（常量赋值后的解析状态行反馈） */
+  equation: string;
+  /** 常量绑定值（存储层 ASCII 键名） */
+  values: Record<string, number>;
+  /** 值变更（函数式更新：入参为当前值，返回下一值；直改实时预览，不上历史） */
+  onChange: (update: (prev: Record<string, number>) => Record<string, number>) => void;
+  /** 一次可撤销操作边界（离散变更即时 / 输入失焦时）；创建侧可缺省 */
+  onCommit?: () => void;
+  /** 模板点选出口（回填方程输入）；缺省（无方程输入侧）不渲染模板行 */
+  onApplyTemplate?: (equation: string) => void;
+}
+
+export interface AdvancedFormulaPanelProps {
+  /** 关闭出口（背板点击 / Esc / 标题栏 ✕，三路同源） */
+  onClose: () => void;
+  /** T1 常量编辑区绑定；缺省时常量分区保持 T0 占位（coming soon） */
+  constants?: AdvancedConstantsBinding;
+  /** T2 微积分编辑区绑定（ZOO-189）；缺省时微积分分区保持 T0 占位 */
+  calculus?: AdvancedCalculusBinding;
+  /** T4 参数式编辑区绑定（ZOO-191）；缺省时参数式分区保持 T0 占位 */
+  parametric?: AdvancedParametricBinding;
+  /** T5 物理编辑区绑定（ZOO-192）；缺省时物理分区保持 T0 占位 */
+  physics?: AdvancedPhysicsBinding;
+}
+
+/**
+ * T5 物理编辑区绑定（ZOO-192，两入口共用）：标注开关读写元素 overlays 的
+ * physics 条目（与微积分区共用同一数组——双方过滤各自类型、互不覆盖）；
+ * 编辑侧直连元素（onChange → 直改实时重绘、onCommit → 提交一条历史），创建侧
+ * 由 EquationEditor 持草稿态。模板点选出口携带「方程 + 常量预置 + t 域预置 +
+ * 标注预置」整包（onApplyTemplate），由调用侧落各草稿位——插入即出图。
+ */
+export interface AdvancedPhysicsBinding {
+  /** 当前方程文本（判定参数式轨迹态——标注仅对 x=f(t),y=g(t) 生效） */
+  equation: string;
+  /** 常量绑定（裁决参与；单位行显示数据源） */
+  constants?: Record<string, number>;
+  /** 当前叠加列表（physics 条目读写） */
+  values: readonly MathPlotOverlay[];
+  /** 叠加变更（开关离散变更即时提交） */
+  onChange: (next: MathPlotOverlay[]) => void;
+  /** 一次可撤销操作边界（编辑侧传入；创建侧缺省） */
+  onCommit?: () => void;
+  /** 模板点选出口（整包预置回填）；缺省不渲染模板行 */
+  onApplyTemplate?: (template: PhysicsTemplate) => void;
+}
+
+/**
+ * T4 参数式编辑区绑定（ZOO-191，两入口共用）：编辑侧直连元素 xAxis（t/θ 域，
+ * 元素真实字段），创建侧连编辑器参数域草稿（确认载荷 payload.domain 带出）。
+ * 模板行（参数圆 / 心形线 / 摆线 / 李萨如）点选回填方程输入——方程转为
+ * 参数式 / 极坐标后 t/θ 域输入随之激活。
+ */
+export interface AdvancedParametricBinding {
+  /** 当前方程文本（判定参数式 / 极坐标态与参数字母） */
+  equation: string;
+  /** 常量绑定（裁决参与——x=v0·cos(θ)·t 配常量才是合法参数式） */
+  constants?: Record<string, number>;
+  /** 当前 t/θ 取值范围（编辑侧 = 元素 xAxis；创建侧 = 草稿，缺省 [0,2π]） */
+  domain: { min: number; max: number };
+  /** 域变更（数值输入实时预览，不上历史） */
+  onDomainChange: (domain: { min: number; max: number }) => void;
+  /** 一次可撤销操作边界（输入失焦时）；创建侧可缺省 */
+  onCommit?: () => void;
+  /** 模板点选出口（回填方程输入并重置参数域为缺省）；缺省不渲染模板行 */
+  onApplyTemplate?: (equation: string) => void;
+}
+
+/**
+ * T2 微积分编辑区绑定（ZOO-189，两入口共用）：编辑侧由 MathPlotParams 直连
+ * 元素 overlays（元素真实字段，onChange → updateElementTransient 直改、onCommit
+ * → 提交一条历史）；创建侧由 EquationEditor 持草稿态、确认载荷全量带出。
+ * 求导本身惰性——由渲染管线按 overlays 内容触发，面板只读写叠加开关。
+ * ZOO-190 T3：domain 供积分 a/b 的定义域内校验（编辑侧传元素 xAxis；创建侧
+ * 元素未建立、缺省只校验 a<b）。
+ */
+export interface AdvancedCalculusBinding {
+  /** 当前叠加列表（存储层形态） */
+  values: readonly MathPlotOverlay[];
+  /** 叠加变更（开关离散变更即时提交；x₀ / a/b 输入实时预览） */
+  onChange: (next: MathPlotOverlay[]) => void;
+  /** 一次可撤销操作边界（编辑侧传入；创建侧缺省） */
+  onCommit?: () => void;
+  /** 是否显式函数（仅 y=f(x) 可叠加；false 时控件禁用并提示） */
+  applicable: boolean;
+  /** x 定义域（a/b 越界校验；创建侧缺省 = 不校验定义域） */
+  domain?: { min: number; max: number };
+}
+
+/** 四分区骨架（组序即面板展示序）：字形为语言无关数学记号，名称 / 描述走资源键 */
+const SECTIONS: readonly { id: 'calculus' | 'physics' | 'constants' | 'parametric'; glyph: string; nameKey: string; descKey: string }[] = [
+  { id: 'calculus', glyph: '∫', nameKey: 'advFormula.sectionCalculus', descKey: 'advFormula.sectionCalculusDesc' },
+  { id: 'physics', glyph: '⚛', nameKey: 'advFormula.sectionPhysics', descKey: 'advFormula.sectionPhysicsDesc' },
+  { id: 'constants', glyph: 'A', nameKey: 'advFormula.sectionConstants', descKey: 'advFormula.sectionConstantsDesc' },
+  { id: 'parametric', glyph: 't', nameKey: 'advFormula.sectionParametric', descKey: 'advFormula.sectionParametricDesc' },
+];
+
+/** 预置常量槽（ZOO-188）：label 为显示原貌，key 为存储层 ASCII 名，def 为点选初值。 */
+const PRESET_CONSTANTS: readonly { key: string; label: string; def: number }[] = [
+  { key: 'g', label: 'g', def: 9.8 },
+  { key: 'v0', label: 'v₀', def: 1 },
+  { key: 'theta', label: 'θ', def: Math.PI / 4 },
+  { key: 'omega', label: 'ω', def: 1 },
+  { key: 'a', label: 'A', def: 1 },
+  { key: 'phi', label: 'φ', def: 0 },
+];
+
+/** 保留名：x/y 是自变量、e/π 是数学常数（parse 层不视为自由符号，赋值无意义）。 */
+const RESERVED_CONSTANT_KEYS = new Set(['x', 'y', 'e', 'pi']);
+/** 常量键合法形（归一化后）：字母开头、字母数字、至多 8 字符。 */
+const CONSTANT_KEY_RE = /^[a-z][a-z0-9]{0,7}$/;
+
+/** T1 常量编辑区：模板行 + 预置槽 + 已绑定行 + 自定义项 + 解析状态行。 */
+function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
+  const t = useT();
+  const [customName, setCustomName] = useState('');
+  const [customValue, setCustomValue] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  // 赋值后的解析反馈：欠定报错引导补常量，合法则报自变量字母
+  const outcome = validateEquation(binding.equation, t, binding.values);
+  const entries = Object.entries(binding.values);
+
+  /** 离散变更（点选预置 / 移除 / 自定义添加）：一次 onChange + 一次 onCommit（函数式更新） */
+  const applyDiscrete = (update: (prev: Record<string, number>) => Record<string, number>) => {
+    binding.onChange(update);
+    binding.onCommit?.();
+  };
+
+  const togglePreset = (key: string, def: number) => {
+    applyDiscrete((prev) => {
+      if (key in prev) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: def };
+    });
+  };
+
+  const addCustom = () => {
+    const key = normalizeConstantKey(customName);
+    // ZOO-192 T5：值输入容忍单位后缀（'9.8 m/s²' → 9.8）——单位仅显示、不参与
+    // 运算，存储恒为纯数值（见 normalize.ts parseConstantValue）
+    const parsed = parseConstantValue(customValue);
+    if (!CONSTANT_KEY_RE.test(key) || RESERVED_CONSTANT_KEYS.has(key) || key in binding.values) {
+      setNameError(t('advFormula.constantsInvalidName'));
+      return;
+    }
+    if (!parsed) return;
+    applyDiscrete((prev) => ({ ...prev, [key]: parsed.value }));
+    setCustomName('');
+    setCustomValue('');
+    setNameError(null);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* 示例模板：点选回填方程输入（三角变换联动教学，ZOO-188） */}
+      {binding.onApplyTemplate && (
+        <div className="flex flex-wrap gap-1">
+          {ADVANCED_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => binding.onApplyTemplate?.(tpl.equation)}
+              title={tpl.equation}
+              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="block text-[10px] text-gray-400 leading-tight">{t(advancedTemplateNameKey(tpl.id))}</span>
+              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 预置槽：点选添加（缺省值）/ 再点移除 */}
+      <div className="flex flex-wrap gap-1">
+        {PRESET_CONSTANTS.map((p) => {
+          const active = p.key in binding.values;
+          return (
+            <button
+              key={p.key}
+              type="button"
+              aria-pressed={active}
+              aria-label={t('advFormula.constantsPresetAria', { name: p.label })}
+              onClick={() => togglePreset(p.key, p.def)}
+              className={`touch-target min-w-8 h-6 px-1.5 border rounded-md font-serif text-[13px] cursor-pointer transition-colors ${
+                active ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-500 hover:text-blue-500'
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 已绑定行：数值输入直改实时预览（D5），失焦提交一条 */}
+      {entries.length === 0 ? (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.constantsEmpty')}</div>
+      ) : (
+        entries.map(([key, value]) => (
+          <div key={key} className="flex items-center gap-1.5">
+            <span className="font-serif italic text-[13px] text-gray-800 w-8 text-center leading-none">{constantDisplayName(key)}</span>
+            <span className="text-gray-400 text-[11px]" aria-hidden="true">
+              =
+            </span>
+            <input
+              type="number"
+              step="any"
+              value={String(value)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) binding.onChange((prev) => ({ ...prev, [key]: v }));
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.constantsValueAria', { name: constantDisplayName(key) })}
+              autoComplete="off"
+              className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                applyDiscrete((prev) => {
+                  const next = { ...prev };
+                  delete next[key];
+                  return next;
+                });
+              }}
+              aria-label={t('advFormula.constantsRemoveAria', { name: constantDisplayName(key) })}
+              className="touch-target border-none bg-transparent text-gray-400 text-base leading-none cursor-pointer hover:text-red-500 active:text-red-600 transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        ))
+      )}
+
+      {/* 自定义项：符号（支持 θ/v₀ 等书写原貌，归一化为存储键）+ 数值 */}
+      <div className="flex items-center gap-1.5">
+        <input
+          value={customName}
+          onChange={(e) => {
+            setCustomName(e.target.value);
+            setNameError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCustom();
+            }
+          }}
+          placeholder={t('advFormula.constantsNamePh')}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label={t('advFormula.constantsNamePh')}
+          className="touch-target w-[92px] px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+        />
+        <input
+          value={customValue}
+          onChange={(e) => {
+            setCustomValue(e.target.value);
+            setNameError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCustom();
+            }
+          }}
+          placeholder={t('advFormula.constantsValuePh')}
+          inputMode="decimal"
+          autoComplete="off"
+          aria-label={t('advFormula.constantsValuePh')}
+          className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+        />
+        <button
+          type="button"
+          onClick={addCustom}
+          disabled={!customName.trim() || !parseConstantValue(customValue)}
+          className="touch-target px-2.5 py-1 border border-blue-200 rounded-md bg-blue-50/60 text-[11px] font-medium text-blue-600 cursor-pointer hover:bg-blue-50 active:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {t('advFormula.constantsAdd')}
+        </button>
+      </div>
+      {nameError && (
+        <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
+          {nameError}
+        </div>
+      )}
+
+      {/* 解析状态行：合法（显式函数）报自变量字母；欠定引导补常量 */}
+      {(outcome.kind === 'error' || outcome.kind === 'explicit') && (
+        <div
+          className={`text-[11px] leading-relaxed break-all ${
+            outcome.kind === 'error' ? 'text-red-500' : 'text-green-600'
+          }`}
+        >
+          {outcome.kind === 'error'
+            ? `⚠ ${outcome.message}`
+            : t('equation.recognized', { kind: t('equation.kindExplicit', { v: outcome.variable ?? 'x' }) })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** T2 微积分编辑区（ZOO-189）：f′ 叠加开关 + 切线演示（开关 + x₀ 数值输入）；
+ *  T3 积分区（ZOO-190）：定积分开关 + a/b 数值输入（a<b 且定义域内校验）。 */
+function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
+  const t = useT();
+  const hasDerivative = binding.values.some((o) => o.type === 'derivative');
+  const tangent = binding.values.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
+  const integral = binding.values.find((o): o is { type: 'integral'; a: number; b: number } => o.type === 'integral');
+  const disabled = !binding.applicable;
+
+  /** 离散变更（开关切换）：一次 onChange + 一次 onCommit */
+  const applyDiscrete = (next: MathPlotOverlay[]) => {
+    binding.onChange(next);
+    binding.onCommit?.();
+  };
+
+  const toggleDerivative = () => {
+    const rest = binding.values.filter((o) => o.type !== 'derivative');
+    applyDiscrete(hasDerivative ? rest : [...rest, { type: 'derivative' }]);
+  };
+
+  const toggleTangent = () => {
+    const rest = binding.values.filter((o) => o.type !== 'tangent');
+    applyDiscrete(tangent ? rest : [...rest, { type: 'tangent', x0: 0 }]);
+  };
+
+  const toggleIntegral = () => {
+    const rest = binding.values.filter((o) => o.type !== 'integral');
+    applyDiscrete(integral ? rest : [...rest, { type: 'integral', a: 0, b: 1 }]);
+  };
+
+  /** x₀ / a/b 直改实时预览（叠加随输入实时更新），失焦提交一条 */
+  const setX0 = (x0: number) => {
+    binding.onChange(binding.values.map((o) => (o.type === 'tangent' ? { type: 'tangent', x0 } : o)));
+  };
+
+  const setIntegralBounds = (patch: Partial<{ a: number; b: number }>) => {
+    binding.onChange(
+      binding.values.map((o) => (o.type === 'integral' ? { type: 'integral' as const, a: o.a, b: o.b, ...patch } : o)),
+    );
+  };
+
+  // T3 校验（ZOO-190）：a<b 必检；编辑侧带定义域时加越界检查（渲染层另有
+  // 奇点防护兜底——区间内无定义点画报错 chip，不产出错误区域）
+  const integralInvalid =
+    integral !== undefined &&
+    (!(integral.a < integral.b) ||
+      (binding.domain !== undefined &&
+        (integral.a < binding.domain.min - 1e-9 || integral.b > binding.domain.max + 1e-9)));
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {disabled && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.calcNotApplicable')}</div>
+      )}
+
+      {/* f′ 叠加开关 */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={hasDerivative}
+          onChange={toggleDerivative}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] leading-none">f′(x)</span>
+        <span className="text-[11px] text-gray-500">{t('advFormula.calcDerivDesc')}</span>
+      </label>
+
+      {/* 切线演示开关 + x₀ 数值输入 */}
+      <div className="flex items-center gap-1.5">
+        <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(tangent)}
+            onChange={toggleTangent}
+            disabled={disabled}
+            className="accent-blue-500"
+          />
+          <span className="text-[11px] text-gray-500">{t('advFormula.calcTangentDesc')}</span>
+        </label>
+        {tangent && !disabled && (
+          <span className="ml-auto flex items-center gap-1">
+            <span className="font-serif italic text-[12px] text-gray-700 leading-none">x₀</span>
+            <input
+              type="number"
+              step="any"
+              value={String(tangent.x0)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setX0(v);
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.calcTangentX0')}
+              autoComplete="off"
+              className="touch-target w-16 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+          </span>
+        )}
+      </div>
+
+      {/* 定积分区域着色开关（ZOO-190 T3） */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={Boolean(integral)}
+          onChange={toggleIntegral}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] text-blue-500 leading-none">∫</span>
+        <span className="text-[11px] text-gray-500">{t('advFormula.calcIntegralDesc')}</span>
+      </label>
+
+      {/* a/b 数值输入（积分开启时）：下限 a / 上限 b，实时预览、失焦提交 */}
+      {integral && !disabled && (
+        <div className="flex flex-col gap-1 pl-5">
+          <div className="flex items-center gap-1.5">
+            <span className="font-serif italic text-[12px] text-gray-700 w-3 text-center leading-none">a</span>
+            <input
+              type="number"
+              step="any"
+              value={String(integral.a)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setIntegralBounds({ a: v });
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.calcIntegralLower')}
+              autoComplete="off"
+              className="touch-target flex-1 min-w-0 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+            <span className="font-serif italic text-[12px] text-gray-700 w-3 text-center leading-none">b</span>
+            <input
+              type="number"
+              step="any"
+              value={String(integral.b)}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setIntegralBounds({ b: v });
+              }}
+              onBlur={binding.onCommit}
+              aria-label={t('advFormula.calcIntegralUpper')}
+              autoComplete="off"
+              className="touch-target flex-1 min-w-0 px-1.5 py-0.5 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500"
+            />
+          </div>
+          {integralInvalid && (
+            <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
+              ⚠ {t('advFormula.calcIntegralRange')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** T4 参数式编辑区（ZOO-191）：模板行 + t/θ 取值范围数值输入（当前方程
+ *  是参数式 / 极坐标时激活；否则提示并保留模板行引导点选）。 */
+function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
+  const t = useT();
+  const outcome = validateEquation(binding.equation, t, binding.constants);
+  const active = outcome.kind === 'parametric' || outcome.kind === 'polar';
+  const variable = active
+    ? outcome.kind === 'polar'
+      ? constantDisplayName(outcome.variable ?? 'theta')
+      : outcome.variable ?? 't'
+    : null;
+  const orderInvalid = !(binding.domain.min < binding.domain.max);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* 模板行：点选回填方程输入并重置参数域为缺省（四类模板整周期 [0,2π]） */}
+      {binding.onApplyTemplate && (
+        <div className="flex flex-wrap gap-1">
+          {PARAMETRIC_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => binding.onApplyTemplate?.(tpl.equation)}
+              title={tpl.equation}
+              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="block text-[10px] text-gray-400 leading-tight">{t(advancedTemplateNameKey(tpl.id))}</span>
+              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* t/θ 取值范围：直改实时预览（D5），失焦提交一条；非参数式方程禁用并提示 */}
+      <div className={`flex items-center gap-1.5 ${active ? '' : 'opacity-50'}`}>
+        <span className="font-serif italic text-[13px] text-gray-800 leading-none w-4 text-center">{variable ?? 't'}</span>
+        <span className="text-gray-400 text-[11px]" aria-hidden="true">
+          ∈
+        </span>
+        <input
+          type="number"
+          step="any"
+          value={String(binding.domain.min)}
+          disabled={!active}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (Number.isFinite(v)) binding.onDomainChange({ ...binding.domain, min: v });
+          }}
+          onBlur={binding.onCommit}
+          aria-label={t('advFormula.paramDomainMin')}
+          autoComplete="off"
+          className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+        />
+        <span className="text-gray-400">~</span>
+        <input
+          type="number"
+          step="any"
+          value={String(binding.domain.max)}
+          disabled={!active}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (Number.isFinite(v)) binding.onDomainChange({ ...binding.domain, max: v });
+          }}
+          onBlur={binding.onCommit}
+          aria-label={t('advFormula.paramDomainMax')}
+          autoComplete="off"
+          className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+        />
+      </div>
+
+      {!active && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.parametricInactive')}</div>
+      )}
+      {active && orderInvalid && (
+        <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
+          ⚠ {t('advFormula.paramDomainOrder')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** T5 物理编辑区（ZOO-192）：物理模板行（抛体/简谐/圆周——点选整包回填：
+ *  方程 + 常量预置 + t 域预置 + 标注预置）+ 落地/峰值标注开关（仅参数式轨迹
+ *  生效；标注数值随常量改值经渲染签名失效实时联动）+ 常量单位显示行。 */
+function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
+  const t = useT();
+  const outcome = validateEquation(binding.equation, t, binding.constants);
+  // 标注仅对参数式轨迹（x=f(t),y=g(t)）生效：简谐振动走显式渲染（零新渲染），
+  // 极坐标 / 几何 / 错误态同口径静默禁用（叠加数据保留，方程换回参数式即恢复）
+  const applicable = outcome.kind === 'parametric';
+  const hasMarks = binding.values.some((o) => o.type === 'physics');
+  const disabled = !applicable;
+
+  /** 离散变更（开关切换 / 模板点选）：一次 onChange + 一次 onCommit */
+  const applyDiscrete = (next: MathPlotOverlay[]) => {
+    binding.onChange(next);
+    binding.onCommit?.();
+  };
+
+  const toggleMarks = () => {
+    const rest = binding.values.filter((o) => o.type !== 'physics');
+    applyDiscrete(hasMarks ? rest : [...rest, { type: 'physics' }]);
+  };
+
+  // 单位显示行（只读）：当前绑定常量 × 物理单位表——单位字符串仅作显示，
+  // 不参与运算（数值恒以纯数存储与求值）；无已绑定物理常量时不渲染
+  const unitEntries = Object.entries(binding.constants ?? {}).flatMap(([key, value]) => {
+    const unit = PHYSICS_CONSTANT_UNITS[key];
+    return unit ? [{ label: `${constantDisplayName(key)} = ${value} ${unit}` }] : [];
+  });
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* 物理模板行：点选整包回填（方程 + 常量预置 + t 域预置 + 标注预置） */}
+      {binding.onApplyTemplate && (
+        <div className="flex flex-wrap gap-1">
+          {PHYSICS_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => binding.onApplyTemplate?.(tpl)}
+              title={tpl.equation}
+              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="block text-[10px] text-gray-400 leading-tight">{t(physicsTemplateNameKey(tpl.id))}</span>
+              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 落地/峰值标注开关：数值（射程 R / 峰高 H）由渲染管线随常量重算 */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={hasMarks}
+          onChange={toggleMarks}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] leading-none" style={{ color: disabled ? undefined : PLOT_COLORS.overlayPhysics }}>
+          R·H
+        </span>
+        <span className="text-[11px] text-gray-500">{t('phys.marksDesc')}</span>
+      </label>
+
+      {disabled && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('phys.marksNotApplicable')}</div>
+      )}
+
+      {/* 常量单位显示行：随常量改值实时更新（数值来自常量绑定，单位仅显示） */}
+      {unitEntries.length > 0 && (
+        <div className="font-serif text-[11px] text-gray-500 leading-relaxed break-all">
+          {unitEntries.map((e) => e.label).join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric, physics }: AdvancedFormulaPanelProps) {
+  const t = useT();
+
+  // Esc 关闭（窗口级监听，LanguageSwitch 同款）。T1 起面板含文本输入（常量名/数值），
+  // 输入中 Esc 关面板是模态标准行为；画布快捷键守卫按事件目标判定，不受本监听影响
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  // SSG 防御（mathplot-demo 静态导出）：面板仅由用户交互在客户端拉起，服务端一律不渲染
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="whiteboard-chrome fixed inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('advFormula.title')}
+        className="touch-panel touch-modal bg-white rounded-2xl shadow-2xl w-[340px] max-w-[calc(100vw-1.5rem)] max-h-[75vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-1.5 p-3.5 border-b">
+          <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
+          <h2 className="text-[15px] font-semibold text-gray-700">{t('advFormula.title')}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('advFormula.closeAria')}
+            className="touch-target ml-auto border-none bg-transparent text-gray-400 text-xl leading-none cursor-pointer hover:text-gray-600 active:text-gray-800 transition-colors"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+          <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.hint')}</div>
+          {SECTIONS.map((s) => {
+            // T1/T2/T4/T5：常量、微积分、参数式、物理分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
+            const constantsLive = s.id === 'constants' && constants;
+            const calculusLive = s.id === 'calculus' && calculus;
+            const parametricLive = s.id === 'parametric' && parametric;
+            const physicsLive = s.id === 'physics' && physics;
+            const live = constantsLive || calculusLive || parametricLive || physicsLive;
+            return (
+              <section key={s.id} className="border border-gray-200 rounded-lg p-2.5 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-serif italic text-blue-500 text-sm leading-none">{s.glyph}</span>
+                  <span className="text-[13px] font-semibold text-gray-700">{t(s.nameKey)}</span>
+                  {!live && (
+                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 font-medium">
+                      {t('advFormula.comingSoon')}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-gray-500 leading-relaxed">{t(s.descKey)}</div>
+                {constantsLive ? (
+                  <ConstantsArea binding={constants} />
+                ) : calculusLive ? (
+                  <CalculusArea binding={calculus} />
+                ) : parametricLive ? (
+                  <ParametricArea binding={parametric} />
+                ) : physicsLive ? (
+                  <PhysicsArea binding={physics} />
+                ) : (
+                  // T0 占位：分区控件由后续任务填充
+                  <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">
+                    ▢ ▢ ▢
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}

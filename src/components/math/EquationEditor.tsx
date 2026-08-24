@@ -13,15 +13,25 @@
  *   （src/lib/templateGroupCollapse.ts）；插入行为与平铺版零差异。
  * - ZOO-166 方案 A：任意单字母可作自变量——显式函数状态行按实际字母显示
  *   （y=f(z)），y=4z 直接出图不再报错。
+ * - ZOO-194 入口 1（创建侧）：模板分组区底部「微积分 / 物理公式…」入口项，
+ *   点击展开高级公式二级面板——面板经 portal 独立挂载，开合为纯 UI 态；
+ *   既有输入框 / 19 模板 / 符号按钮 / MiniPreview 一律不动（零回归硬约束）。
+ * - ZOO-188（T1 常量绑定）：常量草稿（面板常量区编辑）参与实时校验与预览，
+ *   确认载荷全量带出（EquationDraftPayload.constants）；重编辑流经
+ *   initialConstants 回填。含符号常量的公式绑定后即时出图。
+ * - ZOO-192（T5 物理模板）：物理区模板点选整包回填草稿（方程 + 常量预置 +
+ *   t 域预置 + 标注预置），插入即出图；参数式 / 极坐标预览按草稿 t/θ 域采样
+ *   （未触碰时默认 [0,2π]）。
  */
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import MiniPreview from './MiniPreview';
 import { useT } from '@/i18n/I18nProvider';
-import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey } from '@/lib/math/templates';
+import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey, type PhysicsTemplate } from '@/lib/math/templates';
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
-import { createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
-import type { EquationDraftPayload, PreviewData, StructuralOutcome } from '@/lib/math/types';
+import { DEFAULT_PARAMETER_DOMAIN, createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
+import type { EquationDraftPayload, MathPlotOverlay, PreviewData, StructuralOutcome } from '@/lib/math/types';
 
 /** 分类状态行文案资源键（ZOO-166 方案 A：显式函数按实际自变量字母显示；ZOO-176 随语言）。 */
 const KIND_LABEL_KEYS: Record<string, string> = {
@@ -34,9 +44,12 @@ const KIND_LABEL_KEYS: Record<string, string> = {
   ellipse: 'equation.kindEllipse',
 };
 
-/** 分类状态行文案（经注入 t 按语言渲染）。 */
+/** 分类状态行文案（经注入 t 按语言渲染）。ZOO-191（T4）：参数式按实际参数字母
+ *  显示（x=cos(u),y=sin(u) 报「参数 u」），极坐标恒报 kindPolar。 */
 function kindLabel(outcome: StructuralOutcome, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (outcome.kind === 'explicit') return t('equation.kindExplicit', { v: outcome.variable ?? 'x' });
+  if (outcome.kind === 'parametric') return t('equation.kindParametric', { v: outcome.variable ?? 't' });
+  if (outcome.kind === 'polar') return t('equation.kindPolar');
   const key = KIND_LABEL_KEYS[outcome.kind];
   return key ? t(key) : outcome.kind;
 }
@@ -44,21 +57,45 @@ function kindLabel(outcome: StructuralOutcome, t: (key: string, params?: Record<
 export interface EquationEditorProps {
   /** 载入初始方程（错误占位元素重编辑流程，4d 接线） */
   initialEquation?: string;
+  /** 载入初始常量绑定（ZOO-188：高级元素重编辑回填常量草稿；缺省空） */
+  initialConstants?: Record<string, number>;
+  /** 载入初始叠加（ZOO-189：高级元素重编辑回填叠加草稿；缺省空） */
+  initialOverlays?: MathPlotOverlay[];
+  /** 载入初始参数域（ZOO-191：参数式 / 极坐标元素重编辑回填 t/θ 域草稿；缺省空） */
+  initialDomain?: { min: number; max: number };
   /** 确认（回车 / 插入按钮）。payload.outcome.kind 为 'error' 时也回调。 */
   onConfirm?: (payload: EquationDraftPayload) => void;
   /** 原位替换流的取消返回（ZOO-136；不传则不显示取消按钮） */
   onCancel?: () => void;
-  /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。 */
-  createPreviewPolylines?: (equation: string, outcome: StructuralOutcome) => PreviewData | null;
+  /** 预览采样注入点：默认走 4b 采样管线，可注入替换（测试 / 演示）。
+   *  ZOO-192（T5）：第四参 domain 为参数式 / 极坐标的草稿 t/θ 域（缺省 [0,2π]）。 */
+  createPreviewPolylines?: (
+    equation: string,
+    outcome: StructuralOutcome,
+    constants?: Record<string, number>,
+    domain?: { min: number; max: number },
+  ) => PreviewData | null;
 }
 
 export default function EquationEditor({
   initialEquation = '',
+  initialConstants,
+  initialOverlays,
+  initialDomain,
   onConfirm,
   onCancel,
   createPreviewPolylines = samplePreviewPolylines,
 }: EquationEditorProps) {
   const [draft, setDraft] = useState(initialEquation);
+  // ZOO-188：常量草稿（高级公式面板常量区编辑；确认时随载荷全量带出，空字典 = 显式清空）
+  const [constantValues, setConstantValues] = useState<Record<string, number>>(initialConstants ?? {});
+  // ZOO-189：叠加草稿（高级公式面板微积分区编辑；确认时随载荷全量带出，空数组 = 无叠加）
+  const [overlayDraft, setOverlayDraft] = useState<MathPlotOverlay[]>(initialOverlays ?? []);
+  // ZOO-191：参数域草稿（高级公式面板参数式区编辑；null = 未触碰——确认时
+  // 不携带（创建落默认 [0,2π]、原位替换保持元素现值），模板点选重置为 null）
+  const [paramDomain, setParamDomain] = useState<{ min: number; max: number } | null>(initialDomain ?? null);
+  // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const t = useT();
 
@@ -72,22 +109,24 @@ export default function EquationEditor({
   const templateGroups = useMemo(() => groupTemplates(), []);
 
   const trimmed = draft.trim();
-  const outcome = useMemo(() => validateEquation(draft, t), [draft, t]);
+  // ZOO-188：常量草稿参与裁决——绑定常量后 y=A·sin(ωx+φ) 实时转合法并出预览
+  const outcome = useMemo(() => validateEquation(draft, t, constantValues), [draft, t, constantValues]);
   const isError = trimmed.length > 0 && outcome.kind === 'error';
   const isValid = trimmed.length > 0 && !isError;
 
   const preview = useMemo(() => {
     if (!isValid || !createPreviewPolylines) return null;
-    return createPreviewPolylines(trimmed, outcome);
+    // ZOO-192：参数式 / 极坐标预览按草稿 t/θ 域采样（未触碰传 undefined 落默认 [0,2π]）
+    return createPreviewPolylines(trimmed, outcome, constantValues, paramDomain ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trimmed, isValid, createPreviewPolylines]);
+  }, [trimmed, isValid, createPreviewPolylines, constantValues, paramDomain]);
 
   const confirm = () => {
     if (!trimmed) {
       inputRef.current?.focus();
       return;
     }
-    onConfirm?.({ equation: trimmed, outcome });
+    onConfirm?.({ equation: trimmed, outcome, constants: constantValues, overlays: overlayDraft, domain: paramDomain ?? undefined });
   };
 
   const insertAtCursor = (text: string) => {
@@ -107,6 +146,24 @@ export default function EquationEditor({
         input.setSelectionRange(equation.length, equation.length);
       }
     });
+  };
+
+  // ZOO-191：参数式模板点选——回填方程并重置参数域草稿（四类模板整周期取默认域）
+  const applyParametricTemplate = (equation: string) => {
+    setParamDomain(null);
+    applyTemplate(equation);
+  };
+
+  // ZOO-192 T5：物理模板点选——整包回填草稿（方程 + 常量预置 + t 域预置 +
+  // 标注预置），确认载荷全量带出——插入即出图（抛体预置 v₀/θ/g 与落地时间域）
+  const applyPhysicsTemplate = (tpl: PhysicsTemplate) => {
+    setConstantValues({ ...tpl.constants });
+    setParamDomain({ ...tpl.domain });
+    setOverlayDraft((prev) => {
+      const rest = prev.filter((o) => o.type !== 'physics');
+      return tpl.marks ? [...rest, { type: 'physics' }] : rest;
+    });
+    applyTemplate(tpl.equation);
   };
 
   const statusLine = () => {
@@ -236,6 +293,17 @@ export default function EquationEditor({
               </div>
             );
           })}
+          {/* ZOO-194 入口 1（创建侧）：高级公式入口项，置于模板分组底部（分组本身不动） */}
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen(true)}
+            title={t('advFormula.entryTitle')}
+            className="touch-target w-full flex items-center gap-1.5 px-1.5 py-1.5 border border-dashed border-blue-300 bg-blue-50/40 rounded-md cursor-pointer hover:border-blue-500 hover:bg-blue-50/80 active:bg-blue-100 transition-colors"
+          >
+            <span className="font-serif italic text-blue-500 text-[13px] leading-none">∫</span>
+            <span className="text-[11px] font-medium text-blue-600">{t('advFormula.entryLabel')}</span>
+            <span className="ml-auto text-gray-400 text-[11px] leading-none" aria-hidden="true">›</span>
+          </button>
         </div>
       </div>
       </div>{/* /touch-scroll */}
@@ -262,6 +330,42 @@ export default function EquationEditor({
       </div>
 
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('equation.hint')}</div>
+
+      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
+          ZOO-188 T1：常量区连编辑器草稿（无历史提交——元素尚未建立），模板点选回填输入框。
+          ZOO-189 T2：微积分区连叠加草稿（确认时随载荷全量带出）。
+          ZOO-191 T4：参数式区连参数域草稿（未触碰显示默认 [0,2π]，确认时随载荷带出）。
+          ZOO-192 T5：物理区连常量 / 叠加 / 参数域三草稿，模板点选整包回填（插入即出图）。 */}
+      {advancedOpen && (
+        <AdvancedFormulaPanel
+          onClose={() => setAdvancedOpen(false)}
+          constants={{
+            equation: draft,
+            values: constantValues,
+            onChange: setConstantValues, // 函数式更新直连（ZOO-188 修复：连点预置槽逐次叠加）
+            onApplyTemplate: applyTemplate,
+          }}
+          calculus={{
+            values: overlayDraft,
+            applicable: outcome.kind === 'explicit',
+            onChange: setOverlayDraft,
+          }}
+          parametric={{
+            equation: draft,
+            constants: constantValues,
+            domain: paramDomain ?? { min: DEFAULT_PARAMETER_DOMAIN.min, max: DEFAULT_PARAMETER_DOMAIN.max },
+            onDomainChange: setParamDomain,
+            onApplyTemplate: applyParametricTemplate,
+          }}
+          physics={{
+            equation: draft,
+            constants: constantValues,
+            values: overlayDraft,
+            onChange: setOverlayDraft,
+            onApplyTemplate: applyPhysicsTemplate,
+          }}
+        />
+      )}
     </div>
   );
 }

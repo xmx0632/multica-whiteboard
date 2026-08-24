@@ -101,7 +101,7 @@ describe('renameServerDocument（PATCH 服务端记录）', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(renameServerDocument('doc-1', 'After')).resolves.toBe(true);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/whiteboards/doc-1');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body as string)).toEqual({ title: 'After' });

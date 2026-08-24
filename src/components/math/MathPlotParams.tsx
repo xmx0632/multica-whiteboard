@@ -8,10 +8,20 @@
  * 历史语义（技术方案 D5 两段式）：滑杆拖动触发 onChange（直改实时预览），
  * 松手/失焦触发 onCommit（压一条快照）；离散控件（色板/开关/预设）一次
  * onChange + onCommit。错误态走「重新编辑方程」回调（原位替换，原型决策）。
+ *
+ * ZOO-194 入口 2（编辑侧）：仅当 value.advanced 存在（元素带 overlays /
+ * constants / 新 kind，PropertyPanel 经 advancedFormulaState 派生）时渲染
+ * 紧凑「公式设置」按钮（带已开启叠加徽标数），点开高级公式二级面板；
+ * 普通元素不出现任何新控件，面板与现状逐像素一致。开合为纯 UI 态。
+ * ZOO-192（T5 物理模板）：物理区直连元素——标注开关读写 overlays 的 physics
+ * 条目；模板点选整包回填（方程 / 常量 / t 域〔xAxis〕/ 标注），一次离散提交。
  */
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import { useT } from '@/i18n/I18nProvider';
 import { COLORS } from '@/lib/types';
+import { constantDisplayName } from '@/lib/math/normalize';
+import type { PhysicsTemplate } from '@/lib/math/templates';
 import { validateEquation } from '@/lib/math/validate';
 import {
   ellipseTeachingInfo,
@@ -29,12 +39,14 @@ import type {
   HyperbolaParams,
   LineParams,
   LinePairParams,
+  MathPlotOverlay,
   ParabolaParams,
 } from '@/lib/math/types';
 
 export interface MathPlotParamsValue {
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'error';
+  /** ZOO-191（T4）：parametric / polar——xAxis 复用为参数 t/θ 域、equalRatio 强制 true */
+  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   errorMessage?: string;
   /** kind === 'line' 时的一般式系数（调用方经 validateEquation 重解析填充，D7 教学参数） */
@@ -49,6 +61,27 @@ export interface MathPlotParamsValue {
   hyperbolaParams?: HyperbolaParams;
   /** kind === 'ellipse' 时的参数（中心/半轴/旋转角，ZOO-149 教学参数） */
   ellipseParams?: EllipseParams;
+  /**
+   * ZOO-194 T0 预留：高级公式入口信号（面板派生字段，元素不落盘——
+   * PropertyPanel 由元素经 advancedFormulaState 派生）。
+   * 缺省（普通元素）不渲染「公式设置」按钮；T1 constants / T2 overlays /
+   * T4 新 kind 上线后由调用方透传点亮。
+   */
+  advanced?: {
+    /** 已开启叠加数（入口徽标；非 overlays 信号为 0） */
+    overlayCount: number;
+  };
+  /**
+   * 符号常量绑定（ZOO-188 T1）：元素真实字段（非派生，落元素数据）——
+   * 高级公式面板常量区直改（onChange 直改实时重绘 / onBlur 提交一条，D5）。
+   * 键为存储层 ASCII 名，显示层经 constantDisplayName 还原（θ/ω/φ/v₀）。
+   */
+  constants?: Record<string, number>;
+  /**
+   * 微积分叠加（ZOO-189 T2）：元素真实字段（f′ 叠加 / 切线 x₀）——高级公式
+   * 面板微积分区直改；清空全部叠加时归一为 undefined（元素不留空壳字段）。
+   */
+  overlays?: MathPlotOverlay[];
   /** 定义域（数学单位），仅显式函数可调 */
   xAxis: { min: number; max: number };
   sampleCount: 160 | 320 | 640;
@@ -90,6 +123,8 @@ const KIND_BADGE_KEYS: Record<MathPlotParamsValue['kind'], { key: string; cls: s
   hyperbola: { key: 'params.badgeHyperbola', cls: 'bg-blue-50 text-blue-600' },
   circle: { key: 'params.badgeCircle', cls: 'bg-blue-50 text-blue-600' },
   ellipse: { key: 'params.badgeEllipse', cls: 'bg-blue-50 text-blue-600' },
+  parametric: { key: 'params.badgeParametric', cls: 'bg-blue-50 text-blue-600' },
+  polar: { key: 'params.badgePolar', cls: 'bg-blue-50 text-blue-600' },
   error: { key: 'params.badgeError', cls: 'bg-red-50 text-red-600' },
 };
 
@@ -108,13 +143,23 @@ const SAMPLE_STEP_KEYS: { key: string; count: 160 | 320 | 640 }[] = [
 
 export default function MathPlotParams({ value, onChange, onCommit, onDuplicate, onDelete, onRequestEdit, equationError, layerControls }: MathPlotParamsProps) {
   const t = useT();
+  // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const isFn = value.kind === 'explicit';
+  // ZOO-191（T4）：参数式 / 极坐标——定义域（t/θ 域）与采样档位控件同样开放
+  const isParam = value.kind === 'parametric' || value.kind === 'polar';
   const isError = value.kind === 'error';
-  // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）
+  // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）。
+  // ZOO-188：常量参与裁决——y=A·sin(ωx+φ) 绑定常量后自变量解析为 x。
+  // ZOO-191（T4）：参数式按实际参数字母（缺省 t）；极坐标缺省显示 θ（theta 经
+  // constantDisplayName 还原原貌）
   const variable = useMemo(() => {
-    const r = validateEquation(value.equation, t);
-    return r.kind === 'explicit' && r.variable ? r.variable : 'x';
-  }, [value.equation, t]);
+    const r = validateEquation(value.equation, t, value.constants);
+    if (r.kind === 'explicit') return r.variable ?? 'x';
+    if (r.kind === 'parametric') return r.variable ?? 't';
+    if (r.kind === 'polar') return constantDisplayName(r.variable ?? 'theta');
+    return 'x';
+  }, [value.equation, value.constants, t]);
   const badge = KIND_BADGE_KEYS[value.kind];
   // ZOO-176：教学参数文案随语言（t 注入；line/point 的产出为纯数学记号，无需 t）
   const line = value.kind === 'line' && value.lineParams ? lineTeachingInfo(value.lineParams) : null;
@@ -178,7 +223,26 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
             )}
           </div>
 
-          {isFn && (
+          {/* ZOO-194 入口 2（编辑侧）：仅高级元素（overlays/constants/新 kind）渲染，
+              普通元素不出现任何新控件（value.advanced 缺省即不渲染） */}
+          {value.advanced && (
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(true)}
+              aria-label={t('advFormula.settingsAria', { count: value.advanced.overlayCount })}
+              className="touch-target w-full flex items-center justify-center gap-1.5 py-1.5 border border-blue-200 rounded-lg bg-blue-50/60 text-[12px] font-medium text-blue-600 cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors"
+            >
+              <span className="text-[13px] leading-none" aria-hidden="true">⚙</span>
+              {t('advFormula.settingsLabel')}
+              {value.advanced.overlayCount > 0 && (
+                <span className="min-w-4 h-4 px-1 rounded-full bg-blue-500 text-white text-[10px] font-semibold leading-4 text-center">
+                  {value.advanced.overlayCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {(isFn || isParam) && (
             <>
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">{t('params.domain', { v: variable })}</label>
@@ -444,6 +508,66 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
       </div>
 
       <div className="text-[11px] text-gray-400 leading-relaxed">{t('params.hint')}</div>
+
+      {/* ZOO-194：高级公式二级面板（portal 挂 body，不占本面板布局）。
+          ZOO-188 T1：常量区直连元素——onChange 直改实时重绘（constants 为元素
+          真实字段，经 handleParamsChange 落元素，不在派生剥除清单）、onCommit 提交一条；
+          模板点选回填方程输入。
+          ZOO-189 T2：微积分区直连元素 overlays（同为真实字段）；清空归一 undefined；
+          仅显式函数可叠加（几何/错误态禁用并提示——parametric/polar 同口径）。
+          ZOO-190 T3：微积分区增定积分 a/b 输入（domain 传元素定义域做越界校验）。
+          ZOO-191 T4：参数式区直连元素 xAxis（t/θ 域，元素真实字段）。
+          ZOO-192 T5：物理区直连元素——标注开关读写 overlays physics 条目，模板
+          点选整包回填（方程 / 常量 / t 域 / 标注）并一次离散提交。 */}
+      {advancedOpen && (
+        <AdvancedFormulaPanel
+          onClose={() => setAdvancedOpen(false)}
+          constants={{
+            equation: value.equation,
+            values: value.constants ?? {},
+            onChange: (update) => patch({ constants: update(value.constants ?? {}) }),
+            onCommit: () => onCommit?.(),
+            onApplyTemplate: (equation) => patch({ equation }),
+          }}
+          calculus={{
+            values: value.overlays ?? [],
+            applicable: isFn,
+            // ZOO-190 T3：a/b 定义域内校验（元素 xAxis；创建侧无元素、缺省不校验）
+            domain: value.xAxis,
+            onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
+            onCommit: () => onCommit?.(),
+          }}
+          parametric={{
+            equation: value.equation,
+            constants: value.constants,
+            domain: value.xAxis,
+            onDomainChange: (domain) => patch({ xAxis: domain }),
+            onCommit: () => onCommit?.(),
+            onApplyTemplate: (equation) => patch({ equation }),
+          }}
+          physics={{
+            equation: value.equation,
+            constants: value.constants,
+            values: value.overlays ?? [],
+            onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
+            onCommit: () => onCommit?.(),
+            // ZOO-192：模板整包回填——常量预置（ASCII 键落元素真实字段）、t 域
+            // 预置（xAxis，commit 收敛按新方程判定 fallback 保持不被默认域覆盖）、
+            // 标注预置（physics 条目）；一次 onChange + 一次 onCommit（离散变更）
+            onApplyTemplate: (tpl: PhysicsTemplate) => {
+              const rest = (value.overlays ?? []).filter((o) => o.type !== 'physics');
+              const overlays = tpl.marks ? [...rest, { type: 'physics' as const }] : rest;
+              patch({
+                equation: tpl.equation,
+                constants: { ...tpl.constants },
+                xAxis: { ...tpl.domain },
+                ...(overlays.length > 0 ? { overlays } : { overlays: undefined }),
+              });
+              onCommit?.();
+            },
+          }}
+        />
+      )}
     </div>
   );
 }
