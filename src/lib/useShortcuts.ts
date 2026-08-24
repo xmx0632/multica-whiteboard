@@ -7,6 +7,8 @@ import { matchEvent, useShortcutUI, ShortcutId } from './keymap';
 import { zoomAt, stepZoomScale, fitViewport } from './gestures';
 import { getAllElementsBounds } from './renderer';
 import { saveToLocal, listLocalDocuments, listServerDocuments, loadFromLocal, loadFromServer } from './persistence';
+import { framesOf, neighborFrame, frameFocusViewport } from './frame';
+import { animateViewportTo } from './frameNav';
 import { useAutosaveStore } from './autosave';
 import { useT } from '@/i18n/I18nProvider';
 import type { ToolType } from './types';
@@ -149,6 +151,21 @@ export function useShortcuts() {
         case 'view.nextBoard':
           void switchBoard(-1, t('menu.confirmDiscard'));
           return;
+        case 'page.prev':
+        case 'page.next': {
+          // 页内翻页（ZOO-198 分页帧 + ZOO-205）：与页条点击同一跳转（活动页标记 + 视口平滑对齐）；
+          // 无帧 / 已在边界空转——未分页的白板没有页概念，方向键不动作
+          const frames = framesOf(st.elements);
+          const target = neighborFrame(frames, st.activeFrameId, id === 'page.next' ? 1 : -1);
+          if (!target) return;
+          st.setActiveFrame(target.id);
+          animateViewportTo(
+            frameFocusViewport(target, window.innerWidth, window.innerHeight),
+            () => useStore.getState().viewport,
+            st.setViewport,
+          );
+          return;
+        }
         case 'ui.help':
           useShortcutUI.getState().setHelpOpen(!useShortcutUI.getState().helpOpen);
           return;
