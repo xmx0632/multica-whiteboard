@@ -947,7 +947,7 @@ export default function Canvas() {
     }
 
     // Shape tools start
-    if (['rectangle', 'circle', 'line', 'arrow'].includes(activeTool)) {
+    if (['rectangle', 'circle', 'diamond', 'line', 'arrow'].includes(activeTool)) {
       const base = {
         id: uuidv4(), x: point.x, y: point.y,
         strokeColor, strokeWidth, opacity: 1,
@@ -959,6 +959,9 @@ export default function Canvas() {
           break;
         case 'circle':
           tempElementRef.current = { ...base, type: 'circle', width: 0, height: 0, fillColor } as any;
+          break;
+        case 'diamond':
+          tempElementRef.current = { ...base, type: 'diamond', width: 0, height: 0, fillColor };
           break;
         case 'line':
           tempElementRef.current = { ...base, type: 'line', x2: point.x, y2: point.y } as any;
@@ -1147,6 +1150,7 @@ export default function Canvas() {
           break;
         case 'rectangle':
         case 'circle':
+        case 'diamond':
           next = boxResizePatch(rs.handle as CornerHandle, start, point, { shift: e.shiftKey, minSize });
           break;
         case 'line':
@@ -1258,7 +1262,7 @@ export default function Canvas() {
 
     if (temp.type === 'path') {
       temp.points.push({ x: point.x, y: point.y });
-    } else if (temp.type === 'rectangle' || temp.type === 'circle') {
+    } else if (temp.type === 'rectangle' || temp.type === 'circle' || temp.type === 'diamond') {
       temp.width = point.x - temp.x;
       temp.height = point.y - temp.y;
     } else if (temp.type === 'line' || temp.type === 'arrow') {

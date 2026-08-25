@@ -1,5 +1,5 @@
 import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement } from './types';
-import { renderElement, drawFrame, getAllElementsBounds, mathPlotSpecOf } from './renderer';
+import { renderElement, drawFrame, getAllElementsBounds, mathPlotSpecOf, diamondVertices } from './renderer';
 import { zhT, type LibT } from '../i18n/lib';
 import {
   formatAreaValue,
@@ -82,6 +82,10 @@ function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
       const ry = el.height / 2;
       return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
     }
+    // 菱形（ZOO-217）：四中点顶点 <polygon>（与画布 diamondVertices 同一份推导；
+    // PNG/缩略图走 renderElement 自动同语义）
+    case 'diamond':
+      return `<polygon points="${diamondVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'} stroke-linejoin="round"${opacity}/>`;
     case 'line':
       return isPolyline(el)
         ? `<polyline points="${lineVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`

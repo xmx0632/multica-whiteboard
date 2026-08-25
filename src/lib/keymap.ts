@@ -19,7 +19,7 @@ import { create } from 'zustand';
 export type ShortcutId =
   // 工具（Alt+字母；penAlias / circleAlias 为历史习惯别名）
   | 'tool.select' | 'tool.hand' | 'tool.pen' | 'tool.penAlias'
-  | 'tool.rectangle' | 'tool.circle' | 'tool.circleAlias' | 'tool.line'
+  | 'tool.rectangle' | 'tool.circle' | 'tool.circleAlias' | 'tool.diamond' | 'tool.line'
   | 'tool.arrow' | 'tool.text' | 'tool.eraser' | 'tool.equation'
   // 编辑（Ctrl/Cmd 惯例）
   | 'edit.undo' | 'edit.redo' | 'edit.redoAlias' | 'edit.selectAll'
@@ -63,6 +63,8 @@ export const KEY_BINDINGS: KeyBinding[] = [
   { id: 'tool.rectangle', group: 'tools', labelKey: 'toolbar.rectangle', code: 'KeyR', altKey: true },
   { id: 'tool.circle', group: 'tools', labelKey: 'toolbar.circle', code: 'KeyO', altKey: true },
   { id: 'tool.circleAlias', group: 'tools', labelKey: 'toolbar.circle', code: 'KeyC', altKey: true, hidden: true },
+  // 菱形（ZOO-217）：Alt+I——Alt+D 被浏览器地址栏占用，取空闲字母 I
+  { id: 'tool.diamond', group: 'tools', labelKey: 'toolbar.diamond', code: 'KeyI', altKey: true },
   { id: 'tool.line', group: 'tools', labelKey: 'toolbar.line', code: 'KeyL', altKey: true },
   { id: 'tool.arrow', group: 'tools', labelKey: 'toolbar.arrow', code: 'KeyA', altKey: true },
   { id: 'tool.text', group: 'tools', labelKey: 'toolbar.text', code: 'KeyT', altKey: true },
@@ -145,8 +147,8 @@ export function formatShortcut(b: KeyBinding, mac: boolean): string {
 /** 工具类型 → 主绑定 id（LeftToolbar tooltip 用，别名不展示） */
 export const TOOL_BINDING: Record<string, ShortcutId> = {
   hand: 'tool.hand', select: 'tool.select', pen: 'tool.pen', rectangle: 'tool.rectangle',
-  circle: 'tool.circle', line: 'tool.line', arrow: 'tool.arrow', text: 'tool.text',
-  eraser: 'tool.eraser', equation: 'tool.equation',
+  circle: 'tool.circle', diamond: 'tool.diamond', line: 'tool.line', arrow: 'tool.arrow',
+  text: 'tool.text', eraser: 'tool.eraser', equation: 'tool.equation',
 };
 
 /** 帮助面板开合（useShortcuts 分派器与面板组件共享；模态打开期间其余快捷键失效） */

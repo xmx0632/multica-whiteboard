@@ -313,7 +313,7 @@ export default function PropertyPanel() {
   const showDash = dashTarget != null || selectedEl == null;
   const panelDash = dashTarget ? elementDash(dashTarget) : strokeDash;
 
-  const showFill = ['rectangle', 'circle'].includes(activeTool);
+  const showFill = ['rectangle', 'circle', 'diamond'].includes(activeTool);
   const showFont = activeTool === 'text';
   // 字号滑杆（ZOO-159）：T 工具设默认字号；选中 text 元素时作用于该元素（D5 两段式）
   const selectedText = selectedEl?.type === 'text' ? selectedEl : null;

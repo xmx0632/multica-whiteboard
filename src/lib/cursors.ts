@@ -65,6 +65,7 @@ const KEYWORD_CURSORS: Record<ToolType, string> = {
   pen: 'crosshair', // 仅作 SVG cursor 不支持时的回退，实际走 PEN_CURSOR
   rectangle: 'crosshair',
   circle: 'crosshair',
+  diamond: 'crosshair',
   line: 'crosshair',
   arrow: 'crosshair',
   text: 'text',

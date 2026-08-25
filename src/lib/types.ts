@@ -1,7 +1,7 @@
 import type { MathPlotOverlay, MathPoiAnnotation, DraggablePoint } from './math/types';
 import type { ConstantSliderMap } from './math/slider';
 
-export type ToolType = 'hand' | 'select' | 'pen' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
+export type ToolType = 'hand' | 'select' | 'pen' | 'rectangle' | 'circle' | 'diamond' | 'line' | 'arrow' | 'text' | 'eraser' | 'equation';
 
 export interface Point {
   x: number;
@@ -40,6 +40,19 @@ export interface RectangleElement extends BaseElement {
 
 export interface CircleElement extends BaseElement {
   type: 'circle';
+  width: number;
+  height: number;
+  fillColor: string | null;
+}
+
+/**
+ * 菱形元素（ZOO-217）：外框语义同 rectangle（x/y 左上角、width/height 世界 px），
+ * 四顶点由外框四边中点（上→右→下→左）推导、不落顶点字段——推导统一走
+ * renderer.ts 的 diamondVertices（绘制 / 命中 / SVG 导出共一份）。
+ * 负 width/height（拖拽中翻转）下顶点仍构成菱形，命中 / 导出天然兼容。
+ */
+export interface DiamondElement extends BaseElement {
+  type: 'diamond';
   width: number;
   height: number;
   fillColor: string | null;
@@ -168,6 +181,7 @@ export type WhiteboardElement =
   | PathElement
   | RectangleElement
   | CircleElement
+  | DiamondElement
   | LineElement
   | ArrowElement
   | TextElement
@@ -189,15 +203,16 @@ export interface WhiteboardDocument {
   updatedAt: number;
   thumbnail?: string;
   /**
-   * 数据模型版本（技术方案 §5.3）。v2 = 分页帧（ZOO-198）：新增 frame 元素类型。
-   * 旧文档（缺省 / v1）读作 1：无帧元素，打开 / 编辑 / 保存行为零变化；
-   * 保存时写 CURRENT_SCHEMA_VERSION，不含帧的旧文档仅版本号递增、内容不变。
+   * 数据模型版本（技术方案 §5.3）。v2 = 分页帧（ZOO-198）：新增 frame 元素类型；
+   * v3 = 菱形元素（ZOO-217）：新增 diamond 元素类型。旧文档（缺省 / v1）读作 1：
+   * 无新元素类型，打开 / 编辑 / 保存行为零变化；保存时写 CURRENT_SCHEMA_VERSION，
+   * 不含新类型的旧文档仅版本号递增、内容不变（沿 ZOO-198 先例）。
    */
   schemaVersion?: number;
 }
 
-/** 当前数据模型版本：v2 起含分页帧元素（ZOO-198） */
-export const CURRENT_SCHEMA_VERSION = 2;
+/** 当前数据模型版本：v3 起含菱形元素（ZOO-217） */
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * 撤销 / 重做操作（ZOO-183 扩展 reorder）。

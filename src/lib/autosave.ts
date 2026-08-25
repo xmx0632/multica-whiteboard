@@ -72,6 +72,7 @@ export function elementSignature(el: WhiteboardElement): string {
     }
     case 'rectangle':
     case 'circle':
+    case 'diamond':
       return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}`;
     case 'frame':
       // 分页帧（ZOO-198）：页名 / 外框进指纹——改名、缩放页都要触发自动保存

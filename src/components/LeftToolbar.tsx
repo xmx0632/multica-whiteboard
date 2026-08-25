@@ -13,6 +13,7 @@ const tools: { tool: ToolType; labelKey: string; bindingId: ShortcutId; icon: st
   { tool: 'pen', labelKey: 'toolbar.pen', bindingId: 'tool.pen', icon: '✎' },
   { tool: 'rectangle', labelKey: 'toolbar.rectangle', bindingId: 'tool.rectangle', icon: '▭' },
   { tool: 'circle', labelKey: 'toolbar.circle', bindingId: 'tool.circle', icon: '○' },
+  { tool: 'diamond', labelKey: 'toolbar.diamond', bindingId: 'tool.diamond', icon: '◇' },
   { tool: 'line', labelKey: 'toolbar.line', bindingId: 'tool.line', icon: '╱' },
   { tool: 'arrow', labelKey: 'toolbar.arrow', bindingId: 'tool.arrow', icon: '→' },
   { tool: 'text', labelKey: 'toolbar.text', bindingId: 'tool.text', icon: 'T' },
