@@ -111,6 +111,7 @@
     "dashDotted": "点線",
     "fill": "塗りつぶし",
     "fontSize": "フォントサイズ：{n}px",
+    "rotation": "回転角度（0–359）",
     "collapseAria": "パネルを閉じる",
     "expandToolAria": "ペン色パネルを開く",
     "expandEquationAria": "方程式パネルを開く",

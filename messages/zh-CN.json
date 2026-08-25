@@ -111,6 +111,7 @@
     "dashDotted": "点线",
     "fill": "填充",
     "fontSize": "字号：{n}px",
+    "rotation": "旋转角度（0–359）",
     "collapseAria": "收起面板",
     "expandToolAria": "展开触笔颜色面板",
     "expandEquationAria": "展开方程面板",

@@ -111,6 +111,7 @@
     "dashDotted": "Dotted",
     "fill": "Fill",
     "fontSize": "Font Size: {n}px",
+    "rotation": "Rotation (0–359)",
     "collapseAria": "Collapse panel",
     "expandToolAria": "Expand pen color panel",
     "expandEquationAria": "Expand equation panel",

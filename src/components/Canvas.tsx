@@ -2,10 +2,11 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, elementLocalFrame } from '@/lib/renderer';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, hitTestRotationHandle, isRotatable, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, elementBoundsAABB } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
 import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement } from '@/lib/binding';
-import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, RectangleElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { elementRotation, normalizeRotation, stepRotation, pointerToLocalFrame } from '@/lib/rotation';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
@@ -145,6 +146,14 @@ export default function Canvas() {
   // rect/circle 角控点改外框、line/arrow 端点手柄、path 角控点整体等比缩放点集
   // frame 角控点（ZOO-198）：groupStart 为起手时页内内容快照——帧缩放联动内容
   const resizeRef = useRef<{ handle: ResizeHandleId; startEl: WhiteboardElement; startWorld: Point; groupStart?: WhiteboardElement[] } | null>(null);
+  // —— 旋转手柄拖转（ZOO-222）——
+  /** 拖转手势态（ref 为准）：startEl 为起手整元素快照（undo / 双指取消恢复共用），
+   *  startAngle 为起手指针绕几何中心的方位角（屏幕系）——拖转按增量旋转，
+   *  抓取瞬间元素不跳角（Excalidraw/Miro 惯例）；Shift = 15° 步进 */
+  const rotateRef = useRef<{ elementId: string; startEl: RectangleElement; startAngle: number } | null>(null);
+  /** 悬停旋转手柄 / 拖转进行中（ZOO-207 光标体系：grab / grabbing） */
+  const [rotateHover, setRotateHover] = useState(false);
+  const [rotating, setRotating] = useState(false);
   /** select 拖拽帧时的页内内容快照（ZOO-198）：帧整体移动联动内容，抬指一并压快照 */
   const frameDragContentsRef = useRef<WhiteboardElement[] | null>(null);
   // —— 多选组拖拽（ZOO-205 最小选中集合）——
@@ -388,7 +397,9 @@ export default function Canvas() {
       if (id === selectedId) continue;
       const el = elements.find((e) => e.id === id);
       if (!el || el.id === hiddenTextId) continue;
-      const bbox = elementLocalFrame(el);
+      // 旋转矩形（ZOO-222）：多选外框画世界 AABB——虚线框覆盖旋转后的视觉足迹
+      // （非旋转元素 AABB ≡ 局部外框，零回归）
+      const bbox = elementBoundsAABB(el);
       if (!bbox) continue;
       ctx.save();
       ctx.strokeStyle = '#3B82F6';
@@ -599,6 +610,19 @@ export default function Canvas() {
       if (st.elements.some((el) => el.id === pd.elementId)) {
         useStore.setState({
           elements: st.elements.map((el) => (el.id === pd.elementId ? pd.before : el)),
+        });
+      }
+    }
+
+    // 拖转取消（ZOO-222）：恢复起手整元素（丢弃拖动中的角度直改，不入历史）
+    const rt = rotateRef.current;
+    if (rt) {
+      rotateRef.current = null;
+      setRotating(false);
+      const st = useStore.getState();
+      if (st.elements.some((el) => el.id === rt.elementId)) {
+        useStore.setState({
+          elements: st.elements.map((el) => (el.id === rt.elementId ? rt.startEl : el)),
         });
       }
     }
@@ -836,7 +860,7 @@ export default function Canvas() {
 
     // 双指提升（ZOO-144 验收：双指落下不产生元素）：取消工具手势，进入画布平移缩放
     if (e.pointerType === 'touch' && shouldPromoteToPinch(touchCount())) {
-      if (isDrawingRef.current || resizeRef.current || dragElementIdRef.current || pointDragRef.current) cancelToolGesture();
+      if (isDrawingRef.current || resizeRef.current || dragElementIdRef.current || pointDragRef.current || rotateRef.current) cancelToolGesture();
       // 手型 / 空格单指平移进行中提升为双指：终止单指 pan（含未决 rAF 帧），双指手势全量接管视口
       if (isPanningRef.current) {
         isPanningRef.current = false;
@@ -877,6 +901,24 @@ export default function Canvas() {
       const editingPolyline =
         !!sel && sel.id === polylineEditId && (sel.type === 'line' || sel.type === 'arrow');
       if (sel) {
+        // 旋转手柄（ZOO-222）：可旋转元素的悬伸手柄，优先于角控点命中（手柄在
+        // 选中框外沿，与角控点无重叠；触摸命中沿 ZOO-160 的 44px 等效口径）
+        if (
+          isRotatable(sel) &&
+          hitTestRotationHandle(sel, local, viewport, { touch: e.pointerType === 'touch' })
+        ) {
+          const cx = (sel.x + sel.width / 2) * viewport.scale + viewport.offsetX;
+          const cy = (sel.y + sel.height / 2) * viewport.scale + viewport.offsetY;
+          rotateRef.current = {
+            elementId: sel.id,
+            startEl: { ...sel },
+            startAngle: Math.atan2(local.y - cy, local.x - cx),
+          };
+          setRotating(true);
+          setRotateHover(false);
+          isDrawingRef.current = false; // 拖转手势独立提交，防滞留 select-drag 压脏快照
+          return;
+        }
         const handle = hitTestSelectionHandle(
           sel, local, viewport,
           e.pointerType === 'touch'
@@ -1163,6 +1205,16 @@ export default function Canvas() {
     setPointCursor(false);
   }, []);
 
+  // 旋转手柄悬停（ZOO-222）：命中 → grab 光标（拖转中 rotating → grabbing）。
+  // 仅 select 工具、主选中元素可旋转时参与；无手势时更新（与悬停命中同构）
+  const updateRotateHover = useCallback((local: Point) => {
+    const st = useStore.getState();
+    const sel = st.activeTool === 'select'
+      ? st.elements.find((el) => el.id === st.selectedId)
+      : null;
+    setRotateHover(!!sel && isRotatable(sel) && hitTestRotationHandle(sel, local, st.viewport));
+  }, []);
+
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     // 演示态路由（ZOO-200）：激光跟手 / 横滑追踪，编辑手势与悬停层全部让位
@@ -1211,6 +1263,26 @@ export default function Canvas() {
       return;
     }
 
+    // 旋转手柄拖转（ZOO-222）：angle = atan2(指针 − 中心)，按相对增量旋转（抓取
+    // 瞬间不跳角）；Shift = 15° 步进（stepRotation 网格取整）。D5 静默直改实时
+    // 预览，抬指统一压一条快照——一次拖转一条 undo。
+    const rotate = rotateRef.current;
+    if (rotate) {
+      const st = useStore.getState();
+      const el = st.elements.find((e) => e.id === rotate.elementId);
+      if (el && isRotatable(el)) {
+        const cx = (el.x + el.width / 2) * st.viewport.scale + st.viewport.offsetX;
+        const cy = (el.y + el.height / 2) * st.viewport.scale + st.viewport.offsetY;
+        const angle = Math.atan2(local.y - cy, local.x - cx);
+        const deltaDeg = ((angle - rotate.startAngle) * 180) / Math.PI;
+        const deg = e.shiftKey
+          ? stepRotation(elementRotation(rotate.startEl) + deltaDeg)
+          : normalizeRotation(elementRotation(rotate.startEl) + deltaDeg);
+        st.updateElementTransient(el.id, { rotation: deg });
+      }
+      return;
+    }
+
     // 控点缩放拖拽（静默直改，抬指统一压快照 —— 与移动拖拽同构）：
     // mathPlot（§11 D-1）/ text（ZOO-159）/ 图形元素（ZOO-160）按类型分派；
     // frame（ZOO-198）角控点改外框并按比例联动页内内容
@@ -1229,7 +1301,14 @@ export default function Canvas() {
         case 'mathPlot':
           next = applyResize({ handle: rs.handle as MathPlotHandle, startEl: start, startWorld: rs.startWorld }, point);
           break;
-        case 'rectangle':
+        case 'rectangle': {
+          // 旋转适配（ZOO-222）：世界指针逆旋转进局部系再喂 boxResizePatch——刚体
+          // 变换保对角锚定，Shift 等比逻辑零改动；rot = 0 原样传入（逐字节等价）
+          const rot0 = elementRotation(start);
+          const localPoint = rot0 === 0 ? point : pointerToLocalFrame(point, start, rot0);
+          next = boxResizePatch(rs.handle as CornerHandle, start, localPoint, { shift: e.shiftKey, minSize });
+          break;
+        }
         case 'circle':
         case 'diamond':
           next = boxResizePatch(rs.handle as CornerHandle, start, point, { shift: e.shiftKey, minSize });
@@ -1333,6 +1412,7 @@ export default function Canvas() {
       updateHoverTrace(local, useStore.getState().activeTool);
       updateHoverHit(local);
       updatePointHover(local);
+      updateRotateHover(local);
     } else if (hoverTraceRef.current !== null) {
       clearHoverTrace();
     }
@@ -1405,7 +1485,7 @@ export default function Canvas() {
       (temp as any).y2 = point.y;
     }
     render();
-  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, updatePointHover, clearHoverTrace, presenting, handlePresentPointerMove]);
+  }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, updatePointHover, updateRotateHover, clearHoverTrace, presenting, handlePresentPointerMove]);
 
   /** 抬指 / 手势被系统打断（pointercancel）的统一收尾 */
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
@@ -1447,6 +1527,24 @@ export default function Canvas() {
       const cur = useStore.getState().elements.find((e) => e.id === pointDrag.elementId);
       if (cur && cur.type === 'mathPlot' && !constantsEqual(cur.constants, pointDrag.before.constants)) {
         pushOperations([{ type: 'update', elementId: pointDrag.elementId, before: pointDrag.before, after: { ...cur } }]);
+      }
+      return;
+    }
+
+    // 拖转收口（ZOO-222）：一次拖转 = 一条可撤销快照（before 取起手整元素，undo
+    // 一次回拖转前）；无实效（角度未变）不压栈。系统打断（cancel）同样收口——
+    // 直改已可见，快照保证撤销一致（D5 与可拖点 / 控点缩放同构）。
+    const rotate = rotateRef.current;
+    if (rotate) {
+      rotateRef.current = null;
+      setRotating(false);
+      const cur = useStore.getState().elements.find((e) => e.id === rotate.elementId);
+      if (cur && elementResizeChanged(cur, rotate.startEl)) {
+        pushOperations([{
+          type: 'update', elementId: rotate.elementId,
+          before: rotate.startEl,
+          after: { ...cur },
+        }]);
       }
       return;
     }
@@ -1680,12 +1778,14 @@ export default function Canvas() {
             textEditing: textDraft !== null,
             hoverElement: hoverHit,
             hoverDragPoint: pointCursor,
+            hoverRotate: rotateHover,
+            rotating,
           }) }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={(e) => handlePointerUp(e, true)}
-        onPointerLeave={() => { clearHoverTrace(); setHoverHit(false); clearPointHover(); }}
+        onPointerLeave={() => { clearHoverTrace(); setHoverHit(false); clearPointHover(); setRotateHover(false); }}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />

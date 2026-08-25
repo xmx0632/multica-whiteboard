@@ -25,3 +25,29 @@ export function rotatePointAround(p: Point, center: Point, rad: number): Point {
   const dy = p.y - center.y;
   return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
 }
+
+/**
+ * 步进吸附（ZOO-222 交互层）：拖转按住 Shift → 角度取整到 step 网格（默认 15°，
+ * Excalidraw/Miro 惯例），结果仍归一 [0,360)。
+ */
+export function stepRotation(deg: number, step = 15): number {
+  return normalizeRotation(Math.round(deg / step) * step);
+}
+
+/**
+ * 指针（或任一点）从世界系映射进旋转元素的局部系（ZOO-222）：绕外框几何中心
+ * 逆旋转 rotDeg——rotDeg = 0 原样返回（与旧代码逐字节等价）。选中框控点命中与
+ * boxResizePatch 缩放适配共用：刚体变换下局部系的对角锚定 / Shift 等比语义零改动。
+ */
+export function pointerToLocalFrame(
+  world: Point,
+  frame: { x: number; y: number; width: number; height: number },
+  rotDeg: number,
+): Point {
+  if (rotDeg === 0) return world;
+  return rotatePointAround(
+    world,
+    { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 },
+    -(rotDeg * Math.PI) / 180,
+  );
+}

@@ -94,19 +94,26 @@ export interface CursorContext {
   hoverElement?: boolean;
   /** select 工具悬停 / 拖动中可拖点（ZOO-201 → move，沿曲线点另有吸附高亮） */
   hoverDragPoint?: boolean;
+  /** select 工具悬停旋转手柄（ZOO-222 → grab，拖转中 rotating → grabbing） */
+  hoverRotate?: boolean;
+  /** 旋转手柄拖转进行中（ZOO-222 → grabbing，与平移 grab/grabbing 同族） */
+  rotating?: boolean;
 }
 
 /**
  * 取当前画布光标 CSS 值。覆盖链（先到先得）：
- * panning(grabbing) > textEditing(default) > spacePanning|hand(grab) > 工具映射。
+ * panning|rotating(grabbing) > textEditing(default) > spacePanning|hand(grab) > 工具映射。
  * 文本编辑优先于平移预备态：草稿打开时点画布是提交而非平移（pointerdown 先走草稿分支）。
  */
 export function canvasCursor(tool: ToolType, ctx: CursorContext = {}): string {
-  if (ctx.panning) return 'grabbing';
+  if (ctx.panning || ctx.rotating) return 'grabbing';
   if (ctx.textEditing) return 'default';
   if (ctx.spacePanning || tool === 'hand') return 'grab';
   if (tool === 'pen') return PEN_CURSOR_CSS;
   if (tool === 'eraser') return ERASER_CURSOR_CSS;
-  if (tool === 'select') return ctx.hoverElement || ctx.hoverDragPoint ? 'move' : 'default';
+  if (tool === 'select') {
+    if (ctx.hoverRotate) return 'grab';
+    return ctx.hoverElement || ctx.hoverDragPoint ? 'move' : 'default';
+  }
   return KEYWORD_CURSORS[tool];
 }
