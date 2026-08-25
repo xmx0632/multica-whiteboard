@@ -19,6 +19,7 @@
     "pen": "Pen",
     "rectangle": "Rectangle",
     "circle": "Circle",
+    "diamond": "Diamond",
     "line": "Line",
     "arrow": "Arrow",
     "text": "Text",

@@ -1,14 +1,14 @@
 /**
  * 图形元素选中缩放几何（ZOO-160）：
  *
- * - rect / circle：4 角控点改外框 width/height（对角锚定，数据模型同 rectangle 外框语义；
- *   circle 为椭圆包围盒，缩放即改包围盒——对角锚定与 rect 一致）；
+ * - rect / circle / diamond：4 角控点改外框 width/height（对角锚定，数据模型同 rectangle
+ *   外框语义；circle 为椭圆包围盒、diamond 顶点由外框中点推导，缩放即改包围盒——对角锚定与 rect 一致）；
  * - line / arrow：端点手柄 p1/p2 直接改锚点坐标（选中后可直接改端点）；
  * - path：包围盒角控点整体等比缩放点集（对角锚定，笔迹形状不变形）。
  *
  * 纯函数：不改原元素，返回可直接合入元素的补丁（与 textResizePatch / applyResize 同构）。
  */
-import { WhiteboardElement, RectangleElement, CircleElement, LineElement, ArrowElement, PathElement, FrameElement } from './types';
+import { WhiteboardElement, RectangleElement, CircleElement, DiamondElement, LineElement, ArrowElement, PathElement, FrameElement } from './types';
 import { getElementBounds } from './renderer';
 import { lineVertices, polylinePatch, isPolyline } from './polyline';
 
@@ -26,13 +26,13 @@ export interface ResizeOpts {
 }
 
 /**
- * 角控点外框缩放（rect/circle/frame）：拖拽侧自由、对角锚定，最小边兜底（拖过头收在 minSize，
- * 不翻转——与 mathPlot applyResize 同构）。shift → 等比锁定，主导轴优先
+ * 角控点外框缩放（rect/circle/diamond/frame）：拖拽侧自由、对角锚定，最小边兜底（拖过头收在
+ * minSize，不翻转——与 mathPlot applyResize 同构）。shift → 等比锁定，主导轴优先
  * （x/y 变化折算取更接近拖拽意图的一侧，与 mathPlot equalRatio / textResizePatch 同构）。
  */
 export function boxResizePatch(
   handle: CornerHandle,
-  startEl: RectangleElement | CircleElement | FrameElement,
+  startEl: RectangleElement | CircleElement | DiamondElement | FrameElement,
   world: { x: number; y: number },
   opts?: ResizeOpts
 ): Pick<RectangleElement, 'x' | 'y' | 'width' | 'height'> {

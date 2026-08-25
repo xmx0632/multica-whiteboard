@@ -35,6 +35,7 @@ import type { ToolType } from './types';
 const TOOL_OF_BINDING: Partial<Record<ShortcutId, ToolType>> = {
   'tool.select': 'select', 'tool.hand': 'hand', 'tool.pen': 'pen', 'tool.penAlias': 'pen',
   'tool.rectangle': 'rectangle', 'tool.circle': 'circle', 'tool.circleAlias': 'circle',
+  'tool.diamond': 'diamond',
   'tool.line': 'line', 'tool.arrow': 'arrow', 'tool.text': 'text',
   'tool.eraser': 'eraser', 'tool.equation': 'equation',
 };

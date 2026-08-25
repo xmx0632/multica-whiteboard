@@ -1,4 +1,4 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point } from './types';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, DiamondElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point } from './types';
 import { drawMathPlot, resolvePlotRender, type PlotSpec } from './math/plot';
 import { resolveDragPoints } from './math/dragPoint';
 import type { LibT } from '../i18n/lib';
@@ -149,6 +149,65 @@ function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: 
   }
   ctx.stroke();
   ctx.restore();
+}
+
+/**
+ * 菱形四顶点（ZOO-217）：外框四边中点按上→右→下→左序推导，不落顶点字段——
+ * 绘制 / 命中 / SVG 导出共一份推导（负 width/height 拖拽翻转下仍构成菱形）。
+ */
+export function diamondVertices(el: DiamondElement): [Point, Point, Point, Point] {
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  return [
+    { x: cx, y: el.y },
+    { x: el.x + el.width, y: cy },
+    { x: cx, y: el.y + el.height },
+    { x: el.x, y: cy },
+  ];
+}
+
+/** 菱形绘制（ZOO-217，与 drawRectangle 同构）：四中点 moveTo/lineTo×4 + closePath */
+function drawDiamond(ctx: CanvasRenderingContext2D, el: DiamondElement, viewport: Viewport) {
+  const { offsetX, offsetY, scale } = viewport;
+
+  ctx.save();
+  ctx.globalAlpha = el.opacity;
+  ctx.strokeStyle = el.strokeColor;
+  ctx.lineWidth = el.strokeWidth * scale;
+  ctx.lineJoin = 'round';
+  applyDash(ctx, el, scale);
+
+  const verts = diamondVertices(el);
+  ctx.beginPath();
+  ctx.moveTo(verts[0].x * scale + offsetX, verts[0].y * scale + offsetY);
+  for (let i = 1; i < 4; i++) {
+    ctx.lineTo(verts[i].x * scale + offsetX, verts[i].y * scale + offsetY);
+  }
+  ctx.closePath();
+  if (el.fillColor) {
+    ctx.fillStyle = el.fillColor;
+    ctx.fill();
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * 点是否在凸多边形内（ZOO-217 菱形命中用）：逐边叉积同号判定——边界（叉积 0）
+ * 视为内部，顺 / 逆时针顶点序均成立。非凸输入会误判，本函数只服务菱形四顶点。
+ */
+function pointInConvexPolygon(p: Point, verts: Point[]): boolean {
+  let sign = 0;
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % verts.length];
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (cross === 0) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
 }
 
 /** line/arrow 折线形态绘制（ZOO-168）：逐段 lineTo；普通两点直线与旧渲染逐像素等价 */
@@ -319,6 +378,7 @@ export function renderElement(
     case 'path': drawPath(ctx, el, viewport); break;
     case 'rectangle': drawRectangle(ctx, el, viewport); break;
     case 'circle': drawCircle(ctx, el, viewport); break;
+    case 'diamond': drawDiamond(ctx, el, viewport); break;
     case 'line': drawLine(ctx, el, viewport); break;
     case 'arrow': drawArrow(ctx, el, viewport); break;
     case 'text': drawText(ctx, el, viewport); break;
@@ -536,6 +596,7 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
     }
     case 'rectangle':
     case 'circle':
+    case 'diamond':
     case 'mathPlot':
       return { x: el.x, y: el.y, width: el.width, height: el.height };
     case 'frame':
@@ -562,8 +623,8 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
 }
 
 /**
- * 元素命中测试。line/arrow（含折线形态，ZOO-168）按「点到线段距离阈值」逐段
- * 判定——折线包围盒内部的空白区不再误命中；其余类型维持包围盒判定。
+ * 元素命中测试。line/arrow（含折线形态，ZOO-168）与 diamond（ZOO-217，填充态含
+ * 内点判定）按精确轮廓判定——包围盒内部的空白区不再误命中；其余类型维持包围盒判定。
  */
 export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport): boolean {
   const { scale } = viewport;
@@ -575,6 +636,16 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
   if (el.type === 'line' || el.type === 'arrow') {
     const near = nearestOnPolyline(point, lineVertices(el));
     return near !== null && near.dist <= margin;
+  }
+
+  // 菱形（ZOO-217）：精确轮廓命中——bbox 四角空白不误选。填充态 = 叉积同号
+  // 内点判定 ∨ 四边距离带（边带容差与 line/arrow 同口径）；无填充态仅四边距离带。
+  if (el.type === 'diamond') {
+    const verts = diamondVertices(el);
+    const closed = [...verts, verts[0]]; // 闭合回环：含左→右上一边
+    const near = nearestOnPolyline(point, closed);
+    if (near !== null && near.dist <= margin) return true;
+    return Boolean(el.fillColor) && pointInConvexPolygon(point, verts);
   }
 
   // 帧（ZOO-198）：内部大片空白是板书区，不能挡内容命中——仅边框带 + 上缘标题条可选中

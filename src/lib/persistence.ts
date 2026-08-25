@@ -169,7 +169,7 @@ export function createNewDocument(title: string = 'Untitled'): WhiteboardDocumen
     title,
     elements: [],
     viewport: { offsetX: 0, offsetY: 0, scale: 1 },
-    schemaVersion: CURRENT_SCHEMA_VERSION, // v2 起含分页帧（ZOO-198）
+    schemaVersion: CURRENT_SCHEMA_VERSION, // v3 起含菱形元素（ZOO-217）
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

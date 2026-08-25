@@ -25,11 +25,11 @@ export function elementStrokeColor(el: WhiteboardElement): string {
 
 /**
  * 选中元素是否可经默认面板改线型（ZOO-165）：仅描边类元素——path /
- * rectangle / circle / line / arrow。text 无描边、mathPlot 走专属参数面板，
+ * rectangle / circle / diamond / line / arrow。text 无描边、mathPlot 走专属参数面板，
  * 均不参与（选中它们时面板不渲染线型区）。
  */
 export function canDashFromToolPanel(el: WhiteboardElement | null | undefined): el is Exclude<WhiteboardElement, { type: 'text' | 'mathPlot' }> {
-  return el != null && ['path', 'rectangle', 'circle', 'line', 'arrow'].includes(el.type);
+  return el != null && ['path', 'rectangle', 'circle', 'diamond', 'line', 'arrow'].includes(el.type);
 }
 
 /** 元素当前线型：dash 缺省（旧文档）读作 solid——渲染 / 面板回显统一入口 */

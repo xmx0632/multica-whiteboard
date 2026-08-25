@@ -138,6 +138,7 @@ export function scaleFrameContents(
     switch (moved.type) {
       case 'rectangle':
       case 'circle':
+      case 'diamond':
       case 'mathPlot':
         return { ...moved, width: moved.width * sx, height: moved.height * sy };
       case 'line':
