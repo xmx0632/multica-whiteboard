@@ -3,8 +3,9 @@
  *
  * 编辑侧（MathPlotParams）「公式设置」按钮的显隐与徽标数：仅当元素带
  * overlays（T2 叠加）/ constants（T1 常量）/ 基础 kind 之外的新 kind
- * （T4 parametric / polar）时出现；普通元素 visible=false —— 属性面板
- * 不出现任何新控件，创建 / 编辑全流程与现状一致（零回归硬约束）。
+ * （T4 parametric / polar）/ 圆锥曲线 kind（ZOO-215：ellipse / hyperbola /
+ * parabola 的焦点·准线·渐近线标注入口）时出现；普通元素 visible=false ——
+ * 属性面板不出现任何新控件，创建 / 编辑全流程与现状一致（零回归硬约束）。
  *
  * 输入为结构化最小形状：字段未上线时缺省即「无高级能力」，T1/T2/T4 给
  * MathPlotElement 增补可选字段后无需改此处即可自动透出。判定口径为
@@ -26,6 +27,14 @@ const BASIC_KINDS: ReadonlySet<string> = new Set([
   'ellipse',
   'error',
 ]);
+
+/**
+ * 圆锥曲线 kind 集合（ZOO-215）：ellipse / hyperbola / parabola 可用焦点 /
+ * 准线 / 渐近线标注（conic 叠加）——这些是基础 kind（面板徽章 / 教学参数
+ * 均按基础形态展示），但标注入口在高级公式面板，需单独点亮「公式设置」；
+ * circle（焦点重合于圆心，无标注教学价值）与 line / linePair / point 不点亮。
+ */
+const CONIC_ANNOTATION_KINDS: ReadonlySet<string> = new Set(['ellipse', 'hyperbola', 'parabola']);
 
 /**
  * 判定输入的最小结构（MathPlotElement 现状与 T1/T2/T4 增补字段后均满足）。
@@ -51,8 +60,9 @@ export function advancedFormulaState(el: AdvancedFormulaSignal): AdvancedFormula
   const overlayCount = Array.isArray(el.overlays) ? el.overlays.length : 0;
   const hasConstants = el.constants !== undefined && Object.keys(el.constants).length > 0;
   const isNewKind = el.kind !== undefined && !BASIC_KINDS.has(el.kind);
+  const isConicKind = el.kind !== undefined && CONIC_ANNOTATION_KINDS.has(el.kind);
   return {
-    visible: overlayCount > 0 || hasConstants || isNewKind,
+    visible: overlayCount > 0 || hasConstants || isNewKind || isConicKind,
     overlayCount,
   };
 }

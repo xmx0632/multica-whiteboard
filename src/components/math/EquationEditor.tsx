@@ -452,6 +452,13 @@ export default function EquationEditor({
             onChange: setOverlayDraft,
             onApplyTemplate: applyPhysicsTemplate,
           }}
+          conic={{
+            values: overlayDraft,
+            // ZOO-215：标注仅对椭圆 / 双曲线 / 抛物线（含旋转形）生效；不适用时
+            // 开关禁用 + 提示，叠加草稿保留（方程改为圆锥曲线即恢复生效）
+            applicable: outcome.kind === 'ellipse' || outcome.kind === 'hyperbola' || outcome.kind === 'parabola',
+            onChange: setOverlayDraft,
+          }}
         />
       )}
     </div>

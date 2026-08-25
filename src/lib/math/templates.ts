@@ -1,9 +1,11 @@
 /**
  * 方程模板与插入符号（交互原型基线 1:1 平移）。
- * ZOO-213 起面板模板共 42 条：19 条存量（PRD §5.2 P0/P1 方程族，含二元一次 →
- * 直线 D7、抛物线/双曲线 ZOO-147、退化两直线 ZOO-148、xy 交叉项旋转圆锥曲线
- * ZOO-149）+ 23 条学段新模板（小学 3 / 初中数学 4 / 初中物理 6 / 高中数学 7 /
- * 高中物理 3）；6 个符号按钮在光标处插入对应文本。
+ * ZOO-213 起面板模板共 42 条 + ZOO-215 增 1 条（开普勒椭圆轨道）= 43 条：
+ * 19 条存量（PRD §5.2 P0/P1 方程族，含二元一次 → 直线 D7、抛物线/双曲线
+ * ZOO-147、退化两直线 ZOO-148、xy 交叉项旋转圆锥曲线 ZOO-149）+ 23 条学段
+ * 新模板（小学 3 / 初中数学 4 / 初中物理 6 / 高中数学 7 / 高中物理 3）+
+ * 开普勒轨道 1（高中·物理，带 conic 标注叠加）；6 个符号按钮在光标处插入
+ * 对应文本。
  *
  * ZOO-164：模板分组（TEMPLATE_GROUPS）供面板分组折叠渲染；EQUATION_TEMPLATES
  * 仍为唯一数据源，插入路径不变。ZOO-213 分组演进为「学段·学科」视图（常用
@@ -151,6 +153,11 @@ export const EQUATION_TEMPLATES: EquationTemplate[] = [
     constantSliders: { e0: { min: -10, max: 10, step: 0.1 }, omega: { min: 0, max: 10, step: 0.1 } },
     domain: { min: 0, max: Math.PI * 2 },
   },
+  // —— ZOO-215（高中·物理）——
+  // 开普勒第一定律（椭圆轨道定律）：a=5、b=4 → c=3、e=c/a=0.6（彗星级偏心率，
+  // 焦点分离清晰可见），太阳位于焦点 F₁——插入即带焦点标注（conic 叠加），
+  // F₁F₂ 点标记 + 标签随方程常量改值实时联动
+  { id: 'keplerOrbit', equation: 'x²/25+y²/16=1', overlays: [{ type: 'conic' }] },
 ];
 
 /** id → 资源键后缀（首字母大写驼峰）：'linear2var' → 'tplLinear2var'。 */
@@ -205,7 +212,7 @@ export const TEMPLATE_GROUPS: readonly TemplateGroup[] = [
       'rotatedEllipse',
     ],
   },
-  { id: 'seniorPhysics', templateIds: ['shmVelocity', 'mechWave', 'acCurrent'] },
+  { id: 'seniorPhysics', templateIds: ['shmVelocity', 'mechWave', 'acCurrent', 'keplerOrbit'] },
 ];
 
 /** 「常用」置顶组 id（ZOO-213：交叉引用组——不参与学段组划分的单射约束）。 */

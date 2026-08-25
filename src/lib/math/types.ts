@@ -171,16 +171,20 @@ export interface PreviewData {
 /**
  * 微积分叠加条目（ZOO-189 T2）：元素可选字段 overlays 的成员类型。
  * type 联合为开放式——T3（ZOO-190）已追加 `{ type: 'integral'; a; b }` 定积分
- * 形态、T5（ZOO-192）追加 `{ type: 'physics' }` 物理标注形态、后续按需扩展，
- * 均在本联合上并列增补，不改既有条目结构。
+ * 形态、T5（ZOO-192）追加 `{ type: 'physics' }` 物理标注形态、ZOO-215 追加
+ * `{ type: 'conic' }` 圆锥曲线标注形态，后续按需扩展，均在本联合上并列增补，
+ * 不改既有条目结构。
  * 渲染层生效范围：derivative / tangent / integral 仅显式函数；physics 仅
- * parametric 轨迹；其余 kind 静默忽略、数据保留（方程改回生效形态即恢复）。
+ * parametric 轨迹；conic 仅 ellipse / hyperbola / parabola（焦点 / 准线 /
+ * 渐近线标注，含旋转形）；其余 kind 静默忽略、数据保留（方程改回生效形态
+ * 即恢复）。
  */
 export type MathPlotOverlay =
   | { type: 'derivative' }
   | { type: 'tangent'; x0: number }
   | { type: 'integral'; a: number; b: number }
-  | { type: 'physics' };
+  | { type: 'physics' }
+  | { type: 'conic' };
 
 /**
  * POI 标注条目（ZOO-199）：点击曲线上的灰点提示后持久化的坐标标注
