@@ -268,6 +268,7 @@
     "settingsAria": "打开公式设置（已开启 {count} 项叠加）",
     "title": "高级公式",
     "closeAria": "关闭高级公式面板",
+    "dragHint": "按住标题栏可拖动面板",
     "hint": "微积分与物理公式能力分步开放中，不影响基础方程面板的现有功能。",
     "comingSoon": "即将开放",
     "sectionCalculus": "微积分",

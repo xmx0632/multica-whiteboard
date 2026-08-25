@@ -54,6 +54,14 @@
  *   微积分分区联动展开关联的基础公式——常量区 + 基础方程面板的显式函数
  *   模板组（expandTemplateGroups，只增不减）；互斥面（参数式 / 物理分区、
  *   几何曲线 / 直线与方程组）不触碰。
+ * - ZOO-224 标题栏拖拽：标题栏为把手（cursor: move，ZOO-207 光标关键字），
+ *   按住整体移动面板——调参时把面板挪开就能边看图形边调。拖拽走
+ *   setPointerCapture：move/up 全程回把手，不落背板（误触关闭）也不落
+ *   画布（不触发平移 / 缩放）；逐帧直改 DOM 的 left/top（fixed），松手才落
+ *   React state——大面板子树不逐帧重渲染（无卡顿残影）。位置经
+ *   advancedPanelPosition 会话级记忆（两入口共用、刷新回居中缺省）+ 边缘
+ *   clamp（面板整体不出视口；视口装不下时保住把手左上角）；resize 时按
+ *   实测尺寸拉回。把手内 ✕ 关闭钮不进拖拽（closest('button') 守卫）。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -70,6 +78,13 @@ import {
   type AdvancedCollapseKey,
 } from '@/lib/advancedPanelCollapse';
 import { expandTemplateGroups } from '@/lib/templateGroupCollapse';
+import {
+  clampPanelPosition,
+  dragPanelPosition,
+  getAdvancedPanelPosition,
+  setAdvancedPanelPosition,
+  type PanelPosition,
+} from '@/lib/advancedPanelPosition';
 import { addDragPoint, removeDragPoint } from '@/lib/math/dragPoint';
 import type { DraggablePoint, MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
@@ -1304,19 +1319,131 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
+  // —— ZOO-224 标题栏拖拽（见组件头注释；几何纯函数在 advancedPanelPosition）——
+  // pos 为 null = 自动居中（背板 flex），拖过 / resize 拉回后为 fixed 定位。
+  // 拖拽全程直改 DOM 的 left/top，松手才落 state——大子树不逐帧重渲染
+  const [pos, setPos] = useState<PanelPosition | null>(() => getAdvancedPanelPosition());
+  const [dragging, setDragging] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startClient: { x: number; y: number };
+    start: PanelPosition;
+    size: { width: number; height: number };
+    current: PanelPosition;
+    moved: boolean;
+  } | null>(null);
+
+  const beginDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    // 仅主键（触摸 / 笔的 pointerdown 同为 0）；把手内的按钮（✕ 关闭）不进拖拽
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    e.preventDefault(); // 拖拽不启动文本选择 / 焦点转移
+    // move / up 全程回到把手：不冒泡误触背板关闭，也不落画布（无平移 / 缩放副作用）
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const rect = panel.getBoundingClientRect();
+    const start = { x: rect.left, y: rect.top };
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startClient: { x: e.clientX, y: e.clientY },
+      start,
+      size: { width: rect.width, height: rect.height },
+      current: start,
+      moved: false,
+    };
+    setDragging(true);
+  };
+
+  const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const dx = e.clientX - d.startClient.x;
+    const dy = e.clientY - d.startClient.y;
+    if (!d.moved) {
+      // 点击（位移 < 2px）不算拖：不把居中布局钉成 fixed，也不写会话记忆
+      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+      d.moved = true;
+      const panel = panelRef.current;
+      if (panel) {
+        // 居中（flex）→ fixed：left/top 钉在当前实测位置，视觉零跳变
+        panel.style.position = 'fixed';
+        panel.style.left = `${d.start.x}px`;
+        panel.style.top = `${d.start.y}px`;
+      }
+    }
+    d.current = dragPanelPosition(d.start, dx, dy, d.size, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    const panel = panelRef.current;
+    if (panel) {
+      panel.style.left = `${d.current.x}px`;
+      panel.style.top = `${d.current.y}px`;
+    }
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    if (d.moved) {
+      // 落点进 state + 会话记忆（渲染的 style 与已直改的 DOM 值一致，无闪跳）
+      setPos(d.current);
+      setAdvancedPanelPosition(d.current);
+    }
+  };
+
+  // 视口 resize：面板被甩出视口外时按当前实测尺寸拉回（clamp 同款；居中缺省
+  // 由背板 flex 兜底，无需处理）
+  useEffect(() => {
+    if (!pos) return;
+    const onResize = () => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const rect = panel.getBoundingClientRect();
+      const next = clampPanelPosition(
+        pos,
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      if (next.x !== pos.x || next.y !== pos.y) {
+        setPos(next);
+        setAdvancedPanelPosition(next);
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [pos]);
+
   // SSG 防御（mathplot-demo 静态导出）：面板仅由用户交互在客户端拉起，服务端一律不渲染
   if (typeof document === 'undefined') return null;
 
   return createPortal(
     <div className="whiteboard-chrome fixed inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={onClose}>
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={t('advFormula.title')}
-        className="touch-panel touch-modal bg-white rounded-2xl shadow-2xl w-[340px] max-w-[calc(100vw-1.5rem)] max-h-[75vh] flex flex-col"
+        className={`touch-panel touch-modal bg-white rounded-2xl shadow-2xl w-[340px] max-w-[calc(100vw-1.5rem)] max-h-[75vh] flex flex-col ${
+          dragging ? 'ring-2 ring-blue-400/50' : ''
+        }`}
+        style={pos ? { position: 'fixed', left: pos.x, top: pos.y } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-1.5 p-3.5 border-b">
+        {/* ZOO-224 拖拽把手：标题栏整体（cursor: move 与 ZOO-207 光标关键字
+            一致；touch-none 断浏览器触摸手势，select-none 断拖拽中选字）。
+            ✕ 关闭钮在 closest('button') 守卫下不进拖拽 */}
+        <div
+          className="flex items-center gap-1.5 p-3.5 border-b cursor-move touch-none select-none"
+          onPointerDown={beginDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          title={t('advFormula.dragHint')}
+        >
           <span className="font-serif italic text-blue-500 text-base leading-none">ƒ</span>
           <h2 className="text-[15px] font-semibold text-gray-700">{t('advFormula.title')}</h2>
           <button
