@@ -38,14 +38,28 @@
  *   中心）+ ×10 预设按钮，经 zoomNeighborhood 换算后一次 onChange + 一次
  *   onCommit（离散变更，D5）；仅显式函数可用（非显式沿既有禁用态，不做
  *   特殊分支）；创建侧无元素域（缺 onDomainChange）不渲染本控件。
+ * - ZOO-204 方案 A（不适用控件组自动折叠）：真相源保持唯一（方程形态），
+ *   「选择显示」由适用性自动完成——微积分区在非显式方程下整区折叠为一行
+ *   原因；物理区 R·H 行 / 参数式区 t/θ 域行在各自不适用时折叠为原因行。
+ *   折叠的是「死控件组」而非整区：模板行（模式切换入口）常显。四个分区
+ *   标题均可点击折叠（教学聚焦）；手动开合为会话级纯 UI 态
+ *   （advancedPanelCollapse.ts，刷新复位），禁用但数据保留的语义不变——
+ *   展开后控件仍是禁用态，方程改回生效形态自动恢复。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '@/i18n/I18nProvider';
 import { PHYSICS_CONSTANT_UNITS } from '@/lib/math/physics';
 import { PLOT_COLORS } from '@/lib/math/plot';
 import { constantDisplayName, normalizeConstantKey, parseConstantValue } from '@/lib/math/normalize';
 import { zoomNeighborhood } from '@/lib/advancedFormula';
+import {
+  advancedCollapseOpen,
+  getAdvancedCollapseOverrides,
+  setAdvancedCollapseOpen,
+  subscribeAdvancedCollapse,
+  type AdvancedCollapseKey,
+} from '@/lib/advancedPanelCollapse';
 import { addDragPoint, removeDragPoint } from '@/lib/math/dragPoint';
 import type { DraggablePoint, MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
@@ -211,6 +225,40 @@ const PRESET_CONSTANTS: readonly { key: string; label: string; def: number }[] =
 const RESERVED_CONSTANT_KEYS = new Set(['x', 'y', 'e', 'pi']);
 /** 常量键合法形（归一化后）：字母开头、字母数字、至多 8 字符。 */
 const CONSTANT_KEY_RE = /^[a-z][a-z0-9]{0,7}$/;
+
+/** 面板内订阅（ZOO-204）：折叠覆盖变更时重渲染；第三参 getServerSnapshot 供
+ *  SSG 预渲染（mathplot-demo 静态导出），快照确定无 hydration 问题。 */
+function useAdvancedCollapseOverrides() {
+  return useSyncExternalStore(
+    subscribeAdvancedCollapse,
+    getAdvancedCollapseOverrides,
+    getAdvancedCollapseOverrides,
+  );
+}
+
+/**
+ * 死控件内组的折叠原因行（ZOO-204）：整行可点展开 / 收起，文案复用既有
+ * 「不适用」提示——折叠行本身就是原因说明（零新资源键）。收起时只此一行，
+ * 展开后渲染原禁用控件（数据保留语义不变）。
+ */
+function InapplicableHintLine({ open, collapseKey, reason }: { open: boolean; collapseKey: AdvancedCollapseKey; reason: string }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={() => setAdvancedCollapseOpen(collapseKey, !open)}
+      className="touch-target w-full flex items-start gap-1 border-none bg-transparent text-left cursor-pointer rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors"
+    >
+      <span
+        className={`text-gray-400 text-[11px] leading-relaxed transition-transform duration-150 ${open ? 'rotate-0' : '-rotate-90'}`}
+        aria-hidden="true"
+      >
+        ⌄
+      </span>
+      <span className="text-[11px] text-gray-400 leading-relaxed">{reason}</span>
+    </button>
+  );
+}
 
 /** T1 常量编辑区：模板行 + 预置槽 + 已绑定行（ZOO-197 各带滑块 / 播放）+ 自定义项 + 解析状态行。 */
 function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
@@ -945,8 +993,12 @@ function CalculusArea({ binding }: { binding: AdvancedCalculusBinding }) {
  *  是参数式 / 极坐标时激活；否则提示并保留模板行引导点选）。 */
 function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
   const t = useT();
+  useAdvancedCollapseOverrides();
   const outcome = validateEquation(binding.equation, t, binding.constants);
   const active = outcome.kind === 'parametric' || outcome.kind === 'polar';
+  // ZOO-204：t/θ 域死控件内组——非参数式 / 极坐标方程时默认折叠为一行原因
+  // （可展开看禁用输入）；模板行常显（点选即切参数式，是模式切换入口）
+  const domainOpen = advancedCollapseOpen('parametric.domain', active);
   const variable = active
     ? outcome.kind === 'polar'
       ? constantDisplayName(outcome.variable ?? 'theta')
@@ -974,8 +1026,13 @@ function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
         </div>
       )}
 
-      {/* t/θ 取值范围：直改实时预览（D5），失焦提交一条；非参数式方程禁用并提示 */}
-      <div className={`flex items-center gap-1.5 ${active ? '' : 'opacity-50'}`}>
+      {/* t/θ 取值范围：直改实时预览（D5），失焦提交一条；非参数式方程禁用并提示。
+          ZOO-204：不适用且未手动展开时折叠为一行原因（InapplicableHintLine） */}
+      {!active && !domainOpen ? (
+        <InapplicableHintLine open={false} collapseKey="parametric.domain" reason={t('advFormula.parametricInactive')} />
+      ) : (
+        <>
+          <div className={`flex items-center gap-1.5 ${active ? '' : 'opacity-50'}`}>
         <span className="font-serif italic text-[13px] text-gray-800 leading-none w-4 text-center">{variable ?? 't'}</span>
         <span className="text-gray-400 text-[11px]" aria-hidden="true">
           ∈
@@ -1009,15 +1066,17 @@ function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
           autoComplete="off"
           className="touch-target flex-1 min-w-0 px-1.5 py-1 border border-gray-300 rounded-md font-serif text-xs text-gray-900 outline-none select-text focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
         />
-      </div>
+          </div>
 
-      {!active && (
-        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.parametricInactive')}</div>
-      )}
-      {active && orderInvalid && (
-        <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
-          ⚠ {t('advFormula.paramDomainOrder')}
-        </div>
+          {!active && (
+            <InapplicableHintLine open collapseKey="parametric.domain" reason={t('advFormula.parametricInactive')} />
+          )}
+          {active && orderInvalid && (
+            <div className="text-[11px] text-red-500 leading-relaxed" role="alert">
+              ⚠ {t('advFormula.paramDomainOrder')}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1028,12 +1087,16 @@ function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
  *  生效；标注数值随常量改值经渲染签名失效实时联动）+ 常量单位显示行。 */
 function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
   const t = useT();
+  useAdvancedCollapseOverrides();
   const outcome = validateEquation(binding.equation, t, binding.constants);
   // 标注仅对参数式轨迹（x=f(t),y=g(t)）生效：简谐振动走显式渲染（零新渲染），
   // 极坐标 / 几何 / 错误态同口径静默禁用（叠加数据保留，方程换回参数式即恢复）
   const applicable = outcome.kind === 'parametric';
   const hasMarks = binding.values.some((o) => o.type === 'physics');
   const disabled = !applicable;
+  // ZOO-204：R·H 死控件内组——非参数式轨迹时默认折叠为一行原因（可展开看
+  // 禁用开关）；模板行与单位行常显（模板点选是切参数式的入口）
+  const marksOpen = advancedCollapseOpen('physics.marks', applicable);
 
   /** 离散变更（开关切换 / 模板点选）：一次 onChange + 一次 onCommit */
   const applyDiscrete = (next: MathPlotOverlay[]) => {
@@ -1073,23 +1136,30 @@ function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
         </div>
       )}
 
-      {/* 落地/峰值标注开关：数值（射程 R / 峰高 H）由渲染管线随常量重算 */}
-      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
-        <input
-          type="checkbox"
-          checked={hasMarks}
-          onChange={toggleMarks}
-          disabled={disabled}
-          className="accent-blue-500"
-        />
-        <span className="font-serif italic text-[13px] leading-none" style={{ color: disabled ? undefined : PLOT_COLORS.overlayPhysics }}>
-          R·H
-        </span>
-        <span className="text-[11px] text-gray-500">{t('phys.marksDesc')}</span>
-      </label>
+      {/* 落地/峰值标注开关：数值（射程 R / 峰高 H）由渲染管线随常量重算。
+          ZOO-204：不适用且未手动展开时整组折叠为一行原因（InapplicableHintLine） */}
+      {marksOpen ? (
+        <>
+          <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+            <input
+              type="checkbox"
+              checked={hasMarks}
+              onChange={toggleMarks}
+              disabled={disabled}
+              className="accent-blue-500"
+            />
+            <span className="font-serif italic text-[13px] leading-none" style={{ color: disabled ? undefined : PLOT_COLORS.overlayPhysics }}>
+              R·H
+            </span>
+            <span className="text-[11px] text-gray-500">{t('phys.marksDesc')}</span>
+          </label>
 
-      {disabled && (
-        <div className="text-[11px] text-gray-400 leading-relaxed">{t('phys.marksNotApplicable')}</div>
+          {disabled && (
+            <InapplicableHintLine open collapseKey="physics.marks" reason={t('phys.marksNotApplicable')} />
+          )}
+        </>
+      ) : (
+        <InapplicableHintLine open={false} collapseKey="physics.marks" reason={t('phys.marksNotApplicable')} />
       )}
 
       {/* 常量单位显示行：随常量改值实时更新（数值来自常量绑定，单位仅显示） */}
@@ -1104,6 +1174,7 @@ function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
 
 export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric, physics }: AdvancedFormulaPanelProps) {
   const t = useT();
+  useAdvancedCollapseOverrides();
 
   // Esc 关闭（窗口级监听，LanguageSwitch 同款）。T1 起面板含文本输入（常量名/数值），
   // 输入中 Esc 关面板是模态标准行为；画布快捷键守卫按事件目标判定，不受本监听影响
@@ -1149,9 +1220,22 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
             const parametricLive = s.id === 'parametric' && parametric;
             const physicsLive = s.id === 'physics' && physics;
             const live = constantsLive || calculusLive || parametricLive || physicsLive;
+            // ZOO-204 方案 A：不适用分区默认折叠——微积分区仅显式函数可用（非显式
+            // 收起为一行原因，方程改回显式自动展开）；其余分区默认展开（模板行是
+            // 模式切换入口，常显）。任何分区都可手动折叠 / 展开（会话内记住）
+            const defaultOpen = s.id === 'calculus' ? Boolean(calculus?.applicable) : true;
+            const open = advancedCollapseOpen(s.id, defaultOpen);
+            const bodyId = `adv-section-${s.id}`;
+            const inapplicableReason = calculusLive && calculus && !calculus.applicable ? t('advFormula.calcNotApplicable') : null;
             return (
               <section key={s.id} className="border border-gray-200 rounded-lg p-2.5 flex flex-col gap-1">
-                <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={bodyId}
+                  onClick={() => setAdvancedCollapseOpen(s.id, !open)}
+                  className="touch-target w-full flex items-center gap-1.5 border-none bg-transparent text-left cursor-pointer rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
                   <span className="font-serif italic text-blue-500 text-sm leading-none">{s.glyph}</span>
                   <span className="text-[13px] font-semibold text-gray-700">{t(s.nameKey)}</span>
                   {!live && (
@@ -1159,20 +1243,37 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
                       {t('advFormula.comingSoon')}
                     </span>
                   )}
-                </div>
-                <div className="text-[11px] text-gray-500 leading-relaxed">{t(s.descKey)}</div>
-                {constantsLive ? (
-                  <ConstantsArea binding={constants} />
-                ) : calculusLive ? (
-                  <CalculusArea binding={calculus} />
-                ) : parametricLive ? (
-                  <ParametricArea binding={parametric} />
-                ) : physicsLive ? (
-                  <PhysicsArea binding={physics} />
+                  <span
+                    className={`${live ? 'ml-auto' : ''} text-gray-400 text-[11px] leading-none transition-transform duration-150 ${
+                      open ? 'rotate-0' : '-rotate-90'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    ⌄
+                  </span>
+                </button>
+                {open ? (
+                  <div id={bodyId} className="flex flex-col gap-1">
+                    <div className="text-[11px] text-gray-500 leading-relaxed">{t(s.descKey)}</div>
+                    {constantsLive ? (
+                      <ConstantsArea binding={constants} />
+                    ) : calculusLive ? (
+                      <CalculusArea binding={calculus} />
+                    ) : parametricLive ? (
+                      <ParametricArea binding={parametric} />
+                    ) : physicsLive ? (
+                      <PhysicsArea binding={physics} />
+                    ) : (
+                      // T0 占位：分区控件由后续任务填充
+                      <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">
+                        ▢ ▢ ▢
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  // T0 占位：分区控件由后续任务填充
-                  <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">
-                    ▢ ▢ ▢
+                  // 折叠态一行：不适用原因（微积分区）或分区描述
+                  <div id={bodyId} className="text-[11px] text-gray-400 leading-relaxed">
+                    {inapplicableReason ?? t(s.descKey)}
                   </div>
                 )}
               </section>
