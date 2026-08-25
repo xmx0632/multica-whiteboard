@@ -164,6 +164,126 @@ export function sampleExplicitMulti(
 }
 
 /**
+ * 分段多序列采样（ZOO-216）：sampleExplicitMulti 的分段增强版，两条分段专属
+ * 规则（评审方案「采样断笔」）：
+ *
+ * 1. **折点精确**：条件常数边界（breakpoints）并入采样网格——熔化平台端点、
+ *    计费折点恰好落在分段点上，不随网格相位漂移（折点不粘连）。
+ * 2. **跳跃断笔无伪竖线**：对每序列在每个边界 b 以 b±δ 一侧极限探测跳变
+ *    （|F(b−δ)−F(b+δ)| 超相对阈值即跳跃间断）——发生跳跃时按 F(b) 与两侧
+ *    极限的远近判定 b 点归属（靠近左极限归左支、断在其后；反之断在其前），
+ *    两侧折线在 b 处断开、不画竖直连线。连续折点（如熔化曲线 t=2 处
+ *    5t−10→0 平滑衔接）两侧极限相等，不断笔、折线连通成教材折线形态。
+ *    f′ 序列同规则受益：连续但不可导的折点处导数发生跳跃（5→0），f′ 在该
+ *    处断笔——「分段点不可导按 NaN 断笔」的可见呈现（abs 先例同口径）。
+ *
+ * 既有渐近线断笔（越窗双向大跳）与 NaN 断笔照常；条件间隙（无段命中）求值
+ * NaN 自然断笔（无定义区间的正确语义，评审边缘场景 6）。
+ */
+export function samplePiecewiseMulti(
+  fns: readonly ((x: number) => number)[],
+  breakpoints: readonly number[],
+  view: Pick<MathViewport, 'xMin' | 'xMax'> & Partial<Pick<MathViewport, 'yMin' | 'yMax'>>,
+  count: number,
+  t: LibT = zhT,
+): MultiSampleResult {
+  const { xMin, xMax } = view;
+  if (!(xMin < xMax)) return { error: t('mathErr.domainOrder') };
+  const width = xMax - xMin;
+  if (width < MIN_DOMAIN_WIDTH - 1e-12 || width > MAX_DOMAIN_WIDTH + 1e-12) {
+    return { error: t('mathErr.domainWidth') };
+  }
+
+  const n = clampSampleCount(count);
+  const xs: number[] = [];
+  for (let i = 0; i < n; i++) xs.push(xMin + (width * i) / (n - 1));
+  for (const b of breakpoints) {
+    if (Number.isFinite(b) && b > xMin && b < xMax) xs.push(b);
+  }
+  xs.sort((a, b) => a - b);
+  const grid: number[] = [];
+  for (const x of xs) {
+    if (grid.length === 0 || x - grid[grid.length - 1] > 1e-9 * (1 + Math.abs(x))) grid.push(x);
+  }
+
+  const rows = fns.map((fn) => grid.map((x) => fn(x)));
+  if (rows.every((ys) => ys.every((y) => !Number.isFinite(y)))) {
+    return { error: t('mathErr.noValidValues') };
+  }
+
+  // 各序列独立稳健拟合 → 取窗口并集（口径同 sampleExplicitMulti）
+  let autoMin = Infinity;
+  let autoMax = -Infinity;
+  for (const ys of rows) {
+    const finiteYs = ys.filter((y) => Number.isFinite(y));
+    if (finiteYs.length === 0) continue;
+    const fit = fitYWindow(finiteYs);
+    autoMin = Math.min(autoMin, fit.min);
+    autoMax = Math.max(autoMax, fit.max);
+  }
+  const yMin = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMin : autoMin;
+  const yMax = view.yMin !== undefined && view.yMax !== undefined && view.yMin < view.yMax ? view.yMax : autoMax;
+  const span = yMax - yMin;
+
+  // 跳跃边界的逐序列判定：一侧极限探测 + b 点归属（见函数头注释第 2 条）。
+  // δ 与阈值的配比：线性段在 b±δ 的探测值带 slope·δ 的系统性偏差（连续折点
+  // 两侧读数差 ≈ 斜率·2δ），阈值须吞掉该抹平量、又远小于真实跳跃——取
+  // δ = 宽度·10⁻⁹、阈值 = 10⁻⁶·(1+|两侧|)，中间隔三个数量级。
+  const delta = Math.max(1e-12, width * 1e-9);
+  const edges: Array<{ x: number; breakAfter: boolean }[]> = fns.map((fn) => {
+    const list: Array<{ x: number; breakAfter: boolean }> = [];
+    for (const b of breakpoints) {
+      if (!(b > xMin && b < xMax)) continue;
+      const fl = fn(b - delta);
+      const fr = fn(b + delta);
+      if (!Number.isFinite(fl) || !Number.isFinite(fr)) continue;
+      if (Math.abs(fl - fr) <= 1e-6 * (1 + Math.abs(fl) + Math.abs(fr))) continue; // 连续折点：连通
+      const fb = fn(b);
+      if (!Number.isFinite(fb)) continue; // b 无定义：NaN 断笔已覆盖
+      list.push({ x: b, breakAfter: Math.abs(fb - fl) <= Math.abs(fb - fr) });
+    }
+    return list;
+  });
+
+  const series = rows.map((ys, k) => {
+    const polylines: Polyline[] = [];
+    let current: Polyline = [];
+    const breakHere = () => {
+      if (current.length > 0) polylines.push(current);
+      current = [];
+    };
+    for (let i = 0; i < grid.length; i++) {
+      const x = grid[i];
+      const y = ys[i];
+      if (!Number.isFinite(y)) {
+        breakHere();
+        continue;
+      }
+      if (current.length > 0) {
+        const prevX = current[current.length - 1].x;
+        const prevY = current[current.length - 1].y;
+        const jumpsAcrossWindow =
+          span > 0 && ((prevY > yMax && y < yMin) || (y > yMax && prevY < yMin));
+        if (jumpsAcrossWindow && Math.abs(y - prevY) > span) breakHere();
+        else {
+          for (const e of edges[k]) {
+            // breakAfter：b 点归左支，断在 b 与下一点之间；否则断在上一点与 b 之间
+            if ((e.breakAfter && prevX <= e.x && x > e.x) || (!e.breakAfter && prevX < e.x && x >= e.x)) {
+              breakHere();
+              break;
+            }
+          }
+        }
+      }
+      current.push({ x, y });
+    }
+    breakHere();
+    return polylines;
+  });
+  return { series, yMin, yMax, xMin, xMax };
+}
+
+/**
  * 显式函数采样（sampleExplicitMulti 的单函数封装，行为与历史逐字节一致）。
  *
  * @param fn        parseEquation 产出的求值函数（异常时返回 NaN）
@@ -543,6 +663,13 @@ export function sampleEquation(
   if (result.kind === 'explicit') {
     return sampleExplicit(result.fn, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, t);
   }
+  if (result.kind === 'piecewise') {
+    // 分段采样（ZOO-216）：折点并入网格 + 跳跃断笔（见 samplePiecewiseMulti）
+    const r = samplePiecewiseMulti([result.fn], result.breakpoints, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, t);
+    if ('error' in r) return r;
+    const { series, ...rest } = r;
+    return { polylines: series[0], ...rest };
+  }
   if (result.kind === 'parametric') {
     return sampleParametric(result.fx, result.fy, opts, opts.sampleCount ?? DEFAULT_SAMPLE_COUNT, opts.aspect ?? DEFAULT_ASPECT, t);
   }
@@ -582,20 +709,21 @@ export function createPreviewPolylines(
     if ('error' in sampled) return null;
     return { polylines: sampled.polylines, xMin: sampled.xMin, xMax: sampled.xMax, yMin: sampled.yMin, yMax: sampled.yMax };
   }
-  if (outcome.kind !== 'explicit') {
+  if (outcome.kind !== 'explicit' && outcome.kind !== 'piecewise') {
     const sampled = sampleGeometry(outcome.kind, outcome.params);
     if ('error' in sampled) return null;
     return { polylines: sampled.polylines, xMin: sampled.xMin, xMax: sampled.xMax, yMin: sampled.yMin, yMax: sampled.yMax };
   }
   const parsed = parseEquation(equation, zhT, constants);
-  if (parsed.kind !== 'explicit') return null;
+  if (parsed.kind !== 'explicit' && parsed.kind !== 'piecewise') return null;
   // ZOO-213：显式函数的域草稿（学段模板的自变量定义域预置）参与采样——
   // 预览窗口与插入后的元素 xAxis 一致；缺省 / 非法回落默认 ±10。
+  // ZOO-216：piecewise 走 sampleEquation 分发（折点并入网格 + 跳跃断笔）。
   const dom =
     domain !== undefined && Number.isFinite(domain.min) && Number.isFinite(domain.max) && domain.min < domain.max
       ? domain
       : { min: -10, max: 10 };
-  const sampled = sampleExplicit(parsed.fn, { xMin: dom.min, xMax: dom.max }, DEFAULT_SAMPLE_COUNT);
+  const sampled = sampleEquation(parsed, { xMin: dom.min, xMax: dom.max, sampleCount: DEFAULT_SAMPLE_COUNT });
   if ('error' in sampled) return null;
   return { polylines: sampled.polylines, xMin: dom.min, xMax: dom.max, yMin: sampled.yMin, yMax: sampled.yMax };
 }

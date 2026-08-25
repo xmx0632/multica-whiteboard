@@ -33,7 +33,7 @@ import { GREEK_CONSTANT_NAMES, normalizeEquation } from './normalize';
 import { buildImplicitExpression, classifyImplicit, splitTopLevelEquals, type BinaryFn } from './conic';
 import { compileCached } from './cache';
 import { zhT, type LibT } from '../../i18n/lib';
-import type { CircleParams, EllipseParams, ParseResult } from './types';
+import type { CircleParams, EllipseParams, ParseResult, PiecewiseSegment } from './types';
 
 const err = (message: string): ParseResult => ({ kind: 'error', message });
 
@@ -437,16 +437,319 @@ function parseImplicit(src: string, t: LibT): ParseResult {
 }
 
 /**
+ * 分段方程前置分支（ZOO-216，评审方案候选 A）：`y={条件:值; …; 值}` /
+ * `q(t)={…}` / 裸 `{…}`——剥前缀后以 `{` 开头即进入本分支（parametric /
+ * polar 之前：`y={…}` 内部逗号不构成顶层逗号双等式，且 parametric 形输入
+ * 不以花括号体开头，两类形态互不侵占）。
+ *
+ * 文法：段以 `;` 或 `,` 分隔（括号内不算——`min(x,1)` 的参数逗号不切分，
+ * 评审边缘场景 1）；每段 `条件:值`，条件为比较链（`x<0`、`0<=x<2`，链式
+ * 即教材写法），末段可省条件作默认兜底（仅允许末位——中间的无条件段按
+ * 残缺报错，含比较运算符时定向引导「条件:值」顺序，评审边缘场景 2/3）。
+ * 求值：按书写顺序**首个条件为真的段生效**（字典序，评审决策 7），全部
+ * 不中返回 NaN（采样期断笔——条件间隙是正确的无定义语义）。
+ *
+ * 安全：段的值表达式与条件比较侧均逐段回灌既有安全管线（字符白名单 →
+ * mathjs parse → AST 节点白名单 → compile LRU），**不放开 ConditionalNode**
+ * （mathjs 对 `{…}` 按对象字面量解析，本就是自建结构）；禁 eval /
+ * Assignment / Accessor 防线原样。形不符（非花括号体）返回 null 交回既有
+ * 路径（零回归，参照 ZOO-191 前置分支接入方式）。
+ */
+const PIECEWISE_CMP_RE = /(<=|>=|<|>)/;
+
+/** 花括号内顶层段切分（`;` / `,`，括号深度内不算）。 */
+function splitPiecewiseSegments(inner: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (depth === 0 && (c === ';' || c === ',')) {
+      parts.push(inner.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(inner.slice(start));
+  // 评审边缘场景 4：末尾多余分隔符容忍（教师常留尾 `;`）；中段空串是残缺
+  while (parts.length > 1 && parts[parts.length - 1] === '') parts.pop();
+  return parts;
+}
+
+/** 段内首个顶层 `:` 位置（无则 -1）。 */
+function piecewiseColonAt(segment: string): number {
+  let depth = 0;
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === ':' && depth === 0) return i;
+  }
+  return -1;
+}
+
+/** 分段剥前缀后的方程体（y= / q(t)= 同显式路径单源剥离）；非方程形态原样返回。 */
+function piecewiseBody(src: string): string {
+  return src.replace(/^y=/, '').replace(/^([a-z])\([a-z]\)=/, '');
+}
+
+/**
+ * 分段条件链编译：比较侧逐侧过安全管线，产出谓词与常数边界。
+ * 边界提取规则（供采样折点并入与端点标记）：比较一侧恰为自变量本身、
+ * 另一侧为常数表达式才产边界；同链上下界矛盾（如 2<x<1）报区间矛盾。
+ */
+interface PiecewiseCond {
+  test: (x: number) => boolean;
+  bounds: Array<{ at: number; closed: boolean }>;
+  syms: Set<string>;
+}
+
+function compilePiecewiseCond(
+  condStr: string,
+  variable: string,
+  constants: Record<string, number> | undefined,
+  dictActive: boolean,
+  segmentNo: number,
+  t: LibT,
+): PiecewiseCond | { error: ParseResult } {
+  const rawParts = condStr.split(PIECEWISE_CMP_RE);
+  const ops: Array<'<' | '<=' | '>' | '>='> = [];
+  const exprs: Array<{ src: string; node: MathNode; syms: Set<string> }> = [];
+  for (let i = 1; i < rawParts.length; i += 2) ops.push(rawParts[i] as '<' | '<=' | '>' | '>=');
+  if (ops.length === 0) {
+    // 无比较运算符：覆盖「用了 = 作条件」（x=2，含 = 的段不进编译——避免落入
+    // 字符白名单的 badChar 笼统报错）与纯表达式两种残缺
+    return { error: err(t('mathErr.piecewiseCondInvalid', { n: segmentNo })) };
+  }
+  for (let i = 0; i < rawParts.length; i += 2) {
+    const part = rawParts[i];
+    if (!part) return { error: err(t('mathErr.piecewiseCondInvalid', { n: segmentNo })) };
+    const compiled = compileParamBody(part, t);
+    if ('error' in compiled) return { error: compiled.error };
+    exprs.push({ src: part, node: compiled.node, syms: compiled.syms });
+  }
+
+  const syms = new Set<string>();
+  for (const e of exprs) for (const s of e.syms) syms.add(s);
+
+  const evalWith = (i: number, x: number): number => {
+    try {
+      const scope: Record<string, number> = dictActive ? { ...constants } : {};
+      scope[variable] = x;
+      const v = compileCached(exprs[i].src, exprs[i].node).evaluate(scope);
+      return typeof v === 'number' ? v : NaN;
+    } catch {
+      return NaN;
+    }
+  };
+
+  const bounds: Array<{ at: number; closed: boolean }> = [];
+  const constantAt = (i: number): number | null => {
+    try {
+      const v = compileCached(exprs[i].src, exprs[i].node).evaluate(dictActive ? { ...constants } : {});
+      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const lowerBounds: Array<{ at: number; closed: boolean }> = [];
+  const upperBounds: Array<{ at: number; closed: boolean }> = [];
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    // 一侧恰为自变量、另一侧为常数 → 可静态判定的区间边界
+    if (exprs[i].src === variable) {
+      const c = constantAt(i + 1);
+      if (c !== null) upperBounds.push({ at: c, closed: op === '<=' });
+    } else if (exprs[i + 1].src === variable) {
+      const c = constantAt(i);
+      if (c !== null) lowerBounds.push({ at: c, closed: op === '>=' });
+    }
+  }
+  // 链内上下界矛盾（如 2<x<1、2<=x<2）：左界须不大于右界（双侧开时须严格小于）
+  for (const lo of lowerBounds) {
+    for (const up of upperBounds) {
+      if (lo.at > up.at || (lo.at === up.at && !(lo.closed && up.closed))) {
+        return { error: err(t('mathErr.piecewiseEmptyInterval', { n: segmentNo })) };
+      }
+    }
+  }
+  bounds.push(...lowerBounds, ...upperBounds);
+
+  const test = (x: number): boolean => {
+    const vals = exprs.map((_, i) => evalWith(i, x));
+    for (let i = 0; i < ops.length; i++) {
+      const a = vals[i];
+      const b = vals[i + 1];
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+      if (ops[i] === '<' && !(a < b)) return false;
+      if (ops[i] === '<=' && !(a <= b)) return false;
+      if (ops[i] === '>' && !(a > b)) return false;
+      if (ops[i] === '>=' && !(a >= b)) return false;
+    }
+    return true;
+  };
+  return { test, bounds, syms };
+}
+
+/**
+ * 分段方程解析（ZOO-216）：见 parsePiecewise 上方文法说明。产出
+ * kind='piecewise'（segments 供采样断笔 / 端点标记 / 逐段求导，breakpoints
+ * 为常数边界去重升序——采样网格并入保证折点精确）。
+ */
+function parsePiecewise(src: string, t: LibT, constants?: Record<string, number>): ParseResult | null {
+  const body = piecewiseBody(src);
+  if (!body.startsWith('{')) return null;
+  if (!body.endsWith('}')) return err(t('mathErr.piecewiseUnclosed'));
+  const inner = body.slice(1, -1);
+
+  const dictActive = constants !== undefined && Object.keys(constants).length > 0;
+  const segmentsRaw = splitPiecewiseSegments(inner);
+  if (segmentsRaw.length === 0 || segmentsRaw.every((s) => s === '')) {
+    return err(t('mathErr.piecewiseBranchIncomplete', { n: 1 }));
+  }
+
+  // —— 第一遍：段形拆分（条件串 / 值串），无条件段仅允许末位 ——
+  const drafted: Array<{ condStr: string | null; valueStr: string }> = [];
+  for (let i = 0; i < segmentsRaw.length; i++) {
+    const raw = segmentsRaw[i];
+    const colonAt = piecewiseColonAt(raw);
+    if (colonAt === -1) {
+      if (i !== segmentsRaw.length - 1) {
+        // 评审边缘场景 2：误用值前置写法（{x<0, -x; …} 切段后首段即含比较
+        // 运算符而无冒号）→ 定向引导，不出笼统格式错 / 裸 mathjs 报错
+        if (PIECEWISE_CMP_RE.test(raw)) return err(t('mathErr.piecewiseValueFirst', { n: i + 1 }));
+        return err(t('mathErr.piecewiseBranchIncomplete', { n: i + 1 }));
+      }
+      drafted.push({ condStr: null, valueStr: raw });
+      continue;
+    }
+    const condStr = raw.slice(0, colonAt);
+    const valueStr = raw.slice(colonAt + 1);
+    if (!condStr || !valueStr) return err(t('mathErr.piecewiseBranchIncomplete', { n: i + 1 }));
+    drafted.push({ condStr, valueStr });
+  }
+
+  // —— 值表达式逐段过安全管线（与显式路径同款）——
+  const values: Array<{ src: string; node: MathNode; syms: Set<string> }> = [];
+  for (let i = 0; i < drafted.length; i++) {
+    const compiled = compileParamBody(drafted[i].valueStr, t);
+    if ('error' in compiled) return compiled.error;
+    values.push({ src: drafted[i].valueStr, node: compiled.node, syms: compiled.syms });
+  }
+
+  // —— 自变量裁决（口径同显式路径：常量剔除 / 希腊名引导 / 恰一个字母）——
+  const union = new Set<string>();
+  for (const v of values) for (const s of v.syms) union.add(s);
+  const { candidates, unassigned, bad, hasUnassignedGreek, dictActive: active } = splitFreeSymbols(union, constants);
+  if (bad) return err(t('mathErr.badSymbolExplicit', { name: bad }));
+  const variableReserve = unassigned.includes('x') ? 'x' : candidates[0];
+  const missingConstants = [...new Set(unassigned.filter((s) => s !== variableReserve))];
+  if (hasUnassignedGreek) {
+    return {
+      kind: 'error',
+      message: t('mathErr.multiVarWithConstants', { list: unassigned.join(t('common.listSep')) }),
+      ...(missingConstants.length > 0 ? { missingConstants } : {}),
+    };
+  }
+  if (candidates.length > 1) {
+    const messageKey = active ? 'mathErr.multiVarWithConstants' : 'mathErr.multiVarExplicit';
+    return {
+      kind: 'error',
+      message: t(messageKey, { list: candidates.join(t('common.listSep')) }),
+      ...(missingConstants.length > 0 ? { missingConstants } : {}),
+    };
+  }
+  const variable = candidates[0] ?? 'x';
+
+  // —— 条件链编译（需要 variable 判定边界归属）；值求值闭包 ——
+  const segments: PiecewiseSegment[] = [];
+  for (let i = 0; i < drafted.length; i++) {
+    const valueFn = (x: number): number => {
+      try {
+        const scope: Record<string, number> = dictActive ? { ...constants } : {};
+        scope[variable] = x;
+        const v = compileCached(values[i].src, values[i].node).evaluate(scope);
+        return typeof v === 'number' ? v : NaN;
+      } catch {
+        return NaN;
+      }
+    };
+    if (drafted[i].condStr === null) {
+      segments.push({ isDefault: true, test: () => true, value: valueFn, bounds: [] });
+      continue;
+    }
+    const cond = compilePiecewiseCond(drafted[i].condStr as string, variable, constants, dictActive, i + 1, t);
+    if ('error' in cond) return cond.error;
+    // 条件里出现值路径未见的未赋值字母（如 x<k 的 k 未绑定）→ 补进裁决
+    for (const s of cond.syms) {
+      if (s === 'pi' || s === 'e' || s === variable) continue;
+      const assigned = constants ? s in constants : false;
+      if (!assigned && !GREEK_CONSTANT_NAMES.has(s)) {
+        return err(t('mathErr.badSymbolExplicit', { name: s }));
+      }
+      if (!assigned) {
+        return {
+          kind: 'error',
+          message: t('mathErr.multiVarWithConstants', { list: [s, variable].join(t('common.listSep')) }),
+        };
+      }
+    }
+    segments.push({ isDefault: false, test: cond.test, value: valueFn, bounds: cond.bounds });
+  }
+
+  const fn = (x: number): number => {
+    for (const seg of segments) {
+      if (seg.test(x)) return seg.value(x);
+    }
+    return NaN;
+  };
+  const breakpoints = [...new Set(segments.flatMap((s) => s.bounds.map((b) => b.at)))].sort((a, b) => a - b);
+  return {
+    kind: 'piecewise',
+    fn,
+    ...(variable !== 'x' ? { variable } : {}),
+    segments,
+    breakpoints,
+  };
+}
+
+/**
+ * 分段值表达式原文（ZOO-216）：calculus.ts 逐段符号求导的输入源（与
+ * explicitBody 同职责的单源提取）。形不符（非花括号体）返回 null。
+ * 仅提取「值」串——求导只对值求导，条件不参与。
+ */
+export function piecewiseValueBodies(raw: string): string[] | null {
+  const src = normalizeEquation(raw);
+  if (!src || src.includes('|') || src.includes('√')) return null;
+  const body = piecewiseBody(src);
+  if (!body.startsWith('{') || !body.endsWith('}')) return null;
+  const segmentsRaw = splitPiecewiseSegments(body.slice(1, -1));
+  const bodies: string[] = [];
+  for (const segment of segmentsRaw) {
+    const colonAt = piecewiseColonAt(segment);
+    const valueStr = colonAt === -1 ? segment : segment.slice(colonAt + 1);
+    if (!valueStr) return null;
+    bodies.push(valueStr);
+  }
+  return bodies.length > 0 ? bodies : null;
+}
+
+/**
  * 方程解析入口（编辑器每键调用 / 确认出图共用）。
  *
- * 分类：parametric / polar（ZOO-191 T4 前置分支）→ explicit（含求值函数）/
- * line（二元一次，D7）/ circle / ellipse / error。
+ * 分类：piecewise（ZOO-216 花括号前置分支）→ parametric / polar（ZOO-191 T4
+ * 前置分支）→ explicit（含求值函数）/ line（二元一次，D7）/ circle /
+ * ellipse / error。
  * 安全：AST 白名单 + scope 只注入实际用到的变量字母（ZOO-166 方案 A 起不限于 x/y），无 eval，无属性访问。
  * ZOO-188（T1 常量绑定）：constants 非空时显式路径走符号三分法——常量从自由
  * 符号集剔除，求值 scope 同时注入自变量 + 常量（自变量后注入，同名时自变量优先）；
  * 缺省 / 空字典与现状逐字节一致（既有单测零改动）。
  * ZOO-191（T4）：parametric / polar 分支前置（几何标准形 / 显式 / 隐式之前），
  * 形不符即返回 null 交回既有路径——普通单方程行为不变（零回归）。
+ * ZOO-216：piecewise 前置分支在最前（parametric 之前）——`y={…}` 的段内
+ * 逗号不触发顶层逗号双等式切分；`r={…}` / `x={…},y=…` 仍由 parametric /
+ * polar 分支按既有 badChar 拦截（参数式分段 v1 不支持，评审决策 5）。
  */
 export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<string, number>): ParseResult {
   const src = normalizeEquation(raw);
@@ -454,6 +757,10 @@ export function parseEquation(raw: string, t: LibT = zhT, constants?: Record<str
 
   // 未配对的 | / √ 在归一化中保留原样，统一在此报未闭合
   if (src.includes('|') || src.includes('√')) return err(t('mathErr.parenUnclosed'));
+
+  // ZOO-216 前置分支：花括号体 → piecewise
+  const piecewise = parsePiecewise(src, t, constants);
+  if (piecewise) return piecewise;
 
   // ZOO-191 T4 前置分支：顶层逗号双等式 → parametric；r= 前缀 → polar
   const parametric = parseParametric(src, t, constants);
@@ -556,5 +863,6 @@ export function explicitBody(raw: string): string | null {
   const body = src.replace(/^y=/, '').replace(/^([a-z])\([a-z]\)=/, '');
   if (!body || body.includes('=')) return null;
   if (/(^|[^a-z])y([^a-z]|$)/.test(body)) return null;
+  if (body.startsWith('{')) return null; // 分段体走 piecewiseValueBodies（ZOO-216 单源口径）
   return body;
 }

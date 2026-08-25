@@ -171,6 +171,10 @@
     "tplRotatedHyperbola": "Rotated hyperbola",
     "tplRotatedEllipse": "Rotated ellipse",
     "tplKeplerOrbit": "Kepler elliptic orbit (Sun at focus)",
+    "tplCrystalMelt": "Crystal melting T-t graph (with plateau)",
+    "tplTaxiFare": "Tiered taxi fare (flag-down + per-km)",
+    "tplPiecewiseIntro": "Piecewise function (absolute value)",
+    "kindPiecewise": "Piecewise function",
     "tplProportional": "Proportional y=2x",
     "tplInverseProp": "Inverse proportion",
     "tplLetterCoeff": "Letters for numbers (slider a)",
@@ -260,7 +264,8 @@
     "delete": "Delete",
     "hint": "Parameter changes redraw instantly; move / resize / delete can be undone with Ctrl+Z.",
     "badgeParametric": "Parametric",
-    "badgePolar": "Polar"
+    "badgePolar": "Polar",
+    "badgePiecewise": "Piecewise"
   },
   "advFormula": {
     "entryLabel": "Calculus / Physics…",
@@ -369,6 +374,11 @@
     "unknownFn": "Unknown function \"{name}\" — supported: sin, cos, tan, sec, csc, cot, sqrt, abs, log, exp, asin, acos, atan, floor, ceil, round, sign, mod, min, max",
     "arity": "Wrong number of function arguments — check inside the parentheses (e.g. sin(x), log(8,2))",
     "parenUnclosed": "Unclosed parenthesis or absolute value bars — close them, e.g. y=sin(x)",
+    "piecewiseUnclosed": "Piecewise is missing the closing brace “}” — add “}” to finish it (e.g. y={x<0:-x; x})",
+    "piecewiseBranchIncomplete": "Segment {n} is incomplete — each segment must be “condition:expression” (e.g. x<0:-x); the unconditional default may only be the last segment",
+    "piecewiseCondInvalid": "The condition of segment {n} is not recognized — write it like x<0, x≥0 or 0≤x<2 (“=” is not supported as a condition)",
+    "piecewiseEmptyInterval": "The condition interval of segment {n} is contradictory (e.g. 2<x<1) — the left bound must not exceed the right bound",
+    "piecewiseValueFirst": "Segment {n} seems to put the value before the condition — write each segment as “condition:value” (e.g. y={x<0:-x; x})",
     "incomplete": "Incomplete expression — finish the formula, e.g. y=2x+1",
     "badNumber": "Invalid number format — check the notation, e.g. 1.5",
     "oneEquals": "An equation can contain only one equals sign",

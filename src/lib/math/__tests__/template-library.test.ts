@@ -1,10 +1,11 @@
 /**
- * 学段模板库全量验收（ZOO-213；ZOO-215 增开普勒轨道）。
+ * 学段模板库全量验收（ZOO-213；ZOO-215 增开普勒轨道；ZOO-216 增分段 3 条）。
  *
- * 「27 条存量 + 23 条新增 + 1 条开普勒 = 51 条逐条插入出图」的自动化证据：
- * 面板 43 条 + 高级公式 1 条 + 参数式 4 条 + 物理 3 条，每条走真实插入链路——
- * validateEquation（含常量裁决）→ createPreviewPolylines（面板预览采样）→
- * createMathPlotElement（元素工厂）→ sampleEquation（按元素 xAxis 重采样）。
+ * 「27 条存量 + 23 条新增 + 1 条开普勒 + 3 条分段 = 54 条逐条插入出图」的
+ * 自动化证据：面板 46 条 + 高级公式 1 条 + 参数式 4 条 + 物理 3 条，每条走
+ * 真实插入链路——validateEquation（含常量裁决）→ createPreviewPolylines
+ * （面板预览采样）→ createMathPlotElement（元素工厂）→ sampleEquation
+ * （按元素 xAxis 重采样）。
  * 硬约束：任何带常量模板不允许出现「插入后报欠定/缺常量错误」。
  */
 import { describe, expect, it } from 'vitest';
@@ -54,9 +55,9 @@ function payloadFor(tpl: LibraryEntry['tpl']): EquationDraftPayload {
 }
 
 describe('模板库全量插入出图（51 条，ZOO-213 验收 + ZOO-215）', () => {
-  it('库容量：43 面板 + 1 高级 + 4 参数式 + 3 物理 = 51', () => {
-    expect(LIBRARY).toHaveLength(50);
-    expect(EQUATION_TEMPLATES).toHaveLength(43);
+  it('库容量：46 面板（ZOO-216 分段 +3）+ 1 高级 + 4 参数式 + 3 物理 = 54', () => {
+    expect(LIBRARY).toHaveLength(53);
+    expect(EQUATION_TEMPLATES).toHaveLength(46);
     expect(LIBRARY.filter((e) => e.source === 'advanced')).toHaveLength(0); // sineConstants 走专测
   });
 

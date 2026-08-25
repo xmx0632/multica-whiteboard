@@ -21,7 +21,7 @@
  */
 import { derivative, parse, simplify } from 'mathjs/number';
 import { compileCached } from './cache';
-import { explicitBody, parseEquation } from './parse';
+import { explicitBody, parseEquation, piecewiseValueBodies } from './parse';
 import type { Polyline } from './types';
 import { zhT, type LibT } from '../../i18n/lib';
 
@@ -55,6 +55,45 @@ export function derivativeOf(
   opts: { constants?: Record<string, number>; t?: LibT } = {},
 ): DerivativeOutcome {
   const parsed = parseEquation(equation, opts.t ?? zhT, opts.constants);
+  // ZOO-216：分段函数逐段符号求导——每段值表达式就是普通显式式，回灌既有
+  // 求导链；求值按段序首个命中取该段导数（无命中 NaN 断笔）。分段点不可导
+  // 的断笔呈现由渲染层采样规则承担（samplePiecewiseMulti 一侧极限跳变探测
+  // ——f′ 在折点处的跳跃即断笔，abs 不可导先例同口径）。
+  if (parsed.kind === 'piecewise') {
+    const bodies = piecewiseValueBodies(equation);
+    // 理论不可达（parseEquation 已判 piecewise）；防御性兜底
+    if (bodies === null) return { ok: false, reason: 'notExplicit' };
+    const variable = parsed.variable ?? 'x';
+    const withConstants = opts.constants && Object.keys(opts.constants).length > 0;
+    try {
+      const perSegment = bodies.map((body) => {
+        // 坑一：derivative → simplify 固定顺序（见文件头）
+        const simplified = simplify(derivative(parse(body), variable));
+        const expr = simplified.toString();
+        const compiled = compileCached(DERIV_CACHE_PREFIX + expr, simplified);
+        const fn = (x: number): number => {
+          try {
+            const scope: Record<string, number> = withConstants ? { ...opts.constants } : {};
+            scope[variable] = x;
+            const v = compiled.evaluate(scope);
+            return typeof v === 'number' ? v : NaN;
+          } catch {
+            return NaN;
+          }
+        };
+        return { fn, expr };
+      });
+      const fn = (x: number): number => {
+        for (let i = 0; i < parsed.segments.length; i++) {
+          if (parsed.segments[i].test(x)) return perSegment[i].fn(x);
+        }
+        return NaN;
+      };
+      return { ok: true, fn, expr: perSegment.map((d) => d.expr).join(' ; ') };
+    } catch {
+      return { ok: false, reason: 'unsupported' };
+    }
+  }
   if (parsed.kind !== 'explicit') return { ok: false, reason: 'notExplicit' };
   const variable = parsed.variable ?? 'x';
   const body = explicitBody(equation);

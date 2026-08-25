@@ -13,9 +13,12 @@ import type { Point } from '../types';
 /**
  * ZOO-191（T4）：parametric（x=f(t),y=g(t) 顶层逗号双等式）与 polar（r= 前缀）。
  * 求值函数约定与 explicit 同款——异常 / 非 number 返回 NaN（采样期按断笔处理）。
+ * ZOO-216：piecewise（y={条件:值; …; 值} 分段大括号）——显式函数族成员，
+ * 求值按书写顺序首个条件为真的段生效（默认段兜底），全部不中返回 NaN。
  */
 export type EquationKind =
   | 'explicit'
+  | 'piecewise'
   | 'line'
   | 'linePair'
   | 'point'
@@ -26,6 +29,32 @@ export type EquationKind =
   | 'parametric'
   | 'polar'
   | 'error';
+
+/**
+ * 分段段结构（ZOO-216）：条件编译为数值谓词 test（默认段恒 true，仅作末位
+ * 兜底——求值方按段序首个命中取值）；value 为该段表达式求值函数；bounds 为
+ * 条件中可静态判定的常数边界（提取规则：比较一侧恰为自变量本身、另一侧为
+ * 常数表达式），供采样网格并入（折点精确）与端点标记（闭端 ≤/≥ 实心、开端
+ * 空心）派生。含自变量的复合条件侧（如 x²<4）不产边界——不参与断笔 / 标记。
+ */
+export interface PiecewiseSegment {
+  /** 默认段（无条件，恒真兜底）；仅允许出现在末位 */
+  isDefault: boolean;
+  /** 条件谓词：条件侧求值非有限（NaN/±Inf）按不满足处理 */
+  test: (x: number) => boolean;
+  /** 段值函数：异常 / 非 number 返回 NaN */
+  value: (x: number) => number;
+  /** 常数边界（数学坐标；含开闭：closed = 条件在该侧含等号） */
+  bounds: Array<{ at: number; closed: boolean }>;
+}
+
+/** 分段端点标记（ZOO-216，渲染层数据）：跳跃间断处的实心（函数值真实存在）
+ * / 空心（一侧极限不被取到）小圆点——教材图规范。连续折点不标记。 */
+export interface PiecewiseMark {
+  x: number;
+  y: number;
+  filled: boolean;
+}
 
 /** 二元一次方程一般式 ax+by=c 的探针系数（ZOO-146 / D7，含 b=0 竖线）。 */
 export interface LineParams {
@@ -120,6 +149,7 @@ export interface EllipseParams {
  */
 export type StructuralOutcome =
   | { kind: 'explicit'; variable?: string }
+  | { kind: 'piecewise'; variable?: string }
   | { kind: 'line'; params: LineParams }
   | { kind: 'linePair'; params: LinePairParams }
   | { kind: 'point'; params: DegeneratePointParams }
@@ -137,6 +167,7 @@ export type StructuralOutcome =
  */
 export type ParseResult =
   | { kind: 'explicit'; fn: (x: number) => number; variable?: string }
+  | { kind: 'piecewise'; fn: (x: number) => number; variable?: string; segments: PiecewiseSegment[]; breakpoints: number[] }
   | { kind: 'line'; params: LineParams }
   | { kind: 'linePair'; params: LinePairParams }
   | { kind: 'point'; params: DegeneratePointParams }

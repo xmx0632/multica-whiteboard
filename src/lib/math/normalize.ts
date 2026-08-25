@@ -153,10 +153,29 @@ function splitIdentifierRuns(s: string): string {
 }
 
 /**
+ * 比较运算符与分段标点翻译（ZOO-216）：≤≥→<=/>=（教材手写形态）、全角
+ * ＜＞；：｛｝→半角。这些字符在既有管线下全部被字符白名单拒绝（不存在
+ * 含它们的合法输入），翻译是纯增量——分段前置分支（parsePiecewise）据此
+ * 识别条件链与段分隔；非分段输入含这些字符时仍会在各自路径被白名单拦截
+ * （报错字符从「≤」变为「<」，现象同类）。
+ */
+const COMPARISON_CHARS: Record<string, string> = {
+  '≤': '<=',
+  '≥': '>=',
+  '＜': '<',
+  '＞': '>',
+  '；': ';',
+  '：': ':',
+  '｛': '{',
+  '｝': '}',
+};
+
+/**
  * 方程归一化入口（parse 前置）。去空白、小写、符号翻译、隐式乘法补 `*`。
  * 未配对的 | 与 √ 保留原样，由 parseEquation 统一报错。
  * ZOO-188：希腊字母（θ/ω/φ）与下标数字（₀-₉）并入符号名翻译——归一化产物
  * 仍是 mathjs 可直接 parse 的 ASCII 标识符（theta/omega/phi/v0）。
+ * ZOO-216：比较运算符 / 分段标点翻译（见 COMPARISON_CHARS）。
  */
 export function normalizeEquation(raw: string): string {
   let s = String(raw)
@@ -172,7 +191,8 @@ export function normalizeEquation(raw: string): string {
     .replace(/，/g, ',')
     .replace(/[·×]/g, '*')
     .replace(/÷/g, '/')
-    .replace(/[−–]/g, '-');
+    .replace(/[−–]/g, '-')
+    .replace(/[≤≥＜＞；：｛｝]/g, (ch) => COMPARISON_CHARS[ch]);
   s = convertSqrtParen(s);
   s = s.replace(/√([0-9.]+|x|pi|e)/g, 'sqrt($1)').replace(/√/g, 'sqrt');
   s = convertAbsBars(s);

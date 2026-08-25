@@ -171,6 +171,10 @@
     "tplRotatedHyperbola": "회전 쌍곡선",
     "tplRotatedEllipse": "회전 타원",
     "tplKeplerOrbit": "케플러 타원 궤도(태양은 초점)",
+    "tplCrystalMelt": "결정 융해 T-t 그래프(평탄 구간 포함)",
+    "tplTaxiFare": "택시 구간 요금(기본료 + 거리)",
+    "tplPiecewiseIntro": "구간 함수(절댓값)",
+    "kindPiecewise": "구간 함수",
     "tplProportional": "정비례 함수 y=2x",
     "tplInverseProp": "반비례 관계",
     "tplLetterCoeff": "문자식 (슬라이더 a)",
@@ -260,7 +264,8 @@
     "delete": "삭제",
     "hint": "매개변수 변경은 실시간으로 다시 그려집니다. 이동 / 확대·축소 / 삭제는 Ctrl+Z로 실행 취소할 수 있습니다.",
     "badgeParametric": "매개변수",
-    "badgePolar": "극좌표"
+    "badgePolar": "극좌표",
+    "badgePiecewise": "구간"
   },
   "advFormula": {
     "entryLabel": "미적분 / 물리 공식…",
@@ -369,6 +374,11 @@
     "unknownFn": "인식할 수 없는 함수 \"{name}\"입니다 — 지원: sin, cos, tan, sec, csc, cot, sqrt, abs, log, exp, asin, acos, atan, floor, ceil, round, sign, mod, min, max",
     "arity": "함수 인수 개수가 잘못되었습니다 — 괄호 안의 인수를 확인하세요(예: sin(x), log(8,2))",
     "parenUnclosed": "괄호 또는 절댓값 기호가 닫히지 않았습니다 — 닫는 괄호를 보완하세요(예: y=sin(x))",
+    "piecewiseUnclosed": "구간 함수의 닫는 중괄호 “}”가 없습니다 — “}”로 닫아 완성해 주세요(예: y={x<0:-x; x})",
+    "piecewiseBranchIncomplete": "{n}번째 구간이 완전하지 않습니다 — 각 구간은 “조건:식” 형태로 써야 합니다(예: x<0:-x). 조건 없는 기본 구간은 맨 끝에만 올 수 있습니다",
+    "piecewiseCondInvalid": "{n}번째 구간의 조건을 인식할 수 없습니다 — 조건은 x<0, x≥0, 0≤x<2 형태로 써 주세요(“=”는 조건으로 사용할 수 없음)",
+    "piecewiseEmptyInterval": "{n}번째 구간의 조건 구간이 모순됩니다(예: 2<x<1) — 왼쪽 경계가 오른쪽 경계보다 크지 않아야 합니다",
+    "piecewiseValueFirst": "{n}번째 구간은 값이 조건보다 앞에 있는 것 같습니다 — 각 구간을 “조건:값” 순서로 써 주세요(예: y={x<0:-x; x})",
     "incomplete": "식이 완전하지 않습니다 — 수식을 완성하세요(예: y=2x+1)",
     "badNumber": "숫자 형식이 잘못되었습니다 — 숫자 표기를 확인하세요(예: 1.5)",
     "oneEquals": "방정식에는 등호가 하나만 포함될 수 있습니다",

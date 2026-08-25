@@ -55,6 +55,7 @@ function kindLabel(outcome: StructuralOutcome, t: (key: string, params?: Record<
   if (outcome.kind === 'explicit') return t('equation.kindExplicit', { v: outcome.variable ?? 'x' });
   if (outcome.kind === 'parametric') return t('equation.kindParametric', { v: outcome.variable ?? 't' });
   if (outcome.kind === 'polar') return t('equation.kindPolar');
+  if (outcome.kind === 'piecewise') return t('equation.kindPiecewise');
   const key = KIND_LABEL_KEYS[outcome.kind];
   return key ? t(key) : outcome.kind;
 }
