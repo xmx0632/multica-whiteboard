@@ -37,8 +37,8 @@ export interface PathElement extends BaseElement {
  * 外框**（Excalidraw 同构）——旋转不改外框字段，世界系占用包围盒由 renderer 的
  * elementBoundsAABB 推导。可选字段：旧文档无 rotation 视为 0（沿 ZOO-165 dash
  * 先例零迁移）；写入时经 rotation.ts 的 normalizeRotation 归一到 [0,360)。
- * PR-R1 仅 rectangle 全链路（渲染/导出/命中/包围盒）生效，circle/diamond 由
- * 后续 PR 挂接同一字段。
+ * PR-R1 落地 rectangle 全链路，PR-R3（ZOO-223）起 circle/diamond 挂接同一字段——
+ * 三形状 transform/命中/缩放/导出/绑定共用一套旋转口径。
  */
 export interface Rotatable {
   rotation?: number;
@@ -51,7 +51,7 @@ export interface RectangleElement extends BaseElement, Rotatable {
   fillColor: string | null;
 }
 
-export interface CircleElement extends BaseElement {
+export interface CircleElement extends BaseElement, Rotatable {
   type: 'circle';
   width: number;
   height: number;
@@ -63,8 +63,10 @@ export interface CircleElement extends BaseElement {
  * 四顶点由外框四边中点（上→右→下→左）推导、不落顶点字段——推导统一走
  * renderer.ts 的 diamondVertices（绘制 / 命中 / SVG 导出共一份）。
  * 负 width/height（拖拽中翻转）下顶点仍构成菱形，命中 / 导出天然兼容。
+ * ZOO-223 起可旋转（Rotatable）：顶点推导恒在局部系，旋转由渲染 / 命中 / 导出
+ * 各自的旋转变换承担。
  */
-export interface DiamondElement extends BaseElement {
+export interface DiamondElement extends BaseElement, Rotatable {
   type: 'diamond';
   width: number;
   height: number;

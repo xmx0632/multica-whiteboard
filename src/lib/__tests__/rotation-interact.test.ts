@@ -5,14 +5,15 @@
  * - 旋转系选中框 / 控点：hitTestSelectionHandle 指针逆旋转后查局部矩形——
  *   旋转角点的世界位置命中对应角、AABB 旋外空白角不命中；
  * - 旋转手柄：hitTestRotationHandle 悬伸手柄位置（rot≠0 随框转动）、
- *   鼠标 / 触摸双半径（44px 等效口径）；仅 rectangle 有手柄；
+ *   鼠标 / 触摸双半径（44px 等效口径）；三形状均有手柄（ZOO-223），
+ *   其余类型恒无；
  * - renderSelection：rot≠0 时 translate(center)→rotate→restore 变换序
  *   （局部框 / 控点绘制）、rot=0 与其余类型零变换（逐像素等价）；
  * - 缩放适配：世界指针逆旋转进局部系喂 boxResizePatch——刚体变换下对角锚定
  *   保持（Canvas applyResize 路径的纯函数组合，等价复现）。
  */
 import { describe, expect, it } from 'vitest';
-import { CircleElement, RectangleElement, Viewport } from '../types';
+import { CircleElement, DiamondElement, RectangleElement, TextElement, Viewport } from '../types';
 import { hitTestSelectionHandle, hitTestRotationHandle, renderSelection } from '../renderer';
 import { stepRotation, pointerToLocalFrame, rotatePointAround } from '../rotation';
 import { boxResizePatch } from '../shapeResize';
@@ -131,8 +132,21 @@ describe('hitTestRotationHandle：旋转手柄命中', () => {
     expect(hitTestRotationHandle(rect(), { x: 200, y: 47 }, VP, { touch: true })).toBe(false); // 23px
   });
 
-  it('仅 rectangle 有旋转手柄（PR-R2 范围）', () => {
-    expect(hitTestRotationHandle(circle(), { x: 25, y: -30 }, VP)).toBe(false);
+  it('三形状均有旋转手柄（ZOO-223），其余类型恒 false', () => {
+    // circle 外框 (0,0,50,50)：手柄圆心 = 上缘中点 (25,-4) 外移 26 → (25,-30)
+    expect(hitTestRotationHandle(circle(), { x: 25, y: -30 }, VP)).toBe(true);
+    const diamond: DiamondElement = {
+      id: 'd1', type: 'diamond', x: 0, y: 0, width: 50, height: 50,
+      strokeColor: '#000000', strokeWidth: 2, opacity: 1, fillColor: null,
+    };
+    expect(hitTestRotationHandle(diamond, { x: 25, y: -30 }, VP)).toBe(true);
+    // text 无旋转手柄：选中框上缘中点上方同位不命中
+    const text: TextElement = {
+      id: 't1', type: 'text', x: 0, y: 0, width: 50, height: 20, content: 'x',
+      fontSize: 16, fontFamily: 'sans-serif', color: '#000000',
+      strokeColor: '#000000', strokeWidth: 2, opacity: 1,
+    };
+    expect(hitTestRotationHandle(text, { x: 25, y: -30 }, VP)).toBe(false);
   });
 });
 
@@ -173,15 +187,26 @@ describe('renderSelection：旋转系选中框变换序', () => {
     expect(ops(b.calls, 'rotate')).toHaveLength(0);
   });
 
-  it('rectangle 画旋转手柄（stem + 圆），其余类型不画', () => {
+  it('三形状画旋转手柄（stem + 圆）（ZOO-223），rot=0 零旋转变换', () => {
     const a = fakeCtx();
     renderSelection(a.ctx, rect(), VP);
     // 手柄圆：arc 到 (200, 70)（rot=0 悬伸位）
     expect(ops(a.calls, 'arc').some((c) => c.args[0] === 200 && c.args[1] === 70)).toBe(true);
 
+    // circle / diamond 同样画手柄（悬伸位 = 上缘中点上方），且不进旋转变换
     const b = fakeCtx();
     renderSelection(b.ctx, circle(), VP);
-    expect(ops(b.calls, 'arc')).toHaveLength(0);
+    expect(ops(b.calls, 'arc').some((c) => c.args[0] === 25 && c.args[1] === -30)).toBe(true);
+    expect(ops(b.calls, 'rotate')).toHaveLength(0);
+
+    const d = fakeCtx();
+    const diamond: DiamondElement = {
+      id: 'd1', type: 'diamond', x: 0, y: 0, width: 50, height: 50,
+      strokeColor: '#000000', strokeWidth: 2, opacity: 1, fillColor: null,
+    };
+    renderSelection(d.ctx, diamond, VP);
+    expect(ops(d.calls, 'arc').some((c) => c.args[0] === 25 && c.args[1] === -30)).toBe(true);
+    expect(ops(d.calls, 'rotate')).toHaveLength(0);
   });
 });
 

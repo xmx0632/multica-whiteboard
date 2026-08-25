@@ -145,6 +145,11 @@ function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, view
   ctx.restore();
 }
 
+/**
+ * 椭圆绘制（ZOO-223 起支持旋转）：ellipse 自带 rotation 形参（绕中心弧度），
+ * 与 drawRectangle 的 translate→rotate 同一口径；rotation = 0 / 缺省传 0，
+ * 旧路径逐字节等价。
+ */
 function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: Viewport) {
   const { offsetX, offsetY, scale } = viewport;
   const cx = el.x * scale + offsetX + (el.width * scale) / 2;
@@ -159,7 +164,7 @@ function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: 
   applyDash(ctx, el, scale);
 
   ctx.beginPath();
-  ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), (elementRotation(el) * Math.PI) / 180, 0, Math.PI * 2);
   if (el.fillColor) {
     ctx.fillStyle = el.fillColor;
     ctx.fill();
@@ -183,7 +188,12 @@ export function diamondVertices(el: DiamondElement): [Point, Point, Point, Point
   ];
 }
 
-/** 菱形绘制（ZOO-217，与 drawRectangle 同构）：四中点 moveTo/lineTo×4 + closePath */
+/**
+ * 菱形绘制（ZOO-217，与 drawRectangle 同构）：四中点 moveTo/lineTo×4 + closePath。
+ * ZOO-223 起支持旋转：rotation ≠ 0 时 translate 到几何中心 → rotate → 顶点按
+ * 局部偏移绘制（diamondVertices 恒为局部系推导，世界系占用走 AABB）；rot = 0 /
+ * 缺省保持旧直绘路径——旧文档逐像素等价。
+ */
 function drawDiamond(ctx: CanvasRenderingContext2D, el: DiamondElement, viewport: Viewport) {
   const { offsetX, offsetY, scale } = viewport;
 
@@ -194,11 +204,23 @@ function drawDiamond(ctx: CanvasRenderingContext2D, el: DiamondElement, viewport
   ctx.lineJoin = 'round';
   applyDash(ctx, el, scale);
 
+  const rot = elementRotation(el);
   const verts = diamondVertices(el);
   ctx.beginPath();
-  ctx.moveTo(verts[0].x * scale + offsetX, verts[0].y * scale + offsetY);
-  for (let i = 1; i < 4; i++) {
-    ctx.lineTo(verts[i].x * scale + offsetX, verts[i].y * scale + offsetY);
+  if (rot === 0) {
+    ctx.moveTo(verts[0].x * scale + offsetX, verts[0].y * scale + offsetY);
+    for (let i = 1; i < 4; i++) {
+      ctx.lineTo(verts[i].x * scale + offsetX, verts[i].y * scale + offsetY);
+    }
+  } else {
+    const cx = (el.x + el.width / 2) * scale + offsetX;
+    const cy = (el.y + el.height / 2) * scale + offsetY;
+    ctx.translate(cx, cy);
+    ctx.rotate((rot * Math.PI) / 180);
+    ctx.moveTo((verts[0].x - (el.x + el.width / 2)) * scale, (verts[0].y - (el.y + el.height / 2)) * scale);
+    for (let i = 1; i < 4; i++) {
+      ctx.lineTo((verts[i].x - (el.x + el.width / 2)) * scale, (verts[i].y - (el.y + el.height / 2)) * scale);
+    }
   }
   ctx.closePath();
   if (el.fillColor) {
@@ -459,15 +481,16 @@ const ROTATE_TOUCH_HIT_RADIUS = 22;
 /** 鼠标 / 触控笔命中半径（手柄半径 + 4px 判定外扩） */
 const ROTATE_MOUSE_HIT_RADIUS = ROTATE_HANDLE_RADIUS + 4;
 
-/** 可旋转元素判定（PR-R2 仅 rectangle；ellipse/diamond 由 PR-R3 挂接同一字段） */
-export function isRotatable(el: WhiteboardElement): el is RectangleElement {
-  return el.type === 'rectangle';
+/** 可旋转元素判定（ZOO-223 起三形状：rectangle / ellipse(circle) / diamond） */
+export function isRotatable(el: WhiteboardElement): el is RectangleElement | CircleElement | DiamondElement {
+  return el.type === 'rectangle' || el.type === 'circle' || el.type === 'diamond';
 }
 
 /**
  * 旋转手柄几何（局部系屏幕 px，ZOO-222）：stem 从选中框上缘中点（含 4px 外扩）
  * 向外悬伸，圆心再外移 STEM——绘制在旋转 ctx 内直接用局部坐标；rot ≠ 0 时
- * 命中侧须把指针逆旋转后比对（hitTestRotationHandle）。仅 rectangle 有手柄。
+ * 命中侧须把指针逆旋转后比对（hitTestRotationHandle）。三形状均有手柄
+ * （ZOO-223 起 rect/ellipse/diamond）。
  */
 function rotationHandleGeometry(
   el: WhiteboardElement,
@@ -490,7 +513,7 @@ function rotationHandleGeometry(
 /**
  * 旋转手柄命中（屏幕 px，画布 rect 相对坐标，ZOO-222）：指针逆旋转进局部系后
  * 按圆形判定——鼠标 / 触控笔半径 10，触摸 22（44px 等效口径，沿 ZOO-160）。
- * 仅 rectangle 有旋转手柄，其余类型恒 false。
+ * 三形状有旋转手柄（ZOO-223），其余类型恒 false。
  */
 export function hitTestRotationHandle(
   el: WhiteboardElement,
@@ -525,9 +548,9 @@ function rotateFrameOf(el: WhiteboardElement, viewport: Viewport): { x: number; 
  * ZOO-168 折线编辑态（polylineEditing）：line/arrow 布局换成逐顶点手柄 v0…vn-1
  * （v0 / v末位 语义同 p1 / p2）。
  * 返回 id + 8×8 屏幕矩形（画布 rect 相对 px；方块中心即角点 / 端点 / 顶点）。
- * ZOO-222 旋转系：矩形返回**局部系**矩形（elementLocalFrame 的屏幕投影，不随旋转
- * 转动）——renderSelection 在旋转 ctx 内绘制、hitTestSelectionHandle 把指针逆旋转
- * 后比对，两侧同一坐标口径。
+ * ZOO-222 旋转系：可旋转形状返回**局部系**矩形（elementLocalFrame 的屏幕投影，
+ * 不随旋转转动）——renderSelection 在旋转 ctx 内绘制、hitTestSelectionHandle 把
+ * 指针逆旋转后比对，两侧同一坐标口径（ZOO-223 起三形状）。
  */
 function selectionHandleLayout(
   el: WhiteboardElement,
@@ -753,15 +776,16 @@ export function elementLocalFrame(el: WhiteboardElement): { x: number; y: number
 }
 
 /**
- * 世界系 AABB（ZOO-221 命名分叉）：旋转矩形 = 四角绕几何中心旋转后的轴对齐
- * 包围盒（只增不裁）；其余类型与 elementLocalFrame 同体。供 culling
- * （elementIntersectsView）/ zoom-fit（getAllElementsBounds）/ 导出边界 /
- * 帧归属——旋出局部外框的部分不被视口剔除、不被导出裁剪。
+ * 世界系 AABB（ZOO-221 命名分叉）：可旋转形状（rect/ellipse/diamond，ZOO-223
+ * 起三形状）= 四角绕几何中心旋转后的轴对齐包围盒（只增不裁）；其余类型与
+ * elementLocalFrame 同体。供 culling（elementIntersectsView）/ zoom-fit
+ * （getAllElementsBounds）/ 导出边界 / 帧归属——旋出局部外框的部分不被视口
+ * 剔除、不被导出裁剪。
  */
 export function elementBoundsAABB(el: WhiteboardElement): { x: number; y: number; width: number; height: number } | null {
   const local = elementLocalFrame(el);
   if (!local) return null;
-  if (el.type === 'rectangle') {
+  if (isRotatable(el)) {
     const rot = elementRotation(el);
     if (rot !== 0) {
       const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
@@ -788,7 +812,9 @@ export function elementBoundsAABB(el: WhiteboardElement): { x: number; y: number
 /**
  * 元素命中测试。line/arrow（含折线形态，ZOO-168）与 diamond（ZOO-217，填充态含
  * 内点判定）按精确轮廓判定——包围盒内部的空白区不再误命中；其余类型维持包围盒判定。
- * 旋转矩形（ZOO-221）先逆旋转指针再判局部外框，旋外空白不误命中。
+ * 可旋转形状（ZOO-221 矩形 → ZOO-223 三形状）先逆旋转指针回局部系再判——
+ * 旋出局部外框的角可命中、AABB 四角的旋外空白不误命中（菱形精确轮廓同样
+ * 在局部系判定，顶点推导不随旋转改写）。
  */
 export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport): boolean {
   const { scale } = viewport;
@@ -802,14 +828,20 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
     return near !== null && near.dist <= margin;
   }
 
+  // 旋转形状（ZOO-221/223）：指针绕几何中心逆旋转回局部系再判（与选中框控点 /
+  // 缩放适配共用 rotation.ts 的 pointerToLocalFrame 一份口径）
+  const probe = isRotatable(el)
+    ? pointerToLocalFrame(point, bbox, elementRotation(el))
+    : point;
+
   // 菱形（ZOO-217）：精确轮廓命中——bbox 四角空白不误选。填充态 = 叉积同号
   // 内点判定 ∨ 四边距离带（边带容差与 line/arrow 同口径）；无填充态仅四边距离带。
   if (el.type === 'diamond') {
     const verts = diamondVertices(el);
     const closed = [...verts, verts[0]]; // 闭合回环：含左→右上一边
-    const near = nearestOnPolyline(point, closed);
+    const near = nearestOnPolyline(probe, closed);
     if (near !== null && near.dist <= margin) return true;
-    return Boolean(el.fillColor) && pointInConvexPolygon(point, verts);
+    return Boolean(el.fillColor) && pointInConvexPolygon(probe, verts);
   }
 
   // 帧（ZOO-198）：内部大片空白是板书区，不能挡内容命中——仅边框带 + 上缘标题条可选中
@@ -826,13 +858,7 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
     return inTitle || (inOuter && !(innerX && innerY));
   }
 
-  // 矩形旋转（ZOO-221）：指针绕几何中心逆旋转回局部系，再走既有 AABB + margin
-  // 判定——旋出局部外框的角可命中、AABB 四角的旋外空白不命中（ZOO-222 起与
-  // 选中框控点 / 缩放适配共用 rotation.ts 的 pointerToLocalFrame 一份口径）
-  const probe = isRotatable(el)
-    ? pointerToLocalFrame(point, bbox, elementRotation(el))
-    : point;
-
+  // 旋转形状（ZOO-221/223）：逆旋转后的局部系指针走既有 AABB + margin 判定
   return (
     probe.x >= bbox.x - margin &&
     probe.x <= bbox.x + bbox.width + margin &&

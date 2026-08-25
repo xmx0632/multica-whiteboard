@@ -72,11 +72,10 @@ export function elementSignature(el: WhiteboardElement): string {
       return `${base}|e:${Math.round(el.x2)},${Math.round(el.y2)}|${mid}`;
     }
     case 'rectangle':
-      // rotation（ZOO-221）：矩形旋转进指纹——改角度要触发自动保存
-      return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}|r:${elementRotation(el)}`;
+    // rotation（ZOO-221 矩形 / ZOO-223 椭圆菱形）：旋转进指纹——改角度要触发自动保存
     case 'circle':
     case 'diamond':
-      return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}`;
+      return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}|r:${elementRotation(el)}`;
     case 'frame':
       // 分页帧（ZOO-198）：页名 / 外框进指纹——改名、缩放页都要触发自动保存
       return `${base}|f:${el.name}|${Math.round(el.width)}x${Math.round(el.height)}`;
