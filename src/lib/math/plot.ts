@@ -32,8 +32,8 @@ import {
   trajectoryMarks,
   type TrajectoryMarks,
 } from './physics';
-import { sampleEquation, sampleExplicitMulti } from './sample';
-import type { MathPlotOverlay, MathViewport, Polyline } from './types';
+import { sampleEquation, sampleExplicitMulti, samplePiecewiseMulti } from './sample';
+import type { MathPlotOverlay, MathViewport, ParseResult, PiecewiseMark, Polyline } from './types';
 import { zhT, type LibT } from '../../i18n/lib';
 
 /** §6.1 各层默认色（与 MiniPreview / 交互原型一致）。 */
@@ -119,7 +119,7 @@ export function formatAreaValue(v: number): string {
 /** 解析输入契约（4d 的 MathPlotElement 数学字段的子集）。 */
 export interface PlotSpec {
   equation: string;
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
+  kind: 'explicit' | 'piecewise' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   errorMessage?: string;
   /** x 定义域（显式函数的绘制域；几何方程忽略、由采样包围盒决定；参数式 / 极坐标复用为 t/θ 域〔ZOO-191 T4〕） */
   xAxis: { min: number; max: number };
@@ -169,6 +169,53 @@ function overlaysSig(overlays?: readonly MathPlotOverlay[]): string {
   );
 }
 
+/** 分段端点标记半径（局部 px；与 CONIC_MARK_RADIUS_PX 同规格档）。 */
+export const PIECEWISE_MARK_RADIUS_PX = 4;
+
+/**
+ * 分段端点标记（ZOO-216，评审决策 4）：仅在**跳跃间断**的常数边界产出——
+ * 实心点 = 函数在该处真实取值（首个命中段的值），空心点 = 未被取到的一侧
+ * 极限（该侧段条件在此处为开端）。连续折点（两侧极限相等，如熔化曲线
+ * t=2 处 5t−10 与平台 0 的衔接）不标记——教材折线图本就不在连续角上加点；
+ * sign 型全开边界（无段含该点）两侧均空心。同坐标去重：实心优先。
+ * 视窗外（越出定义域视窗）的边界不产出。
+ */
+export function piecewiseMarksOf(
+  parsed: Extract<ParseResult, { kind: 'piecewise' }>,
+  xMin: number,
+  xMax: number,
+): PiecewiseMark[] {
+  const delta = Math.max(1e-9, (xMax - xMin) * 1e-7);
+  const activeAt = (x: number): number => {
+    for (let i = 0; i < parsed.segments.length; i++) {
+      if (parsed.segments[i].test(x)) return i;
+    }
+    return -1;
+  };
+  const marks: PiecewiseMark[] = [];
+  for (const b of parsed.breakpoints) {
+    if (!(b > xMin && b < xMax)) continue;
+    const li = activeAt(b - delta);
+    const ri = activeAt(b + delta);
+    const fl = li >= 0 ? parsed.segments[li].value(b) : NaN;
+    const fr = ri >= 0 ? parsed.segments[ri].value(b) : NaN;
+    if (!Number.isFinite(fl) || !Number.isFinite(fr)) continue;
+    if (Math.abs(fl - fr) <= 1e-9 * (1 + Math.abs(fl) + Math.abs(fr))) continue; // 连续折点
+    const wi = activeAt(b);
+    const fb = wi >= 0 ? parsed.segments[wi].value(b) : NaN;
+    if (Number.isFinite(fb)) marks.push({ x: b, y: fb, filled: true });
+    if (li >= 0 && li !== wi && Number.isFinite(fl)) marks.push({ x: b, y: fl, filled: false });
+    if (ri >= 0 && ri !== wi && Number.isFinite(fr)) marks.push({ x: b, y: fr, filled: false });
+  }
+  const seen = new Map<string, PiecewiseMark>();
+  for (const m of marks) {
+    const key = `${m.x},${m.y}`;
+    const prev = seen.get(key);
+    if (!prev || (!prev.filled && m.filled)) seen.set(key, m);
+  }
+  return [...seen.values()];
+}
+
 /** 解析 + 采样 + Path2D 的缓存产物（错误态 error 非空、折线为空）。 */
 export interface PlotRender {
   polylines: Polyline[];
@@ -183,6 +230,13 @@ export interface PlotRender {
    * 常量推导——渲染签名已覆盖全部输入，缓存天然失效。
    */
   pois?: { zeros: number[]; extrema: Extremum[] };
+  /**
+   * ZOO-216 分段端点标记（数学坐标，仅 piecewise kind；纯数据无 Path2D——
+   * 标记是点，无需折线缓存）：跳跃间断处的实心（函数值真实存在）/ 空心
+   * （一侧极限不被取到）小圆点，教材图规范；连续折点不标记。由段条件 /
+   * 求值派生——渲染签名已覆盖全部输入，缓存天然失效。
+   */
+  piecewiseMarks?: PiecewiseMark[];
 }
 
 /** 叠加层渲染产物（ZOO-189 T2）：与主曲线同视窗的 f′ 折线 + 切线演示数据；
@@ -378,6 +432,11 @@ export interface DrawGraphCoreOptions {
   poiLabels?: readonly MathPoiAnnotation[];
   /** ZOO-201 可拖点（缺省 = 无点，绘制路径零变化；蓝底白边圆点，沿曲线点加吸附外圈） */
   dragPoints?: readonly { id: string; mode: 'free' | 'onCurve'; x: number; y: number }[];
+  /**
+   * ZOO-216 分段端点标记（缺省 = 无标记，绘制路径零变化）：主曲线之后绘制，
+   * 元素色实心（函数值真实存在）/ 白底描边空心（一侧极限不被取到）小圆点。
+   */
+  piecewiseMarks?: readonly PiecewiseMark[];
 }
 
 /**
@@ -385,7 +444,7 @@ export interface DrawGraphCoreOptions {
  * MiniPreview 与 drawMathPlot 共用 —— 预览即真实渲染（D3）。
  */
 export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCoreOptions): void {
-  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays, poiLabels, dragPoints } = opts;
+  const { width, height, view, polylines, path2d, style, showGrid, showAxis, tickLabels = false, gridTargetPx = 45, overlays, poiLabels, dragPoints, piecewiseMarks } = opts;
   if (!(width > 0) || !(height > 0)) return;
 
   ctx.save();
@@ -533,6 +592,25 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
           drawing = true;
         }
       }
+      ctx.stroke();
+    }
+  }
+
+  // —— ZOO-216 分段端点标记（主曲线之后、叠加层之前）：元素色实心（函数值
+  //    真实存在）/ 白底描边空心（一侧极限不被取到）小圆点，教材图规范——
+  //    空心白底保证网格背景与导出截图上可辨（评审补充要求）。
+  if (piecewiseMarks && piecewiseMarks.length > 0) {
+    ctx.globalAlpha = style.opacity;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = style.strokeColor;
+    for (const m of piecewiseMarks) {
+      const px = t.toPxX(m.x);
+      const py = t.toPxY(m.y);
+      if (!Number.isFinite(px) || !Number.isFinite(py) || px < 0 || px > width || py < 0 || py > height) continue;
+      ctx.beginPath();
+      ctx.arc(px, py, PIECEWISE_MARK_RADIUS_PX, 0, Math.PI * 2);
+      ctx.fillStyle = m.filled ? style.strokeColor : '#ffffff';
+      ctx.fill();
       ctx.stroke();
     }
   }
@@ -902,6 +980,7 @@ export function drawMathPlot(ctx: CanvasRenderingContext2D, opts: DrawMathPlotOp
     overlays: render.overlays,
     poiLabels: opts.poiAnnotations,
     dragPoints: opts.dragPoints,
+    piecewiseMarks: render.piecewiseMarks,
   });
   ctx.translate(-x - pad, -y - pad);
 
@@ -1098,25 +1177,37 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
     return { pois: { zeros, extrema } };
   };
 
-  // —— ZOO-189 T2 叠加路径：仅显式函数且 overlays 非空时进入（惰性求导——
-  //    无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用一次求导；
-  //    ZOO-190 T3：定积分只依赖 f 本身（纯数值辛普森），积分-only 时不求导。
-  if (parsed.kind === 'explicit' && spec.overlays && spec.overlays.length > 0) {
+  // —— ZOO-216 分段端点标记：仅 piecewise kind 产出（跳跃间断处实心/空心），
+  //    两条渲染路径（叠加 / 常规）共用；输入已进渲染签名，缓存天然失效。
+  const pwMarks =
+    parsed.kind === 'piecewise' ? piecewiseMarksOf(parsed, spec.xAxis.min, spec.xAxis.max) : undefined;
+
+  // —— ZOO-189 T2 叠加路径：仅显式函数（ZOO-216 起 piecewise 同为显式函数族
+  //    成员——f′/切线/定积分对分段生效，评审决策 6）且 overlays 非空时进入
+  //    （惰性求导——无叠加元素不走此分支，既有渲染路径零变化）。f′ / 切线共用
+  //    一次求导；ZOO-190 T3：定积分只依赖 f 本身（纯数值辛普森），积分-only
+  //    时不求导。分段采样走 samplePiecewiseMulti（折点并入网格 + 跳跃断笔——
+  //    f 与 f′ 共用网格与边界，f′ 在折点处的导数跳跃即断笔呈现）。
+  if ((parsed.kind === 'explicit' || parsed.kind === 'piecewise') && spec.overlays && spec.overlays.length > 0) {
     const wantsDerivative = spec.overlays.some((o) => o.type === 'derivative');
     const tangentOverlay = spec.overlays.find((o): o is { type: 'tangent'; x0: number } => o.type === 'tangent');
     const integralOverlay = spec.overlays.find((o): o is { type: 'integral'; a: number; b: number } => o.type === 'integral');
     const deriv = wantsDerivative || tangentOverlay ? derivativeOf(spec.equation, { constants: spec.constants }) : null;
     const dfn = deriv && deriv.ok ? deriv.fn : null;
     if (wantsDerivative || tangentOverlay || integralOverlay) {
-      const sampled = sampleExplicitMulti(
-        [parsed.fn, ...(wantsDerivative && dfn ? [dfn] : [])],
-        {
-          xMin: spec.xAxis.min,
-          xMax: spec.xAxis.max,
-          ...(yWindow ?? {}),
-        },
-        spec.sampleCount,
-      );
+      const seriesFns = [parsed.fn, ...(wantsDerivative && dfn ? [dfn] : [])];
+      const sampled =
+        parsed.kind === 'piecewise'
+          ? samplePiecewiseMulti(seriesFns, parsed.breakpoints, {
+              xMin: spec.xAxis.min,
+              xMax: spec.xAxis.max,
+              ...(yWindow ?? {}),
+            }, spec.sampleCount)
+          : sampleExplicitMulti(seriesFns, {
+              xMin: spec.xAxis.min,
+              xMax: spec.xAxis.max,
+              ...(yWindow ?? {}),
+            }, spec.sampleCount);
       if ('error' in sampled) {
         return { polylines: [], view: nominal, error: sampled.error, path2d: null };
       }
@@ -1158,6 +1249,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
         path2d: transform ? buildPlotPath2D(sampled.series[0], transform) : null,
         ...(Object.keys(overlays).length > 0 ? { overlays } : {}),
         ...(explicitPois(sampled.yMax - sampled.yMin) ?? {}),
+        ...(pwMarks ? { piecewiseMarks: pwMarks } : {}),
       };
     }
   }
@@ -1197,7 +1289,7 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
       ? conicMarks(parsed, view)
       : null;
   const pois = explicitPois(sampled.yMax - sampled.yMin);
-  const base = { polylines: sampled.polylines, view, path2d, ...(pois ?? {}) };
+  const base = { polylines: sampled.polylines, view, path2d, ...(pois ?? {}), ...(pwMarks ? { piecewiseMarks: pwMarks } : {}) };
   const overlayRenders: OverlayRender = {
     ...(marks ? { physics: marks } : {}),
     ...(conic ? { conic } : {}),

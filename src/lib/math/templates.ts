@@ -1,11 +1,13 @@
 /**
  * 方程模板与插入符号（交互原型基线 1:1 平移）。
- * ZOO-213 起面板模板共 42 条 + ZOO-215 增 1 条（开普勒椭圆轨道）= 43 条：
+ * ZOO-213 起面板模板共 42 条 + ZOO-215 增 1 条（开普勒椭圆轨道）+ ZOO-216
+ * 增 3 条（分段函数：晶体熔化 / 出租车计费 / 分段入门）= 46 条：
  * 19 条存量（PRD §5.2 P0/P1 方程族，含二元一次 → 直线 D7、抛物线/双曲线
  * ZOO-147、退化两直线 ZOO-148、xy 交叉项旋转圆锥曲线 ZOO-149）+ 23 条学段
  * 新模板（小学 3 / 初中数学 4 / 初中物理 6 / 高中数学 7 / 高中物理 3）+
- * 开普勒轨道 1（高中·物理，带 conic 标注叠加）；6 个符号按钮在光标处插入
- * 对应文本。
+ * 开普勒轨道 1（高中·物理，带 conic 标注叠加）+ 分段 3（初中物理 1 /
+ * 高中数学 2，零语法学习一键出图——ZOO-216 硬性验收）；6 个符号按钮在
+ * 光标处插入对应文本。
  *
  * ZOO-164：模板分组（TEMPLATE_GROUPS）供面板分组折叠渲染；EQUATION_TEMPLATES
  * 仍为唯一数据源，插入路径不变。ZOO-213 分组演进为「学段·学科」视图（常用
@@ -158,6 +160,17 @@ export const EQUATION_TEMPLATES: EquationTemplate[] = [
   // 焦点分离清晰可见），太阳位于焦点 F₁——插入即带焦点标注（conic 叠加），
   // F₁F₂ 点标记 + 标签随方程常量改值实时联动
   { id: 'keplerOrbit', equation: 'x²/25+y²/16=1', overlays: [{ type: 'conic' }] },
+  // —— ZOO-216（分段函数，评审方案候选 A 语法）——
+  // 晶体熔化温度-时间图像（八年级物理重点章节）：-10°C 升温 2min → 0°C 平台
+  // 4min（熔化段水平，固液共存吸热不升温）→ 升温至 10°C；t=2、t=6 折点连续
+  // （产品经理验算通过），domain 预置 [0,10] 全程。方程保留教材 ≤ 原貌
+  // （归一层翻译 <=，显示层不动教师原始写法）
+  { id: 'crystalMelt', equation: 'T(t)={t<2:5t-10; 2≤t<6:0; 2.5t-15}', domain: { min: 0, max: 10 } },
+  // 出租车分段计费（高中必修一分段函数应用）：起步价 8 元/2km，超程 2 元/km
+  // （x=2 处 8=2×2+4 连续衔接）；x∈[0,10] 覆盖起步段与超程段
+  { id: 'taxiFare', equation: 'y={x≤2:8; 2x+4}', domain: { min: 0, max: 10 } },
+  // 分段函数入门（即 |x| 的分段写法，分段语法教学第一例；PM 建议显示名带「绝对值」）
+  { id: 'piecewiseIntro', equation: 'y={x<0:-x; x}' },
 ];
 
 /** id → 资源键后缀（首字母大写驼峰）：'linear2var' → 'tplLinear2var'。 */
@@ -186,7 +199,7 @@ export const TEMPLATE_GROUPS: readonly TemplateGroup[] = [
     id: 'juniorMath',
     templateIds: ['linear', 'linearKb', 'vertexQuadratic', 'generalQuadratic', 'quadratic', 'inverseK', 'linear2var', 'inverse', 'radical', 'absolute'],
   },
-  { id: 'juniorPhysics', templateIds: ['uniformMotion', 'accelVt', 'accelXt', 'freeFall', 'ohmIU', 'densityMV'] },
+  { id: 'juniorPhysics', templateIds: ['uniformMotion', 'accelVt', 'accelXt', 'freeFall', 'ohmIU', 'densityMV', 'crystalMelt'] },
   {
     id: 'seniorMath',
     templateIds: [
@@ -197,6 +210,8 @@ export const TEMPLATE_GROUPS: readonly TemplateGroup[] = [
       'expParam',
       'logBase2',
       'derivTangent',
+      'piecewiseIntro',
+      'taxiFare',
       'sine',
       'sineTransform',
       'tangent',

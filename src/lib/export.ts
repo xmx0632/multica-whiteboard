@@ -9,6 +9,7 @@ import {
   MIN_TICK_LABEL_PX,
   OVERLAY_DERIVATIVE_DASH,
   OVERLAY_INTEGRAL_FILL_ALPHA,
+  PIECEWISE_MARK_RADIUS_PX,
   PLOT_COLORS,
   resolvePlotRender,
   stepForAxis,
@@ -263,6 +264,19 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
 
     if (d) {
       parts.push(`<path d="${d}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#mpc-${el.id})"${opacity}/>`);
+    }
+
+    // —— ZOO-216 分段端点标记（主曲线之后，与 canvas 绘制序一致）：元素色
+    //    实心 / 白底描边空心小圆点（空心白底保证网格背景上可辨——评审补充）。
+    if (render.piecewiseMarks && render.piecewiseMarks.length > 0) {
+      for (const m of render.piecewiseMarks) {
+        const px = toX(m.x);
+        const py = toY(m.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py) || px < gx || px > gx + gw || py < gy || py > gy + gh) continue;
+        parts.push(
+          `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${PIECEWISE_MARK_RADIUS_PX}" fill="${m.filled ? el.strokeColor : '#ffffff'}" stroke="${el.strokeColor}" stroke-width="1.5"${opacity}/>`,
+        );
+      }
     }
 
     // —— ZOO-189 T2 叠加层（与 drawGraphCore 同一套数据与配色）——

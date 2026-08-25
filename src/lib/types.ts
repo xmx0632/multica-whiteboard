@@ -96,8 +96,10 @@ export interface MathPlotElement extends BaseElement {
    * ZOO-191（T4）：parametric（x=f(t),y=g(t)）/ polar（r=f(θ)）新 kind。
    * xAxis 字段复用为参数 t/θ 域（缺省 [0,2π]，高级公式面板参数式区编辑）；
    * equalRatio 强制 true（参数圆不画成椭圆，与几何 kind 同口径）。
+   * ZOO-216：piecewise（y={条件:值; …; 值}）新 kind——显式函数族成员，xAxis
+   * 即自变量定义域（同 explicit），equalRatio 缺省 false（同 explicit）。
    */
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
+  kind: 'explicit' | 'piecewise' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   error?: string | null;
   /**

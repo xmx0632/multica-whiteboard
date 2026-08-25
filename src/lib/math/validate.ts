@@ -18,7 +18,7 @@ import type { StructuralOutcome } from './types';
  *  （渲染侧按需重编译，LRU 命中），仅透传参数字母 variable。 */
 export function validateEquation(raw: string, t: LibT = zhT, constants?: Record<string, number>): StructuralOutcome {
   const result = parseEquation(raw, t, constants);
-  if (result.kind === 'explicit' || result.kind === 'parametric' || result.kind === 'polar') {
+  if (result.kind === 'explicit' || result.kind === 'piecewise' || result.kind === 'parametric' || result.kind === 'polar') {
     return result.variable ? { kind: result.kind, variable: result.variable } : { kind: result.kind };
   }
   return result;

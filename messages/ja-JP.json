@@ -170,6 +170,10 @@
     "tplRotatedHyperbola": "回転双曲線",
     "tplRotatedEllipse": "回転楕円",
     "tplKeplerOrbit": "ケプラー楕円軌道（太陽は焦点）",
+    "tplCrystalMelt": "結晶の融解 T-t グラフ（プラトーあり）",
+    "tplTaxiFare": "タクシー運賃（区分課金）",
+    "tplPiecewiseIntro": "区分的関数（絶対値）",
+    "kindPiecewise": "区分的関数",
     "tplProportional": "比例関数（y=2x）",
     "tplInverseProp": "反比例の関係",
     "tplLetterCoeff": "文字式（スライダー a）",
@@ -259,7 +263,8 @@
     "delete": "削除",
     "hint": "パラメーター変更は即座に再描画されます。移動・拡大縮小・削除は Ctrl+Z で元に戻せます。",
     "badgeParametric": "媒介変数",
-    "badgePolar": "極座標"
+    "badgePolar": "極座標",
+    "badgePiecewise": "区分的"
   },
   "advFormula": {
     "entryLabel": "微積分 / 物理公式…",
@@ -368,6 +373,11 @@
     "unknownFn": "認識できない関数 \"{name}\"です — 対応：sin、cos、tan、sec、csc、cot、sqrt、abs、log、exp、asin、acos、atan、floor、ceil、round、sign、mod、min、max",
     "arity": "関数の引数の数が正しくありません — 括弧内の引数を確認してください（例：sin(x)、log(8,2)）",
     "parenUnclosed": "括弧または絶対値記号が閉じていません — 右括弧を補ってください（例：y=sin(x)）",
+    "piecewiseUnclosed": "区分的関数の右波括弧「}」がありません — 「}」で閉じてください（例：y={x<0:-x; x}）",
+    "piecewiseBranchIncomplete": "第 {n} 区分が不完全です — 各区分は「条件:式」の形で書いてください（例：x<0:-x）。無条件の既定区分は最後にのみ置けます",
+    "piecewiseCondInvalid": "第 {n} 区分の条件を認識できません — 条件は x<0、x≥0、0≤x<2 の形で書いてください（「=」を条件には使えません）",
+    "piecewiseEmptyInterval": "第 {n} 区分の条件区間が矛盾しています（例：2<x<1） — 左端は右端以下にしてください",
+    "piecewiseValueFirst": "第 {n} 区分は値が条件の前にあるようです — 各区分は「条件:値」の順で書いてください（例：y={x<0:-x; x}）",
     "incomplete": "式が未完成です — 数式を補ってください（例：y=2x+1）",
     "badNumber": "数値の形式が正しくありません — 数値の書き方を確認してください（例：1.5）",
     "oneEquals": "方程式に含められる等号は 1 つだけです",

@@ -48,7 +48,7 @@ import type {
 export interface MathPlotParamsValue {
   equation: string;
   /** ZOO-191（T4）：parametric / polar——xAxis 复用为参数 t/θ 域、equalRatio 强制 true */
-  kind: 'explicit' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
+  kind: 'explicit' | 'piecewise' | 'line' | 'linePair' | 'point' | 'parabola' | 'hyperbola' | 'circle' | 'ellipse' | 'parametric' | 'polar' | 'error';
   /** kind === 'error' 时的用户可读原因 */
   errorMessage?: string;
   /** kind === 'line' 时的一般式系数（调用方经 validateEquation 重解析填充，D7 教学参数） */
@@ -130,6 +130,7 @@ export interface MathPlotParamsProps {
 /** 徽章资源键（ZOO-176 随语言），样式沿用基线。 */
 const KIND_BADGE_KEYS: Record<MathPlotParamsValue['kind'], { key: string; cls: string }> = {
   explicit: { key: 'params.badgeExplicit', cls: 'bg-blue-50 text-blue-600' },
+  piecewise: { key: 'params.badgePiecewise', cls: 'bg-blue-50 text-blue-600' },
   line: { key: 'params.badgeLine', cls: 'bg-blue-50 text-blue-600' },
   linePair: { key: 'params.badgeLinePair', cls: 'bg-amber-50 text-amber-700' },
   point: { key: 'params.badgePoint', cls: 'bg-amber-50 text-amber-700' },
@@ -159,7 +160,8 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   const t = useT();
   // ZOO-194：高级公式面板开合（纯 UI 态，不入元素数据、不入撤销历史）
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const isFn = value.kind === 'explicit';
+  // ZOO-216：piecewise 是显式函数族成员——定义域 / 采样档位控件同 explicit 开放
+  const isFn = value.kind === 'explicit' || value.kind === 'piecewise';
   // ZOO-191（T4）：参数式 / 极坐标——定义域（t/θ 域）与采样档位控件同样开放
   const isParam = value.kind === 'parametric' || value.kind === 'polar';
   // ZOO-215：圆锥曲线——焦点 / 准线 / 渐近线标注（conic 叠加）仅对这三 kind 生效
@@ -171,7 +173,7 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   // constantDisplayName 还原原貌）
   const variable = useMemo(() => {
     const r = validateEquation(value.equation, t, value.constants);
-    if (r.kind === 'explicit') return r.variable ?? 'x';
+    if (r.kind === 'explicit' || r.kind === 'piecewise') return r.variable ?? 'x';
     if (r.kind === 'parametric') return r.variable ?? 't';
     if (r.kind === 'polar') return constantDisplayName(r.variable ?? 'theta');
     return 'x';

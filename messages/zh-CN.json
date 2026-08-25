@@ -170,6 +170,10 @@
     "tplRotatedHyperbola": "旋转双曲线",
     "tplRotatedEllipse": "旋转椭圆",
     "tplKeplerOrbit": "开普勒椭圆轨道（太阳在焦点）",
+    "tplCrystalMelt": "晶体熔化温度-时间图像（含熔化平台）",
+    "tplTaxiFare": "出租车分段计费（起步价 + 超程）",
+    "tplPiecewiseIntro": "分段函数（绝对值）",
+    "kindPiecewise": "分段函数",
     "tplProportional": "正比例函数",
     "tplInverseProp": "反比例关系",
     "tplLetterCoeff": "用字母表示数（滑块调 a）",
@@ -259,7 +263,8 @@
     "delete": "删除",
     "hint": "修改参数实时重绘；移动 / 缩放 / 删除均可用 Ctrl+Z 撤销。",
     "badgeParametric": "参数方程",
-    "badgePolar": "极坐标"
+    "badgePolar": "极坐标",
+    "badgePiecewise": "分段"
   },
   "advFormula": {
     "entryLabel": "微积分 / 物理公式…",
@@ -368,6 +373,11 @@
     "unknownFn": "无法识别的函数 “{name}”——支持 sin、cos、tan、sec、csc、cot、sqrt、abs、log、exp、asin、acos、atan、floor、ceil、round、sign、mod、min、max",
     "arity": "函数参数个数有误——请检查括号内的参数（如 sin(x)、log(8,2)）",
     "parenUnclosed": "括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)",
+    "piecewiseUnclosed": "分段缺少右花括号 “}”——请补上 “}” 结束分段（写法如 y={x<0:-x; x}）",
+    "piecewiseBranchIncomplete": "第 {n} 段不完整——每段需写成「条件:表达式」（如 x<0:-x），无条件的默认段只能写在最后一段",
+    "piecewiseCondInvalid": "第 {n} 段的条件无法识别——条件需形如 x<0、x≥0 或 0≤x<2（不支持用「=」作条件）",
+    "piecewiseEmptyInterval": "第 {n} 段的条件区间矛盾（如 2<x<1）——请让左界不大于右界",
+    "piecewiseValueFirst": "第 {n} 段像是把值写在了条件前面——请按「条件:值」顺序书写每段（如 y={x<0:-x; x}）",
     "incomplete": "表达式不完整——请补全公式，如 y=2x+1",
     "badNumber": "数字格式有误——请检查数字写法，如 1.5",
     "oneEquals": "方程只能包含一个等号",
