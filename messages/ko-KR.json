@@ -111,6 +111,7 @@
     "dashDotted": "점선",
     "fill": "채우기",
     "fontSize": "글자 크기: {n}px",
+    "rotation": "회전 각도(0–359)",
     "collapseAria": "패널 접기",
     "expandToolAria": "펜 색상 패널 펼치기",
     "expandEquationAria": "방정식 패널 펼치기",

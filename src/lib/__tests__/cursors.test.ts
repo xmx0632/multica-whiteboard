@@ -46,6 +46,17 @@ describe('cursors：工具 → 光标配置表', () => {
     expect(canvasCursor('select', { hoverElement: true })).toBe('move');
     expect(canvasCursor('select', { hoverElement: false })).toBe('default');
   });
+
+  it('旋转手柄（ZOO-222）：悬停 → grab、拖转中 → grabbing（与平移 grab/grabbing 同族）', () => {
+    expect(canvasCursor('select', { hoverRotate: true })).toBe('grab');
+    expect(canvasCursor('select', { hoverRotate: true, hoverElement: true })).toBe('grab');
+    expect(canvasCursor('select', { rotating: true })).toBe('grabbing');
+    // 覆盖链：拖转中不输平移（两手势互斥，只验同为 grabbing 的最高档）
+    expect(canvasCursor('select', { rotating: true, hoverRotate: true })).toBe('grabbing');
+    expect(canvasCursor('hand', { rotating: true })).toBe('grabbing');
+    // 未悬停 / 非选中态维持默认
+    expect(canvasCursor('select', { hoverRotate: false })).toBe('default');
+  });
 });
 
 describe('cursors：状态覆盖链（panning > textEditing > spacePanning > 工具映射）', () => {

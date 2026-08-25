@@ -199,6 +199,15 @@ describe('renderSelection（选中框绘制与控点布局）', () => {
       strokeRect: () => calls.push({ op: 'strokeRect' }),
       fillRect: () => calls.push({ op: 'fillRect' }),
       setLineDash: () => calls.push({ op: 'setLineDash' }),
+      // 旋转手柄（ZOO-222）：stem 折线 + 圆形手柄
+      beginPath: () => calls.push({ op: 'beginPath' }),
+      moveTo: () => calls.push({ op: 'moveTo' }),
+      lineTo: () => calls.push({ op: 'lineTo' }),
+      arc: () => calls.push({ op: 'arc' }),
+      stroke: () => calls.push({ op: 'stroke' }),
+      fill: () => calls.push({ op: 'fill' }),
+      translate: () => calls.push({ op: 'translate' }),
+      rotate: () => calls.push({ op: 'rotate' }),
     } as unknown as CanvasRenderingContext2D;
     return { ctx, calls };
   }

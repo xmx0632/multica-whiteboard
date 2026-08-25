@@ -6,7 +6,7 @@ import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
 import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
 import { FRAME_TITLE_HEIGHT } from './frame';
-import { elementRotation, rotatePointAround } from './rotation';
+import { elementRotation, rotatePointAround, pointerToLocalFrame } from './rotation';
 
 /**
  * MathPlotElement → PlotSpec（ZOO-199 提取共享）：drawMathPlotElement 与
@@ -449,12 +449,85 @@ export type ResizeHandleId = MathPlotHandle | EndpointHandle | VertexHandle;
 /** 控点方块边长（屏幕 px，样式基线与 mathPlot 8 控点一致） */
 const HANDLE_SIZE = 8;
 
+// —— 旋转手柄（ZOO-222，Excalidraw/Miro 惯例）：选中框上缘中点向外悬伸 ——
+/** 手柄圆心到选中框上缘的悬伸距离（屏幕 px 常量，不随视口缩放） */
+const ROTATE_HANDLE_STEM = 20;
+/** 手柄圆半径（屏幕 px） */
+export const ROTATE_HANDLE_RADIUS = 6;
+/** 触摸命中半径（ZOO-160 的 44px 等效口径：直径 44） */
+const ROTATE_TOUCH_HIT_RADIUS = 22;
+/** 鼠标 / 触控笔命中半径（手柄半径 + 4px 判定外扩） */
+const ROTATE_MOUSE_HIT_RADIUS = ROTATE_HANDLE_RADIUS + 4;
+
+/** 可旋转元素判定（PR-R2 仅 rectangle；ellipse/diamond 由 PR-R3 挂接同一字段） */
+export function isRotatable(el: WhiteboardElement): el is RectangleElement {
+  return el.type === 'rectangle';
+}
+
+/**
+ * 旋转手柄几何（局部系屏幕 px，ZOO-222）：stem 从选中框上缘中点（含 4px 外扩）
+ * 向外悬伸，圆心再外移 STEM——绘制在旋转 ctx 内直接用局部坐标；rot ≠ 0 时
+ * 命中侧须把指针逆旋转后比对（hitTestRotationHandle）。仅 rectangle 有手柄。
+ */
+function rotationHandleGeometry(
+  el: WhiteboardElement,
+  viewport: Viewport
+): { stemFrom: Point; center: Point } | null {
+  if (!isRotatable(el)) return null;
+  const frame = elementLocalFrame(el);
+  if (!frame) return null;
+  const { offsetX, offsetY, scale } = viewport;
+  const stemFrom: Point = {
+    x: (frame.x + frame.width / 2) * scale + offsetX,
+    y: frame.y * scale + offsetY - 4,
+  };
+  return {
+    stemFrom,
+    center: { x: stemFrom.x, y: stemFrom.y - ROTATE_HANDLE_STEM - ROTATE_HANDLE_RADIUS },
+  };
+}
+
+/**
+ * 旋转手柄命中（屏幕 px，画布 rect 相对坐标，ZOO-222）：指针逆旋转进局部系后
+ * 按圆形判定——鼠标 / 触控笔半径 10，触摸 22（44px 等效口径，沿 ZOO-160）。
+ * 仅 rectangle 有旋转手柄，其余类型恒 false。
+ */
+export function hitTestRotationHandle(
+  el: WhiteboardElement,
+  screen: Point,
+  viewport: Viewport,
+  opts?: { touch?: boolean }
+): boolean {
+  if (!isRotatable(el)) return false;
+  const geo = rotationHandleGeometry(el, viewport);
+  if (!geo) return false;
+  const probe = pointerToLocalFrame(screen, rotateFrameOf(el, viewport), elementRotation(el));
+  const r = opts?.touch ? ROTATE_TOUCH_HIT_RADIUS : ROTATE_MOUSE_HIT_RADIUS;
+  return Math.hypot(probe.x - geo.center.x, probe.y - geo.center.y) <= r;
+}
+
+/** 旋转命中用的「屏幕系局部框」（与 selectionHandleLayout 同一坐标口径） */
+function rotateFrameOf(el: WhiteboardElement, viewport: Viewport): { x: number; y: number; width: number; height: number } {
+  const frame = elementLocalFrame(el);
+  if (!frame) return { x: 0, y: 0, width: 0, height: 0 };
+  const { offsetX, offsetY, scale } = viewport;
+  return {
+    x: frame.x * scale + offsetX,
+    y: frame.y * scale + offsetY,
+    width: frame.width * scale,
+    height: frame.height * scale,
+  };
+}
+
 /**
  * 选中框控点布局（§11 D-1 + ZOO-160）：mathPlot 8 控点（4 角 + 4 边中点，已验收基线）、
  * line/arrow 两端点手柄、其余（rect/circle/path/text）4 角控点。
  * ZOO-168 折线编辑态（polylineEditing）：line/arrow 布局换成逐顶点手柄 v0…vn-1
  * （v0 / v末位 语义同 p1 / p2）。
  * 返回 id + 8×8 屏幕矩形（画布 rect 相对 px；方块中心即角点 / 端点 / 顶点）。
+ * ZOO-222 旋转系：矩形返回**局部系**矩形（elementLocalFrame 的屏幕投影，不随旋转
+ * 转动）——renderSelection 在旋转 ctx 内绘制、hitTestSelectionHandle 把指针逆旋转
+ * 后比对，两侧同一坐标口径。
  */
 function selectionHandleLayout(
   el: WhiteboardElement,
@@ -505,6 +578,9 @@ function selectionHandleLayout(
  * 选中态绘制。opts.polylineEditing（ZOO-168 折线编辑态）：line/arrow 不画包围盒
  * 虚线框（折线包围盒视觉噪音大），改画逐顶点圆点手柄——白底蓝圈，选中顶点
  * （opts.selectedVertex）实心蓝。
+ * ZOO-222 旋转系：旋转矩形 save→translate(center)→rotate→局部框 / 控点→restore
+ * ——选中框随元素旋转（控点画在局部四角）；rot = 0 不进变换（逐像素等价）。
+ * 旋转手柄（rect）：选中框上缘中点向外悬伸的 stem + 圆形手柄，绘制在旋转 ctx 内。
  */
 export function renderSelection(
   ctx: CanvasRenderingContext2D,
@@ -540,6 +616,15 @@ export function renderSelection(
   const h = bbox.height * scale;
 
   ctx.save();
+  // 旋转系选中框：绕几何中心转 rot 后局部框 / 控点坐标原样可用（布局即局部系）
+  const rot = isRotatable(el) ? elementRotation(el) : 0;
+  if (rot !== 0) {
+    const cx = (bbox.x + bbox.width / 2) * scale + offsetX;
+    const cy = (bbox.y + bbox.height / 2) * scale + offsetY;
+    ctx.translate(cx, cy);
+    ctx.rotate((rot * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
   ctx.strokeStyle = '#3B82F6';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([6, 4]);
@@ -550,6 +635,22 @@ export function renderSelection(
   for (const { rect: [hx, hy] } of selectionHandleLayout(el, viewport, opts?.polylineEditing ?? false)) {
     ctx.fillRect(hx, hy, HANDLE_SIZE, HANDLE_SIZE);
   }
+
+  // 旋转手柄（ZOO-222）：stem 细线 + 白底蓝圈圆手柄（局部系坐标，随 ctx 旋转）
+  const rotateGeo = rotationHandleGeometry(el, viewport);
+  if (rotateGeo) {
+    ctx.strokeStyle = '#3B82F6';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(rotateGeo.stemFrom.x, rotateGeo.stemFrom.y);
+    ctx.lineTo(rotateGeo.center.x, rotateGeo.center.y + ROTATE_HANDLE_RADIUS);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(rotateGeo.center.x, rotateGeo.center.y, ROTATE_HANDLE_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -558,6 +659,8 @@ export function renderSelection(
  * （ZOO-160）：mathPlot 8 方位、line/arrow 端点、rect/circle/path/text 4 角。
  * opts.polylineEditing（ZOO-168）：line/arrow 改按逐顶点手柄布局判定。
  * opts.margin 判定外扩（默认 2 鼠标 / 触控笔；触摸传 18 → 44px 等效命中框）。
+ * ZOO-222 旋转系：旋转矩形先把指针逆旋转进局部系再查局部矩形——屏幕上转到
+ * 哪里、命中的仍是旋转前那个角。
  */
 export function hitTestSelectionHandle(
   el: WhiteboardElement,
@@ -566,9 +669,12 @@ export function hitTestSelectionHandle(
   opts?: { margin?: number; polylineEditing?: boolean }
 ): ResizeHandleId | null {
   const layout = selectionHandleLayout(el, viewport, opts?.polylineEditing ?? false);
+  const probe = isRotatable(el)
+    ? pointerToLocalFrame(screen, rotateFrameOf(el, viewport), elementRotation(el))
+    : screen;
   const m = opts?.margin ?? 2; // 判定外扩，降低精确点选难度
   for (const { id, rect: [hx, hy] } of layout) {
-    if (screen.x >= hx - m && screen.x <= hx + HANDLE_SIZE + m && screen.y >= hy - m && screen.y <= hy + HANDLE_SIZE + m) {
+    if (probe.x >= hx - m && probe.x <= hx + HANDLE_SIZE + m && probe.y >= hy - m && probe.y <= hy + HANDLE_SIZE + m) {
       return id;
     }
   }
@@ -721,18 +827,11 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
   }
 
   // 矩形旋转（ZOO-221）：指针绕几何中心逆旋转回局部系，再走既有 AABB + margin
-  // 判定——旋出局部外框的角可命中、AABB 四角的旋外空白不命中
-  let probe = point;
-  if (el.type === 'rectangle') {
-    const rot = elementRotation(el);
-    if (rot !== 0) {
-      probe = rotatePointAround(
-        point,
-        { x: el.x + el.width / 2, y: el.y + el.height / 2 },
-        -(rot * Math.PI) / 180
-      );
-    }
-  }
+  // 判定——旋出局部外框的角可命中、AABB 四角的旋外空白不命中（ZOO-222 起与
+  // 选中框控点 / 缩放适配共用 rotation.ts 的 pointerToLocalFrame 一份口径）
+  const probe = isRotatable(el)
+    ? pointerToLocalFrame(point, bbox, elementRotation(el))
+    : point;
 
   return (
     probe.x >= bbox.x - margin &&

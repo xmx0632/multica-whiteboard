@@ -7,11 +7,12 @@
  * 3. 其余 → 既有工具默认面板（零回归）。
  * 错误占位元素经「重新编辑方程」进原位替换流（editingId，原型决策 4）。
  */
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
 import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
 import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
+import { elementRotation, normalizeRotation } from '@/lib/rotation';
 import { validateEquation } from '@/lib/math/validate';
 import { pruneDragPoints } from '@/lib/math/dragPoint';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
@@ -45,18 +46,41 @@ export default function PropertyPanel() {
   const gestureStartRef = useRef<MathPlotElement | null>(null);
   // ZOO-155：方程提交非法的瞬时提示（元素保持原值，不落元素、不入历史）
   const [equationError, setEquationError] = useState<string | null>(null);
+  // 旋转角度输入草稿（ZOO-222）：编辑中镜像面板字符串，blur / 回车收敛落元素
+  // （一条 update 快照 = 一次 undo）；null = 非编辑态，回显元素当前角度
+  const [rotationDraft, setRotationDraft] = useState<string | null>(null);
 
   const selectedEl = elements.find((e) => e.id === selectedId) ?? null;
 
-  // 切换选中元素：方程提交提示随上一元素失效，清空防串显
+  // 切换选中元素：方程提交提示随上一元素失效，清空防串显；旋转草稿同弃
   useEffect(() => {
     setEquationError(null);
+    setRotationDraft(null);
   }, [selectedId]);
   // 原位替换态只在「仍选中该元素」时有效：点选别处 / 取消选中即自然退出
   const editingEl =
     editingId != null && editingId === selectedId
       ? elements.find((e) => e.id === editingId) ?? null
       : null;
+
+  // 旋转角度（ZOO-222）：选中矩形显示数值输入（0–359°，无障碍 / 精确路径）；
+  // circle / diamond 的旋转能力由 PR-R3 挂接同一字段后此段自动生效
+  const selectedRotation = selectedEl?.type === 'rectangle' ? selectedEl : null;
+
+  /** 旋转输入收敛（ZOO-222）：blur / 回车时归一 [0,360) 落元素——一条 update
+   *  快照 = 一次 undo；非法输入（空 / 非数字）静默丢弃，回显元素当前角度 */
+  const commitRotation = useCallback(() => {
+    const el = selectedRotation;
+    if (rotationDraft === null || !el) {
+      setRotationDraft(null);
+      return;
+    }
+    const v = Number(rotationDraft);
+    setRotationDraft(null);
+    if (!Number.isFinite(v)) return;
+    const norm = normalizeRotation(Math.round(v));
+    if (norm !== elementRotation(el)) updateElement(el.id, { rotation: norm });
+  }, [rotationDraft, selectedRotation, updateElement]);
 
   // —— ZOO-152/156 手机紧凑布局（横屏 / 竖屏）：面板可折叠（默认收起为 chip，方程 / 参数面板出现时自动展开）——
   const phoneLandscape = usePhoneLandscape();
@@ -413,6 +437,29 @@ export default function PropertyPanel() {
               />
             </div>
           )}
+        </div>
+      )}
+
+      {selectedRotation && (
+        <div>
+          <label htmlFor="panel-rotation" className="text-xs font-medium text-gray-500 mb-1 block">
+            {t('panel.rotation')}{t('panel.selectedSuffix')}
+          </label>
+          <div className="flex items-center gap-1">
+            <input
+              id="panel-rotation"
+              type="number"
+              min={0}
+              max={359}
+              step={1}
+              value={rotationDraft ?? String(Math.round(elementRotation(selectedRotation)))}
+              onChange={(e) => setRotationDraft(e.target.value)}
+              onBlur={commitRotation}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              className="touch-target w-full h-7 rounded-md border border-gray-300 px-2 text-sm text-gray-700"
+            />
+            <span className="text-xs text-gray-500 shrink-0">°</span>
+          </div>
         </div>
       )}
 
