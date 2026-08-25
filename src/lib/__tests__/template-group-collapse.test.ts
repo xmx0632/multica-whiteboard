@@ -75,21 +75,21 @@ describe('templateGroupCollapse（分组折叠状态 store）', () => {
   });
 
   it('expandTemplateGroups：批量展开指定组，未列出的组保持原状态（ZOO-204 联动）', () => {
-    // 默认仅首组展开；联动展开显式函数三组
+    // 默认仅首组展开；联动展开显式函数学段三组（ZOO-213 分组演进后的联动清单）
     expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS);
     for (const id of EXPLICIT_FUNCTION_GROUP_IDS) {
       expect(isGroupExpanded(id)).toBe(true);
     }
-    // 互斥组（几何曲线 / 直线与方程）不在清单——保持默认收起
-    expect(isGroupExpanded('conic')).toBe(false);
-    expect(isGroupExpanded('line')).toBe(false);
+    // 互斥组（物理学段）不在清单——保持默认收起
+    expect(isGroupExpanded('juniorPhysics')).toBe(false);
+    expect(isGroupExpanded('seniorPhysics')).toBe(false);
   });
 
   it('expandTemplateGroups：只增不减——用户已展开的互斥组不被收起', () => {
-    toggleGroupExpansion('conic'); // 用户手动展开几何曲线
+    toggleGroupExpansion('juniorPhysics'); // 用户手动展开物理组
     expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS);
-    expect(isGroupExpanded('conic')).toBe(true);
-    expect(isGroupExpanded('trig')).toBe(true);
+    expect(isGroupExpanded('juniorPhysics')).toBe(true);
+    expect(isGroupExpanded('seniorMath')).toBe(true);
   });
 
   it('expandTemplateGroups：全部已展开时幂等不通知；未注册 id 忽略', () => {

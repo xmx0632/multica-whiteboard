@@ -561,6 +561,8 @@ export function sampleEquation(
  * ZOO-191（T4）：parametric / polar 预览用默认参数域 [0,2π]（四类模板的整周期）。
  * ZOO-192（T5）：domain 透传草稿 t/θ 域（物理模板预置落地时间等）——缺省 /
  * 非法（倒序 / 非有限）回落默认 [0,2π]，注入方无需预校验。
+ * ZOO-213：显式函数同样吃 domain（学段模板的自变量定义域预置——预览窗口
+ * 与插入后元素 xAxis 一致）；缺省 / 非法回落默认 ±10。
  */
 export function createPreviewPolylines(
   equation: string,
@@ -587,7 +589,13 @@ export function createPreviewPolylines(
   }
   const parsed = parseEquation(equation, zhT, constants);
   if (parsed.kind !== 'explicit') return null;
-  const sampled = sampleExplicit(parsed.fn, { xMin: -10, xMax: 10 }, DEFAULT_SAMPLE_COUNT);
+  // ZOO-213：显式函数的域草稿（学段模板的自变量定义域预置）参与采样——
+  // 预览窗口与插入后的元素 xAxis 一致；缺省 / 非法回落默认 ±10。
+  const dom =
+    domain !== undefined && Number.isFinite(domain.min) && Number.isFinite(domain.max) && domain.min < domain.max
+      ? domain
+      : { min: -10, max: 10 };
+  const sampled = sampleExplicit(parsed.fn, { xMin: dom.min, xMax: dom.max }, DEFAULT_SAMPLE_COUNT);
   if ('error' in sampled) return null;
-  return { polylines: sampled.polylines, xMin: -10, xMax: 10, yMin: sampled.yMin, yMax: sampled.yMax };
+  return { polylines: sampled.polylines, xMin: dom.min, xMax: dom.max, yMin: sampled.yMin, yMax: sampled.yMax };
 }
