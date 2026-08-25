@@ -10,9 +10,10 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
-import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
+import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, Operation, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
 import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
 import { elementRotation, normalizeRotation } from '@/lib/rotation';
+import { updateBindingsAfterMove } from '@/lib/binding';
 import { validateEquation } from '@/lib/math/validate';
 import { pruneDragPoints } from '@/lib/math/dragPoint';
 import { convergeEquationCommit, mathPlotFieldsFromPayload } from '@/lib/mathplotElement';
@@ -63,12 +64,17 @@ export default function PropertyPanel() {
       ? elements.find((e) => e.id === editingId) ?? null
       : null;
 
-  // 旋转角度（ZOO-222）：选中矩形显示数值输入（0–359°，无障碍 / 精确路径）；
-  // circle / diamond 的旋转能力由 PR-R3 挂接同一字段后此段自动生效
-  const selectedRotation = selectedEl?.type === 'rectangle' ? selectedEl : null;
+  // 旋转角度（ZOO-222；ZOO-223 起三形状）：选中 rect/circle/diamond 显示数值输入
+  // （0–359°，无障碍 / 精确路径）
+  const selectedRotation =
+    selectedEl && (selectedEl.type === 'rectangle' || selectedEl.type === 'circle' || selectedEl.type === 'diamond')
+      ? selectedEl
+      : null;
 
   /** 旋转输入收敛（ZOO-222）：blur / 回车时归一 [0,360) 落元素——一条 update
-   *  快照 = 一次 undo；非法输入（空 / 非数字）静默丢弃，回显元素当前角度 */
+   *  快照 = 一次 undo；非法输入（空 / 非数字）静默丢弃，回显元素当前角度。
+   *  ZOO-223（PR-R3）：数值旋转与手柄拖转挂同一绑定重算钩子——被绑箭头端点
+   *  重投影到新角度轮廓，且并入同一条快照（undo 一次回整组）。 */
   const commitRotation = useCallback(() => {
     const el = selectedRotation;
     if (rotationDraft === null || !el) {
@@ -79,8 +85,22 @@ export default function PropertyPanel() {
     setRotationDraft(null);
     if (!Number.isFinite(v)) return;
     const norm = normalizeRotation(Math.round(v));
-    if (norm !== elementRotation(el)) updateElement(el.id, { rotation: norm });
-  }, [rotationDraft, selectedRotation, updateElement]);
+    if (norm === elementRotation(el)) return;
+    const st = useStore.getState();
+    const after = { ...el, rotation: norm };
+    const elementsAfter = updateBindingsAfterMove(
+      st.elements.map((e) => (e.id === el.id ? after : e)),
+      new Set([el.id]),
+    );
+    useStore.setState({ elements: elementsAfter, isDirty: true });
+    const ops: Operation[] = [{ type: 'update', elementId: el.id, before: el, after }];
+    for (const e of st.elements) {
+      if (e.type !== 'arrow') continue;
+      const aCur = elementsAfter.find((e2) => e2.id === e.id);
+      if (aCur && aCur !== e) ops.push({ type: 'update', elementId: e.id, before: e, after: aCur });
+    }
+    pushOperations(ops);
+  }, [rotationDraft, selectedRotation, pushOperations]);
 
   // —— ZOO-152/156 手机紧凑布局（横屏 / 竖屏）：面板可折叠（默认收起为 chip，方程 / 参数面板出现时自动展开）——
   const phoneLandscape = usePhoneLandscape();

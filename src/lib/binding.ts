@@ -7,15 +7,19 @@
  *   （ZOO-208 §2.1），故三类一律精确轮廓；
  * - 捕获 / 解绑：端点到轮廓距离 ≤10px 捕获、14px 解绑滞回（ZOO-153 阈值语义），
  *   屏幕 px 阈值按 viewport.scale 换算为世界 px（同 hitTest 的 8/scale 口径）；
- * - bindPoint / distanceToOutline 自带角度参数（默认 0，ZOO-208 补充评估 §0.5）：
- *   为矩形旋转系列（PR-R3）预留——非 0 时外部点绕元素中心逆旋转进局部系求值、
- *   结果再正旋转回世界系（x/y/width/height 恒为未旋转局部外框，PR-R1 语义）。
+ * - bindPoint / distanceToOutline 自带角度参数（ZOO-208 补充评估 §0.5 预留）：
+ *   ZOO-223（PR-R3）起全调用点实装——非 0 时外部点绕元素中心逆旋转进局部系
+ *   求值、结果再正旋转回世界系（x/y/width/height 恒为未旋转局部外框，PR-R1
+ *   语义），捕获 / 解绑距离在局部系计算对旋转天然不变；
+ * - updateBindingsAfterMove 的 movedIds 语义扩展为「轮廓发生变化的元素集合」：
+ *   移动 / 缩放 / 旋转（ZOO-223）挂同一重算钩子。
  *
  * 纯函数：不改传入元素；path / line / arrow / text / mathPlot / frame 均非
  * 绑定目标（ZOO-153 结论沿用）。
  */
 import { Point, WhiteboardElement, RectangleElement, CircleElement, DiamondElement, ArrowElement, ArrowBinding } from './types';
 import { diamondVertices } from './renderer';
+import { elementRotation } from './rotation';
 import { nearestOnPolyline, lineVertices, parseVertexHandle, isPolyline, polylinePatch } from './polyline';
 
 /** 可绑定元素（v1 白板形状三类；path/line/arrow 自身不作目标） */
@@ -89,7 +93,7 @@ function outlinePoint(el: BindableElement, externalPoint: Point): Point {
  * 轮廓吸附点（世界系）：端点贴近元素时箭头端点落到真实轮廓上的位置。
  * angle 为元素旋转角（度，顺时针，绕几何中心——PR-R1 存储语义；屏幕系 y 朝下，
  * 代数正角即视觉顺时针）：外部点逆旋转进局部系求轮廓交点、结果正旋转回世界系。
- * PR2 全部调用传 0，PR-R3 旋转系列接入时直接传元素 rotation，分支已就位无需重构。
+ * ZOO-223（PR-R3）起调用方统一传 elementRotation(el)。
  */
 export function bindPoint(el: BindableElement, externalPoint: Point, angle = 0): Point {
   if (normalizeAngleDeg(angle) === 0) return outlinePoint(el, externalPoint);
@@ -183,10 +187,11 @@ export function findBindingTarget(
   let best: BindingCandidate | null = null;
   for (const el of elements) {
     if (!isBindableElement(el) || exclude.has(el.id)) continue;
-    const dist = distanceToOutline(el, world);
+    const rot = elementRotation(el); // 旋转目标在局部系求距离 / 吸附点（ZOO-223）
+    const dist = distanceToOutline(el, world, rot);
     // ≤ 含并列（同距取上层元素），与 hitTest 的 ≤ margin 口径一致
     if (dist <= threshold && (!best || dist <= best.dist)) {
-      best = { element: el, point: bindPoint(el, world), dist };
+      best = { element: el, point: bindPoint(el, world, rot), dist };
     }
   }
   return best;
@@ -221,14 +226,16 @@ export function resolveEndpointBinding(params: {
   const { elements, arrow, endpoint, world, scale } = params;
   const current = endpoint === 'start' ? arrow.startBinding : arrow.endBinding;
 
-  // 维持项：起手绑定目标仍在（未删除）且在解绑阈值内
+  // 维持项：起手绑定目标仍在（未删除）且在解绑阈值内（旋转目标的距离 / 吸附点
+  // 在其局部系求值，ZOO-223）
   let hold: BindingCandidate | null = null;
   if (current) {
     const el = elements.find((e2) => e2.id === current.elementId);
     if (el && isBindableElement(el)) {
-      const dist = distanceToOutline(el, world);
+      const rot = elementRotation(el);
+      const dist = distanceToOutline(el, world, rot);
       if (dist <= BIND_RELEASE_PX / (scale || 1)) {
-        hold = { element: el, point: bindPoint(el, world), dist };
+        hold = { element: el, point: bindPoint(el, world, rot), dist };
       }
     }
   }
@@ -242,8 +249,9 @@ export function resolveEndpointBinding(params: {
 }
 
 /**
- * 元素移动后的绑定跟随（ZOO-220）：movedIds 内元素移动后，端点绑定指向它们的
- * 箭头把端点重投影到目标移动后的轮廓上（bindPoint 沿目标中心→端点射线求交），
+ * 元素轮廓变化后的绑定跟随（ZOO-220 移动/缩放，ZOO-223 旋转挂同一钩子）：
+ * movedIds 内元素轮廓变化后，端点绑定指向它们的箭头把端点重投影到目标新轮廓上
+ * （bindPoint 沿目标中心→端点射线求交，旋转目标在局部系求值后转回世界系），
  * 折线形态同步首/尾顶点（polylinePatch 同一语义，杜绝 x2/y2 与 points 双数据源漂移）。
  *
  * 绑定目标不在 movedIds 内的箭头原样返回（组外箭头不指向组内元素时不跟随）；
@@ -269,7 +277,7 @@ export function updateBindingsAfterMove(elements: WhiteboardElement[], movedIds:
     if (startMoved) {
       const target = elements.find((e) => e.id === el.startBinding!.elementId);
       if (target && isBindableElement(target)) {
-        startPoint = bindPoint(target, startPoint);
+        startPoint = bindPoint(target, startPoint, elementRotation(target));
         projected = true;
       }
     }
@@ -278,7 +286,7 @@ export function updateBindingsAfterMove(elements: WhiteboardElement[], movedIds:
     if (endMoved) {
       const target = elements.find((e) => e.id === el.endBinding!.elementId);
       if (target && isBindableElement(target)) {
-        endPoint = bindPoint(target, endPoint);
+        endPoint = bindPoint(target, endPoint, elementRotation(target));
         projected = true;
       }
     }

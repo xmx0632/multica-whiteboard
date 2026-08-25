@@ -1,7 +1,8 @@
 /**
  * 菱形元素单测（ZOO-217，绑定系列 PR1）：
  * - diamondVertices：外框四边中点（上→右→下→左）推导，负宽高（拖拽翻转）仍构成菱形；
- * - hitTest 精确轮廓：bbox 四角空白不命中、无填充中心空白不命中、边带 / 填充区内命中；
+ * - hitTest 精确轮廓：bbox 四角空白不命中（ZOO-217 初衷），内部无条件可选中
+ *   （ZOO-223 用户反馈修正：无填充内部不再是点选死区）、边带与填充区内命中；
  * - elementLocalFrame / translateElement / 角控点：外框语义同 rectangle；
  * - boxResizePatch：角控点对角锚定 + Shift 等比（参数联合含 DiamondElement）；
  * - SVG 导出：<polygon> 四顶点与画布同一份推导，dash / fill 属性同语义；
@@ -54,9 +55,9 @@ describe('hitTest（精确轮廓，bbox 空白不误选）', () => {
     }
   });
 
-  it('无填充：中心空白不命中；四边上命中', () => {
+  it('无填充：中心 / 内部可选中（ZOO-223 修正，与 rect/circle 一致）；四边上命中', () => {
     const el = diamond();
-    expect(hitTest(el, { x: 200, y: 160 }, VP)).toBe(false); // 中心距四边 ≈51px
+    expect(hitTest(el, { x: 200, y: 160 }, VP)).toBe(true); // 中心（距四边 ≈51px，内部点选）
     expect(hitTest(el, { x: 250, y: 130 }, VP)).toBe(true); // 上右边中点（贴边）
     expect(hitTest(el, { x: 200, y: 100 }, VP)).toBe(true); // 上顶点
   });

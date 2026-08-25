@@ -86,17 +86,28 @@ function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
         : '';
       return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${rotateAttr}/>`;
     }
+    // 椭圆旋转（ZOO-223）：同 rect 口径的 transform rotate(θ cx cy)——与画布
+    // drawCircle 的 ellipse rotation 形参同一角度；rotation = 0 / 缺省不输出
+    // transform 属性，旧文档导出逐字节不变
     case 'circle': {
       const cx = el.x + el.width / 2;
       const cy = el.y + el.height / 2;
       const rx = el.width / 2;
       const ry = el.height / 2;
-      return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
+      const circleRot = elementRotation(el);
+      const circleRotateAttr = circleRot !== 0 ? ` transform="rotate(${circleRot} ${cx} ${cy})"` : '';
+      return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${circleRotateAttr}/>`;
     }
     // 菱形（ZOO-217）：四中点顶点 <polygon>（与画布 diamondVertices 同一份推导；
-    // PNG/缩略图走 renderElement 自动同语义）
-    case 'diamond':
-      return `<polygon points="${diamondVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'} stroke-linejoin="round"${opacity}/>`;
+    // PNG/缩略图走 renderElement 自动同语义）。ZOO-223 旋转：顶点恒为局部系
+    // 推导，transform rotate(θ cx cy) 承担旋转（同 rect/ellipse 口径）
+    case 'diamond': {
+      const diamondRot = elementRotation(el);
+      const diamondRotateAttr = diamondRot !== 0
+        ? ` transform="rotate(${diamondRot} ${el.x + el.width / 2} ${el.y + el.height / 2})"`
+        : '';
+      return `<polygon points="${diamondVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'} stroke-linejoin="round"${opacity}${diamondRotateAttr}/>`;
+    }
     case 'line':
       return isPolyline(el)
         ? `<polyline points="${lineVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`

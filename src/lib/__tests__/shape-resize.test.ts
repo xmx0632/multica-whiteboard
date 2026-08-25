@@ -13,7 +13,7 @@ import {
   PathElement, TextElement, Viewport,
 } from '../types';
 import { hitTestSelectionHandle, renderSelection } from '../renderer';
-import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged } from '../shapeResize';
+import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, isDegenerateShapeClick } from '../shapeResize';
 
 const VP: Viewport = { offsetX: 0, offsetY: 0, scale: 1 };
 
@@ -225,5 +225,29 @@ describe('renderSelection（选中框绘制与控点布局）', () => {
     const b = mockCtx();
     renderSelection(b.ctx, path(), VP);
     expect(b.calls.filter((c) => c.op === 'fillRect')).toHaveLength(4);
+  });
+});
+
+describe('isDegenerateShapeClick（单击零拖拽的退化形状，ZOO-223）', () => {
+  const shape = (type: 'rectangle' | 'circle' | 'diamond', w: number, h: number) => ({
+    id: 'e', type, x: 0, y: 0, width: w, height: h,
+    strokeColor: '#000', strokeWidth: 2, opacity: 1, fillColor: null,
+  } as WhiteboardElement);
+
+  it('0×0 三形状均判退化（单击不落元素）', () => {
+    expect(isDegenerateShapeClick(shape('rectangle', 0, 0))).toBe(true);
+    expect(isDegenerateShapeClick(shape('circle', 0, 0))).toBe(true);
+    expect(isDegenerateShapeClick(shape('diamond', 0, 0))).toBe(true);
+  });
+
+  it('任一维 ≥1px 即非退化（拖拽绘制不受影响，含翻转负宽高）', () => {
+    expect(isDegenerateShapeClick(shape('diamond', 1, 0))).toBe(false);
+    expect(isDegenerateShapeClick(shape('diamond', 0.5, 2))).toBe(false);
+    expect(isDegenerateShapeClick(shape('rectangle', -200, -100))).toBe(false);
+  });
+
+  it('line / arrow / path 不适用（两端重合为既有绘制语义）', () => {
+    expect(isDegenerateShapeClick({ ...shape('rectangle', 0, 0), type: 'line', x2: 0, y2: 0 } as unknown as WhiteboardElement)).toBe(false);
+    expect(isDegenerateShapeClick({ ...shape('rectangle', 0, 0), type: 'arrow', x2: 0, y2: 0 } as unknown as WhiteboardElement)).toBe(false);
   });
 });

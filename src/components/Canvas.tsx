@@ -3,9 +3,9 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, hitTestRotationHandle, isRotatable, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, elementBoundsAABB } from '@/lib/renderer';
-import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
+import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, isDegenerateShapeClick, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
 import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement } from '@/lib/binding';
-import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, RectangleElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, RectangleElement, CircleElement, DiamondElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { elementRotation, normalizeRotation, stepRotation, pointerToLocalFrame } from '@/lib/rotation';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
@@ -118,6 +118,17 @@ function snapshotArrows(elements: WhiteboardElement[]): ArrowElement[] {
   );
 }
 
+/** 画布指针捕获显式释放（ZOO-223）：hasPointerCapture 先查再放，未持有 /
+ *  指针已失效（合成事件）静默跳过——与 pointerdown 侧的防御性捕获对称。 */
+function releasePointerCaptureOf(canvas: HTMLCanvasElement | null, pointerId: number) {
+  if (!canvas) return;
+  try {
+    if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+  } catch {
+    /* noop */
+  }
+}
+
 export default function Canvas() {
   const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -146,11 +157,11 @@ export default function Canvas() {
   // rect/circle 角控点改外框、line/arrow 端点手柄、path 角控点整体等比缩放点集
   // frame 角控点（ZOO-198）：groupStart 为起手时页内内容快照——帧缩放联动内容
   const resizeRef = useRef<{ handle: ResizeHandleId; startEl: WhiteboardElement; startWorld: Point; groupStart?: WhiteboardElement[] } | null>(null);
-  // —— 旋转手柄拖转（ZOO-222）——
+  // —— 旋转手柄拖转（ZOO-222；ZOO-223 起三形状 + 绑定跟随）——
   /** 拖转手势态（ref 为准）：startEl 为起手整元素快照（undo / 双指取消恢复共用），
    *  startAngle 为起手指针绕几何中心的方位角（屏幕系）——拖转按增量旋转，
    *  抓取瞬间元素不跳角（Excalidraw/Miro 惯例）；Shift = 15° 步进 */
-  const rotateRef = useRef<{ elementId: string; startEl: RectangleElement; startAngle: number } | null>(null);
+  const rotateRef = useRef<{ elementId: string; startEl: RectangleElement | CircleElement | DiamondElement; startAngle: number } | null>(null);
   /** 悬停旋转手柄 / 拖转进行中（ZOO-207 光标体系：grab / grabbing） */
   const [rotateHover, setRotateHover] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -614,7 +625,8 @@ export default function Canvas() {
       }
     }
 
-    // 拖转取消（ZOO-222）：恢复起手整元素（丢弃拖动中的角度直改，不入历史）
+    // 拖转取消（ZOO-222）：恢复起手整元素（丢弃拖动中的角度直改，不入历史；
+    // 跟随重算的箭头由末尾统一收口恢复）
     const rt = rotateRef.current;
     if (rt) {
       rotateRef.current = null;
@@ -652,6 +664,17 @@ export default function Canvas() {
       frameDragContentsRef.current = null;
       useStore.setState({
         elements: st.elements.map((el) => restore.get(el.id) ?? el),
+      });
+    }
+    // 绑定跟随箭头取消恢复（ZOO-223）：拖动 / 缩放 / 拖转手势中跟随重算过的箭头
+    // 一并回起手快照——各分支恢复元素本体，此处统一收口箭头侧（回退后端点仍贴
+    // 在恢复位置元素的轮廓上，不悬空在取消前的重算点）
+    const cancelArrowsStart = dragArrowsStartRef.current;
+    if (cancelArrowsStart) {
+      dragArrowsStartRef.current = null;
+      const restoreArrows = new Map(cancelArrowsStart.map((a) => [a.id, a]));
+      useStore.setState({
+        elements: useStore.getState().elements.map((el) => restoreArrows.get(el.id) ?? el),
       });
     }
   }, []);
@@ -914,6 +937,9 @@ export default function Canvas() {
             startEl: { ...sel },
             startAngle: Math.atan2(local.y - cy, local.x - cx),
           };
+          // ZOO-223（PR-R3）：拖转起手快照箭头——拖动中旋转触发绑定端点重算，
+          // 抬指对照它并入同一条 undo 快照（与移动 / 缩放并栈同构）
+          dragArrowsStartRef.current = snapshotArrows(elements);
           setRotating(true);
           setRotateHover(false);
           isDrawingRef.current = false; // 拖转手势独立提交，防滞留 select-drag 压脏快照
@@ -1266,6 +1292,9 @@ export default function Canvas() {
     // 旋转手柄拖转（ZOO-222）：angle = atan2(指针 − 中心)，按相对增量旋转（抓取
     // 瞬间不跳角）；Shift = 15° 步进（stepRotation 网格取整）。D5 静默直改实时
     // 预览，抬指统一压一条快照——一次拖转一条 undo。
+    // ZOO-223（PR-R3）：旋转与移动 / 缩放挂同一绑定重算钩子——被绑箭头端点
+    // 逐帧重投影到旋转后的真实轮廓上（updateBindingsAfterMove 传 movedIds =
+    // 旋转元素，bindPoint 在局部系求交后转回世界系）。
     const rotate = rotateRef.current;
     if (rotate) {
       const st = useStore.getState();
@@ -1278,7 +1307,12 @@ export default function Canvas() {
         const deg = e.shiftKey
           ? stepRotation(elementRotation(rotate.startEl) + deltaDeg)
           : normalizeRotation(elementRotation(rotate.startEl) + deltaDeg);
-        st.updateElementTransient(el.id, { rotation: deg });
+        useStore.setState({
+          elements: updateBindingsAfterMove(
+            st.elements.map((e2) => (e2.id === el.id ? { ...e2, rotation: deg } : e2)),
+            new Set([el.id]),
+          ),
+        });
       }
       return;
     }
@@ -1301,18 +1335,17 @@ export default function Canvas() {
         case 'mathPlot':
           next = applyResize({ handle: rs.handle as MathPlotHandle, startEl: start, startWorld: rs.startWorld }, point);
           break;
-        case 'rectangle': {
-          // 旋转适配（ZOO-222）：世界指针逆旋转进局部系再喂 boxResizePatch——刚体
-          // 变换保对角锚定，Shift 等比逻辑零改动；rot = 0 原样传入（逐字节等价）
+        case 'rectangle':
+        // 椭圆/菱形（ZOO-223）：与矩形同一旋转适配——世界指针逆旋转进局部系再喂
+        // boxResizePatch（刚体变换保对角锚定，Shift 等比逻辑零改动）；rot = 0
+        // 原样传入（逐字节等价）
+        case 'circle':
+        case 'diamond': {
           const rot0 = elementRotation(start);
           const localPoint = rot0 === 0 ? point : pointerToLocalFrame(point, start, rot0);
           next = boxResizePatch(rs.handle as CornerHandle, start, localPoint, { shift: e.shiftKey, minSize });
           break;
         }
-        case 'circle':
-        case 'diamond':
-          next = boxResizePatch(rs.handle as CornerHandle, start, point, { shift: e.shiftKey, minSize });
-          break;
         case 'line':
         case 'arrow': {
           // 折线编辑态顶点手柄 vN（ZOO-168）：拖动第 N 个顶点；非编辑态维持 p1/p2 端点语义
@@ -1491,10 +1524,17 @@ export default function Canvas() {
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
     // 演示态路由（ZOO-200）：激光收尾 / 横滑翻页（cancel 只收尾不翻页）
     if (presenting) {
+      releasePointerCaptureOf(canvasRef.current, e.pointerId);
       handlePresentPointerUp(e, cancelled);
       return;
     }
     activePointersRef.current.delete(e.pointerId);
+
+    // 捕获无条件显式释放（ZOO-223）：pointerdown 无条件 setPointerCapture，
+    // 此处对应无条件 release——不再依赖抬指隐式释放。Safari / 部分触摸通道的
+    // 隐式释放存在失效个案，捕获一旦泄漏，后续所有指针事件（含点工具栏）被
+    // 重定向进画布：工具切换失效 + 画布连点连续落元素。
+    releasePointerCaptureOf(canvasRef.current, e.pointerId);
 
     // 双指之一抬起：结束捏合并落定最终帧；残余触摸标记惰性（防止误画）
     const pinch = pinchRef.current;
@@ -1534,17 +1574,28 @@ export default function Canvas() {
     // 拖转收口（ZOO-222）：一次拖转 = 一条可撤销快照（before 取起手整元素，undo
     // 一次回拖转前）；无实效（角度未变）不压栈。系统打断（cancel）同样收口——
     // 直改已可见，快照保证撤销一致（D5 与可拖点 / 控点缩放同构）。
+    // ZOO-223（PR-R3）：旋转跟随重算的绑定箭头并入同一条快照（before 取起手
+    // 箭头，undo 一次回整组——与移动 / 缩放并栈同构）。
     const rotate = rotateRef.current;
     if (rotate) {
       rotateRef.current = null;
       setRotating(false);
+      const rotateArrowsStart = dragArrowsStartRef.current;
+      dragArrowsStartRef.current = null;
       const cur = useStore.getState().elements.find((e) => e.id === rotate.elementId);
       if (cur && elementResizeChanged(cur, rotate.startEl)) {
-        pushOperations([{
+        const ops: Operation[] = [{
           type: 'update', elementId: rotate.elementId,
           before: rotate.startEl,
           after: { ...cur },
-        }]);
+        }];
+        for (const a of rotateArrowsStart ?? []) {
+          const aCur = useStore.getState().elements.find((el) => el.id === a.id);
+          if (aCur && elementResizeChanged(aCur, a)) {
+            ops.push({ type: 'update', elementId: a.id, before: a, after: { ...aCur } });
+          }
+        }
+        pushOperations(ops);
       }
       return;
     }
@@ -1610,7 +1661,9 @@ export default function Canvas() {
 
     const temp = tempElementRef.current;
     if (temp) {
-      addElement(temp);
+      // 单击（零拖拽）的退化形状不落元素（ZOO-223）：0×0 形状不可见不可选，
+      // 落进文档只成垃圾——形状工具下画布连点不再逐点累积隐形元素
+      if (!isDegenerateShapeClick(temp)) addElement(temp);
       tempElementRef.current = null;
     }
 
