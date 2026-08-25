@@ -340,20 +340,35 @@ export default function EquationEditor({
                 <div className="group-collapse" data-collapsed={!expanded}>
                   <div className="group-collapse-inner">
                     <div id={listId} className="grid grid-cols-2 gap-1 p-1 pt-0">
-                      {group.templates.map((tpl) => (
+                      {group.templates.map((tpl) => {
+                      // ZOO-204 后续：当前方程与模板方程一致时呈选中态（蓝边框 +
+                      // 底色 + 名称行 ✓ + aria-pressed）——与高级公式面板模板
+                      // 同一视觉语言；点选即选中、切换即互切、手改方程即取消。
+                      // 「常用」组交叉引用的模板与学段组同款同显（同一公式）。
+                      const selected = trimmed === tpl.equation;
+                      return (
                       <button
                         key={tpl.id}
                         type="button"
+                        aria-pressed={selected}
                         title={tpl.equation}
                         onClick={() => applyTemplate(tpl)}
-                        className="touch-target border border-gray-200 bg-white rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
+                        className={`touch-target border rounded-md px-1.5 py-1 text-left cursor-pointer active:bg-blue-100 transition-colors ${
+                          selected
+                            ? 'border-blue-500 bg-blue-100 ring-1 ring-blue-400'
+                            : 'border-gray-200 bg-white hover:border-blue-500 hover:bg-blue-50/50'
+                        }`}
                       >
-                        <span className="block text-[10px] text-gray-400 leading-tight">{t(templateNameKey(tpl.id))}</span>
+                        <span className={`block text-[10px] leading-tight ${selected ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                          {selected ? '✓ ' : ''}
+                          {t(templateNameKey(tpl.id))}
+                        </span>
                         <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">
                           {tpl.equation}
                         </span>
                       </button>
-                    ))}
+                      );
+                      })}
                     </div>
                   </div>
                 </div>
