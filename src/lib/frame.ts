@@ -18,7 +18,7 @@ import {
   TEXT_MIN_FONT_SIZE,
   TEXT_MAX_FONT_SIZE,
 } from './types';
-import { getElementBounds } from './renderer';
+import { elementBoundsAABB } from './renderer';
 import { measureTextElement } from './textElement';
 import { polylinePatch } from './polyline';
 
@@ -44,10 +44,14 @@ export function framesOf(elements: WhiteboardElement[]): FrameElement[] {
   return elements.filter(isFrame);
 }
 
-/** 元素是否属于某帧：包围盒中心落在帧矩形内（帧之间中心不重叠，归属确定） */
+/**
+ * 元素是否属于某帧：包围盒中心落在帧矩形内（帧之间中心不重叠，归属确定）。
+ * ZOO-221 起取世界系 AABB（帧归属按视觉足迹；旋转元素中心两套包围盒数值
+ * 相同——旋转绕几何中心，AABB 中心 = 几何中心）。
+ */
 export function elementInFrame(el: WhiteboardElement, frame: FrameElement): boolean {
   if (isFrame(el)) return false; // 帧不嵌套：帧永不属于另一帧
-  const b = getElementBounds(el);
+  const b = elementBoundsAABB(el);
   if (!b) return false;
   const cx = b.x + b.width / 2;
   const cy = b.y + b.height / 2;

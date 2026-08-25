@@ -9,7 +9,7 @@
  * 纯函数：不改原元素，返回可直接合入元素的补丁（与 textResizePatch / applyResize 同构）。
  */
 import { WhiteboardElement, RectangleElement, CircleElement, DiamondElement, LineElement, ArrowElement, PathElement, FrameElement } from './types';
-import { getElementBounds } from './renderer';
+import { elementLocalFrame } from './renderer';
 import { lineVertices, polylinePatch, isPolyline } from './polyline';
 
 /** 角控点方位（rect/circle/path 共用；mathPlot 8 控点的角子集） */
@@ -99,7 +99,7 @@ export function pathResizePatch(
   opts?: ResizeOpts
 ): Pick<PathElement, 'x' | 'y' | 'points'> {
   const min = opts?.minSize ?? SHAPE_MIN_SIZE;
-  const b = getElementBounds(startEl);
+  const b = elementLocalFrame(startEl);
   if (!b || startEl.points.length === 0) return { x: startEl.x, y: startEl.y, points: startEl.points };
 
   const anchorX = handle.includes('w') ? b.x + b.width : b.x;

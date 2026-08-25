@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { translateElement, getElementBounds } from '../renderer';
+import { translateElement, elementLocalFrame } from '../renderer';
 import { WhiteboardElement, LineElement, ArrowElement, PathElement } from '../types';
 
 const base = { id: 'el-1', strokeColor: '#000000', strokeWidth: 2, opacity: 1 };
@@ -24,7 +24,7 @@ describe('translateElement（选中拖动整体平移，ZOO-154）', () => {
     expect(moved.y2).toBe(420);
     // 修复前终点钉死 (400,420)：宽度 194→115 被拉变形；修复后长度恒为 200
     expect(dist(moved, { x: moved.x2, y: moved.y2 })).toBe(dist(arrow, { x: arrow.x2, y: arrow.y2 }));
-    expect(getElementBounds(moved)!.width).toBe(getElementBounds(arrow)!.width);
+    expect(elementLocalFrame(moved)!.width).toBe(elementLocalFrame(arrow)!.width);
   });
 
   it('line 两端点位移一致（dx/dy 同时作用于 x/y 与 x2/y2）', () => {
@@ -41,8 +41,8 @@ describe('translateElement（选中拖动整体平移，ZOO-154）', () => {
     const moved = translateElement(rev, 100, -20) as LineElement;
     expect(moved.x2).toBe(300);
     expect(moved.y2).toBe(280);
-    const a = getElementBounds(rev)!;
-    const b = getElementBounds(moved)!;
+    const a = elementLocalFrame(rev)!;
+    const b = elementLocalFrame(moved)!;
     expect(b.width).toBe(a.width);
     expect(b.height).toBe(a.height);
   });

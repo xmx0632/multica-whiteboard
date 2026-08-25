@@ -14,7 +14,7 @@ import {
   lineVertices, isPolyline, polylinePatch, insertVertexPatch, removeVertexPatch,
   vertexDragPatch, nearestOnPolyline, parseVertexHandle, vertexHandle,
 } from '../polyline';
-import { translateElement, getElementBounds, hitTest } from '../renderer';
+import { translateElement, elementLocalFrame, hitTest } from '../renderer';
 import { endpointResizePatch } from '../shapeResize';
 import { useStore } from '../store';
 import { exportToSvg } from '../export';
@@ -134,9 +134,9 @@ describe('renderer 折线适配（ZOO-168）', () => {
     expect(moved.x2).toBe(230);
   });
 
-  it('getElementBounds：折线包围盒覆盖全部顶点', () => {
+  it('elementLocalFrame：折线包围盒覆盖全部顶点', () => {
     const poly = V('p', [{ x: 20, y: -10 }, { x: 100, y: -60 }, { x: 180, y: 30 }]);
-    const b = getElementBounds(poly)!;
+    const b = elementLocalFrame(poly)!;
     expect(b).toEqual({ x: 20, y: -60, width: 160, height: 90 });
   });
 

@@ -6,6 +6,7 @@ import { plotTokenFor } from './math/cache';
 import { dashPatternFor } from './stroke';
 import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
 import { FRAME_TITLE_HEIGHT } from './frame';
+import { elementRotation, rotatePointAround } from './rotation';
 
 /**
  * MathPlotElement → PlotSpec（ZOO-199 提取共享）：drawMathPlotElement 与
@@ -106,12 +107,16 @@ function drawPath(ctx: CanvasRenderingContext2D, el: PathElement, viewport: View
   ctx.restore();
 }
 
+/**
+ * 矩形绘制（ZOO-221 起支持旋转）：rotation ≠ 0 时 translate 到几何中心 →
+ * rotate(顺时针 rad) → 以 (-w/2,-h/2) 为左上角 fill/stroke；rotation = 0 /
+ * 缺省保持旧直绘路径——旧文档逐像素等价（坐标运算序都不变）。
+ */
 function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, viewport: Viewport) {
   const { offsetX, offsetY, scale } = viewport;
-  const x = el.x * scale + offsetX;
-  const y = el.y * scale + offsetY;
   const w = el.width * scale;
   const h = el.height * scale;
+  const rot = elementRotation(el);
 
   ctx.save();
   ctx.globalAlpha = el.opacity;
@@ -120,11 +125,23 @@ function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, view
   ctx.lineJoin = 'round';
   applyDash(ctx, el, scale);
 
-  if (el.fillColor) {
-    ctx.fillStyle = el.fillColor;
-    ctx.fillRect(x, y, w, h);
+  if (rot === 0) {
+    const x = el.x * scale + offsetX;
+    const y = el.y * scale + offsetY;
+    if (el.fillColor) {
+      ctx.fillStyle = el.fillColor;
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.strokeRect(x, y, w, h);
+  } else {
+    ctx.translate((el.x + el.width / 2) * scale + offsetX, (el.y + el.height / 2) * scale + offsetY);
+    ctx.rotate((rot * Math.PI) / 180);
+    if (el.fillColor) {
+      ctx.fillStyle = el.fillColor;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
   }
-  ctx.strokeRect(x, y, w, h);
   ctx.restore();
 }
 
@@ -398,7 +415,7 @@ export function elementIntersectsView(
   viewWidth: number,
   viewHeight: number
 ): boolean {
-  const bbox = getElementBounds(el);
+  const bbox = elementBoundsAABB(el);
   if (!bbox) return true;
   const { offsetX, offsetY, scale } = viewport;
   const sx = bbox.x * scale + offsetX;
@@ -460,7 +477,7 @@ function selectionHandleLayout(
     ];
   }
 
-  const bbox = getElementBounds(el);
+  const bbox = elementLocalFrame(el);
   if (!bbox) return [];
   const x = bbox.x * scale + offsetX;
   const y = bbox.y * scale + offsetY;
@@ -514,7 +531,7 @@ export function renderSelection(
     return;
   }
 
-  const bbox = getElementBounds(el);
+  const bbox = elementLocalFrame(el);
   if (!bbox) return;
 
   const x = bbox.x * scale + offsetX;
@@ -581,7 +598,14 @@ export function translateElement(el: WhiteboardElement, dx: number, dy: number):
   }
 }
 
-export function getElementBounds(el: WhiteboardElement): { x: number; y: number; width: number; height: number } | null {
+/**
+ * 局部外框（ZOO-221 命名分叉）：未旋转局部坐标系的 x/y/width/height 外框——
+ * 供选中框 / 控点布局 / 缩放锚定。旋转元素的矩形旋转不改外框字段，故此处
+ * 恒返回存储外框；要「元素在世界系占多大」必须走 elementBoundsAABB。
+ * 两套语义成对命名、不可互换（矩形旋转系列最大隐性风险：culling 拿局部框
+ * 会裁掉旋出部分、选中框拿 AABB 会框进四角空白）。
+ */
+export function elementLocalFrame(el: WhiteboardElement): { x: number; y: number; width: number; height: number } | null {
   switch (el.type) {
     case 'path': {
       if (el.points.length === 0) return null;
@@ -623,12 +647,46 @@ export function getElementBounds(el: WhiteboardElement): { x: number; y: number;
 }
 
 /**
+ * 世界系 AABB（ZOO-221 命名分叉）：旋转矩形 = 四角绕几何中心旋转后的轴对齐
+ * 包围盒（只增不裁）；其余类型与 elementLocalFrame 同体。供 culling
+ * （elementIntersectsView）/ zoom-fit（getAllElementsBounds）/ 导出边界 /
+ * 帧归属——旋出局部外框的部分不被视口剔除、不被导出裁剪。
+ */
+export function elementBoundsAABB(el: WhiteboardElement): { x: number; y: number; width: number; height: number } | null {
+  const local = elementLocalFrame(el);
+  if (!local) return null;
+  if (el.type === 'rectangle') {
+    const rot = elementRotation(el);
+    if (rot !== 0) {
+      const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
+      const rad = (rot * Math.PI) / 180;
+      const corners = [
+        { x: el.x, y: el.y },
+        { x: el.x + el.width, y: el.y },
+        { x: el.x + el.width, y: el.y + el.height },
+        { x: el.x, y: el.y + el.height },
+      ].map((p) => rotatePointAround(p, center, rad));
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of corners) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+      return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }
+  }
+  return local;
+}
+
+/**
  * 元素命中测试。line/arrow（含折线形态，ZOO-168）与 diamond（ZOO-217，填充态含
  * 内点判定）按精确轮廓判定——包围盒内部的空白区不再误命中；其余类型维持包围盒判定。
+ * 旋转矩形（ZOO-221）先逆旋转指针再判局部外框，旋外空白不误命中。
  */
 export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport): boolean {
   const { scale } = viewport;
-  const bbox = getElementBounds(el);
+  const bbox = elementLocalFrame(el);
   if (!bbox) return false;
 
   const margin = Math.max(8 / scale, el.strokeWidth / 2 + 4 / scale);
@@ -662,11 +720,25 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
     return inTitle || (inOuter && !(innerX && innerY));
   }
 
+  // 矩形旋转（ZOO-221）：指针绕几何中心逆旋转回局部系，再走既有 AABB + margin
+  // 判定——旋出局部外框的角可命中、AABB 四角的旋外空白不命中
+  let probe = point;
+  if (el.type === 'rectangle') {
+    const rot = elementRotation(el);
+    if (rot !== 0) {
+      probe = rotatePointAround(
+        point,
+        { x: el.x + el.width / 2, y: el.y + el.height / 2 },
+        -(rot * Math.PI) / 180
+      );
+    }
+  }
+
   return (
-    point.x >= bbox.x - margin &&
-    point.x <= bbox.x + bbox.width + margin &&
-    point.y >= bbox.y - margin &&
-    point.y <= bbox.y + bbox.height + margin
+    probe.x >= bbox.x - margin &&
+    probe.x <= bbox.x + bbox.width + margin &&
+    probe.y >= bbox.y - margin &&
+    probe.y <= bbox.y + bbox.height + margin
   );
 }
 
@@ -681,7 +753,7 @@ export function getAllElementsBounds(elements: WhiteboardElement[]): { x: number
   if (elements.length === 0) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of elements) {
-    const bbox = getElementBounds(el);
+    const bbox = elementBoundsAABB(el);
     if (!bbox) continue;
     minX = Math.min(minX, bbox.x);
     minY = Math.min(minY, bbox.y);

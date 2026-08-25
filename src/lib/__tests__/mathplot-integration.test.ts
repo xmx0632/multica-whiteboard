@@ -19,7 +19,7 @@ import {
   mathPlotFieldsFromPayload,
 } from '../mathplotElement';
 import {
-  getElementBounds,
+  elementLocalFrame,
   hitTest,
   hitTestSelectionHandle,
   renderElement,
@@ -249,7 +249,7 @@ describe('渲染管线接入', () => {
 
   it('包围盒 = 外框（hitTest 零改动命中）', () => {
     const el = makeElement();
-    expect(getElementBounds(el)).toEqual({ x: 100, y: 80, width: 480, height: 360 });
+    expect(elementLocalFrame(el)).toEqual({ x: 100, y: 80, width: 480, height: 360 });
     expect(hitTest(el, { x: 200, y: 200 }, VP)).toBe(true);
     expect(hitTest(el, { x: 50, y: 50 }, VP)).toBe(false);
   });
@@ -476,7 +476,7 @@ describe('前向兼容（旧版开新文档：未知类型静默忽略）', () =
     const { ctx, calls } = createMockCtx();
     expect(() => renderElement(ctx, unknownEl, VP)).not.toThrow();
     expect(calls).toHaveLength(0);
-    expect(getElementBounds(unknownEl)).toBeNull();
+    expect(elementLocalFrame(unknownEl)).toBeNull();
     expect(hitTest(unknownEl, { x: 0, y: 0 }, VP)).toBe(false);
   });
 });
