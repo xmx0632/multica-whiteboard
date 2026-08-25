@@ -4,7 +4,8 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, getElementBounds } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
-import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
+import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals } from '@/lib/binding';
+import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
@@ -1157,9 +1158,34 @@ export default function Canvas() {
         case 'arrow': {
           // 折线编辑态顶点手柄 vN（ZOO-168）：拖动第 N 个顶点；非编辑态维持 p1/p2 端点语义
           const vi = parseVertexHandle(rs.handle);
+          // 箭头端点磁吸（ZOO-218）：端点语义手柄（p1/p2 或折线首尾顶点）接近可绑
+          // 元素时捕获并吸附到精确轮廓，绑定引用写入 startBinding/endBinding。
+          // line 不绑定、无捕获目标时补丁与既有逐字节一致（未绑定箭头零影响）。
+          let snap = point;
+          let bindPatch: Partial<ArrowElement> | null = null;
+          const arrow = start.type === 'arrow' ? start : null;
+          const side = arrow ? endpointHandleSide(rs.handle, arrow) : null;
+          if (arrow && side) {
+            const resolution = resolveEndpointBinding({
+              elements: useStore.getState().elements,
+              arrow,
+              endpoint: side,
+              world: point,
+              scale,
+            });
+            snap = resolution.point;
+            const before = side === 'start' ? arrow.startBinding : arrow.endBinding;
+            if (!arrowBindingEquals(before, resolution.binding)) {
+              // undefined 而非 null：序列化自动剔除，未绑定箭头存档不添字段
+              bindPatch = side === 'start'
+                ? { startBinding: resolution.binding ?? undefined }
+                : { endBinding: resolution.binding ?? undefined };
+            }
+          }
           next = vi != null
-            ? vertexDragPatch(start, vi, point)
-            : endpointResizePatch(rs.handle as 'p1' | 'p2', start, point);
+            ? vertexDragPatch(start, vi, snap)
+            : endpointResizePatch(rs.handle as 'p1' | 'p2', start, snap);
+          if (bindPatch) next = { ...next, ...bindPatch };
           break;
         }
         case 'path':
