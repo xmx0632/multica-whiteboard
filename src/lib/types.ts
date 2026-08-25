@@ -74,10 +74,23 @@ export interface LineElement extends BaseElement, LinearVertices {
   y2: number;
 }
 
+/**
+ * 箭头端点磁吸绑定（ZOO-218）：指向被绑元素 id 的引用——端点坐标仍存元素字段
+ * （x/y 与 x2/y2），跟随重算由 PR3 挂接；字段缺省 / undefined = 无绑定，
+ * 旧文档零迁移。path / line / 箭头自身 v1 不作绑定目标（ZOO-153 结论）。
+ */
+export interface ArrowBinding {
+  elementId: string;
+}
+
 export interface ArrowElement extends BaseElement, LinearVertices {
   type: 'arrow';
   x2: number;
   y2: number;
+  /** 起点（x, y）绑定的元素（ZOO-218）；无绑定时缺省 */
+  startBinding?: ArrowBinding;
+  /** 终点（x2, y2）绑定的元素（ZOO-218）；无绑定时缺省 */
+  endBinding?: ArrowBinding;
 }
 
 export interface TextElement extends BaseElement {
