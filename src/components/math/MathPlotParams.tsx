@@ -162,6 +162,8 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
   const isFn = value.kind === 'explicit';
   // ZOO-191（T4）：参数式 / 极坐标——定义域（t/θ 域）与采样档位控件同样开放
   const isParam = value.kind === 'parametric' || value.kind === 'polar';
+  // ZOO-215：圆锥曲线——焦点 / 准线 / 渐近线标注（conic 叠加）仅对这三 kind 生效
+  const isConic = value.kind === 'ellipse' || value.kind === 'hyperbola' || value.kind === 'parabola';
   const isError = value.kind === 'error';
   // ZOO-166 方案 A：自变量字母随方程显示（y=4z 的定义域是 z ∈；缺省 x）。
   // ZOO-188：常量参与裁决——y=A·sin(ωx+φ) 绑定常量后自变量解析为 x。
@@ -598,6 +600,14 @@ export default function MathPlotParams({ value, onChange, onCommit, onDuplicate,
               });
               onCommit?.();
             },
+          }}
+          conic={{
+            values: value.overlays ?? [],
+            applicable: isConic,
+            // ZOO-215：标注开关读写 overlays 的 conic 条目（清空归一 undefined）；
+            // 标注坐标由渲染管线随方程 / 常量改值重算（实时联动）
+            onChange: (next) => patch({ overlays: next.length > 0 ? next : undefined }),
+            onCommit: () => onCommit?.(),
           }}
         />
       )}

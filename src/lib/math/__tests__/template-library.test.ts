@@ -1,8 +1,8 @@
 /**
- * 学段模板库全量验收（ZOO-213）。
+ * 学段模板库全量验收（ZOO-213；ZOO-215 增开普勒轨道）。
  *
- * 「27 条存量 + 23 条新增 = 50 条逐条插入出图」的自动化证据：面板 42 条 +
- * 高级公式 1 条 + 参数式 4 条 + 物理 3 条，每条走真实插入链路——
+ * 「27 条存量 + 23 条新增 + 1 条开普勒 = 51 条逐条插入出图」的自动化证据：
+ * 面板 43 条 + 高级公式 1 条 + 参数式 4 条 + 物理 3 条，每条走真实插入链路——
  * validateEquation（含常量裁决）→ createPreviewPolylines（面板预览采样）→
  * createMathPlotElement（元素工厂）→ sampleEquation（按元素 xAxis 重采样）。
  * 硬约束：任何带常量模板不允许出现「插入后报欠定/缺常量错误」。
@@ -13,6 +13,7 @@ import {
   EQUATION_TEMPLATES,
   PARAMETRIC_TEMPLATES,
   PHYSICS_TEMPLATES,
+  TEMPLATE_GROUPS,
   type EquationTemplate,
 } from '../templates';
 import { validateEquation } from '../validate';
@@ -52,10 +53,10 @@ function payloadFor(tpl: LibraryEntry['tpl']): EquationDraftPayload {
   };
 }
 
-describe('模板库全量插入出图（50 条，ZOO-213 验收）', () => {
-  it('库容量：42 面板 + 1 高级 + 4 参数式 + 3 物理 = 50', () => {
-    expect(LIBRARY).toHaveLength(49);
-    expect(EQUATION_TEMPLATES).toHaveLength(42);
+describe('模板库全量插入出图（51 条，ZOO-213 验收 + ZOO-215）', () => {
+  it('库容量：43 面板 + 1 高级 + 4 参数式 + 3 物理 = 51', () => {
+    expect(LIBRARY).toHaveLength(50);
+    expect(EQUATION_TEMPLATES).toHaveLength(43);
     expect(LIBRARY.filter((e) => e.source === 'advanced')).toHaveLength(0); // sineConstants 走专测
   });
 
@@ -194,6 +195,16 @@ describe('模板库全量插入出图（50 条，ZOO-213 验收）', () => {
     expect(newIds).toHaveLength(23);
     const ids = new Set(EQUATION_TEMPLATES.map((t) => t.id));
     for (const id of newIds) expect(ids.has(id), id).toBe(true);
+  });
+
+  it('ZOO-215 开普勒椭圆轨道：高中·物理组，插入即带焦点标注（conic 叠加）', () => {
+    const tpl = EQUATION_TEMPLATES.find((t) => t.id === 'keplerOrbit')!;
+    expect(tpl.equation).toBe('x²/25+y²/16=1');
+    expect(tpl.overlays).toEqual([{ type: 'conic' }] satisfies MathPlotOverlay[]);
+    // 学段组归属（seniorPhysics 尾部）与一键出图：kind 为椭圆、无欠定错误
+    expect(TEMPLATE_GROUPS.find((g) => g.id === 'seniorPhysics')!.templateIds).toContain('keplerOrbit');
+    const outcome = validateEquation(tpl.equation, zhT, tpl.constants);
+    expect(outcome.kind).toBe('ellipse');
   });
 });
 

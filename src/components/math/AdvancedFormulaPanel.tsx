@@ -34,6 +34,10 @@
  *   回填方程 + 常量预置 + t 域预置 + 标注预置，插入即出图）+ 落地/峰值标注
  *   开关（仅参数式轨迹生效，标注数值随常量改值实时联动）+ 常量单位显示行
  *   （单位仅显示，不做量纲运算）；
+ * - ZOO-215 圆锥曲线区（conic 绑定时渲染）：焦点 / 准线 / 渐近线标注开关——
+ *   仅 ellipse / hyperbola / parabola 生效（含 xy 旋转形），其余 kind 禁用 +
+ *   提示、叠加数据保留（口径同微积分 / 物理区互斥处理），标注随常量改值
+ *   经渲染签名失效实时联动；
  * - T6 极限邻域放大（ZOO-193，微积分区尾部）：中心数值输入（缺省取定义域
  *   中心）+ ×10 预设按钮，经 zoomNeighborhood 换算后一次 onChange + 一次
  *   onCommit（离散变更，D5）；仅显式函数可用（非显式沿既有禁用态，不做
@@ -138,6 +142,25 @@ export interface AdvancedFormulaPanelProps {
   parametric?: AdvancedParametricBinding;
   /** T5 物理编辑区绑定（ZOO-192）；缺省时物理分区保持 T0 占位 */
   physics?: AdvancedPhysicsBinding;
+  /** 圆锥曲线标注编辑区绑定（ZOO-215）；缺省时圆锥曲线分区保持 T0 占位 */
+  conic?: AdvancedConicBinding;
+}
+
+/**
+ * 圆锥曲线标注编辑区绑定（ZOO-215，两入口共用）：标注开关读写元素 overlays
+ * 的 conic 条目（与微积分 / 物理区共用同一数组——三方过滤各自类型、互不
+ * 覆盖）；编辑侧直连元素（onChange → 直改实时重绘、onCommit → 提交一条
+ * 历史），创建侧由 EquationEditor 持草稿态。
+ */
+export interface AdvancedConicBinding {
+  /** 当前叠加列表（conic 条目读写） */
+  values: readonly MathPlotOverlay[];
+  /** 叠加变更（开关离散变更即时提交） */
+  onChange: (next: MathPlotOverlay[]) => void;
+  /** 一次可撤销操作边界（编辑侧传入；创建侧缺省） */
+  onCommit?: () => void;
+  /** 是否圆锥曲线方程（仅 ellipse / hyperbola / parabola 可标注；false 时控件禁用并提示） */
+  applicable: boolean;
 }
 
 /**
@@ -209,10 +232,11 @@ export interface AdvancedCalculusBinding {
   onDomainChange?: (domain: { min: number; max: number }) => void;
 }
 
-/** 四分区骨架（组序即面板展示序）：字形为语言无关数学记号，名称 / 描述走资源键 */
-const SECTIONS: readonly { id: 'calculus' | 'physics' | 'constants' | 'parametric'; glyph: string; nameKey: string; descKey: string }[] = [
+/** 五分区骨架（组序即面板展示序）：字形为语言无关数学记号，名称 / 描述走资源键 */
+const SECTIONS: readonly { id: 'calculus' | 'physics' | 'conic' | 'constants' | 'parametric'; glyph: string; nameKey: string; descKey: string }[] = [
   { id: 'calculus', glyph: '∫', nameKey: 'advFormula.sectionCalculus', descKey: 'advFormula.sectionCalculusDesc' },
   { id: 'physics', glyph: '⚛', nameKey: 'advFormula.sectionPhysics', descKey: 'advFormula.sectionPhysicsDesc' },
+  { id: 'conic', glyph: '⊙', nameKey: 'advFormula.sectionConic', descKey: 'advFormula.sectionConicDesc' },
   { id: 'constants', glyph: 'A', nameKey: 'advFormula.sectionConstants', descKey: 'advFormula.sectionConstantsDesc' },
   { id: 'parametric', glyph: 't', nameKey: 'advFormula.sectionParametric', descKey: 'advFormula.sectionParametricDesc' },
 ];
@@ -1210,7 +1234,51 @@ function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
   );
 }
 
-export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric, physics }: AdvancedFormulaPanelProps) {
+/** 圆锥曲线标注编辑区（ZOO-215）：焦点 / 准线 / 渐近线标注开关——仅椭圆 /
+ *  双曲线 / 抛物线（含 xy 旋转形）生效；标注坐标由渲染管线随方程 / 常量
+ *  重算（经渲染签名失效，实时联动），面板只读写叠加开关。 */
+function ConicArea({ binding }: { binding: AdvancedConicBinding }) {
+  const t = useT();
+  const hasMarks = binding.values.some((o) => o.type === 'conic');
+  const disabled = !binding.applicable;
+
+  /** 离散变更（开关切换）：一次 onChange + 一次 onCommit */
+  const applyDiscrete = (next: MathPlotOverlay[]) => {
+    binding.onChange(next);
+    binding.onCommit?.();
+  };
+
+  const toggleMarks = () => {
+    const rest = binding.values.filter((o) => o.type !== 'conic');
+    applyDiscrete(hasMarks ? rest : [...rest, { type: 'conic' }]);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* 焦点 / 准线 / 渐近线标注开关：坐标（F₁F₂ / 准线 / 渐近线）由渲染管线
+          随方程与常量重算；不适用 kind 禁用并提示，叠加数据保留（切回即恢复） */}
+      <label className={`touch-target text-xs flex items-center gap-1.5 ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={hasMarks}
+          onChange={toggleMarks}
+          disabled={disabled}
+          className="accent-blue-500"
+        />
+        <span className="font-serif italic text-[13px] leading-none" style={{ color: disabled ? undefined : PLOT_COLORS.overlayConic }}>
+          F₁F₂
+        </span>
+        <span className="text-[11px] text-gray-500">{t('advFormula.conicMarksDesc')}</span>
+      </label>
+
+      {disabled && (
+        <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.conicNotApplicable')}</div>
+      )}
+    </div>
+  );
+}
+
+export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric, physics, conic }: AdvancedFormulaPanelProps) {
   const t = useT();
   useAdvancedCollapseOverrides();
 
@@ -1264,19 +1332,28 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
           <div className="text-[11px] text-gray-400 leading-relaxed">{t('advFormula.hint')}</div>
           {SECTIONS.map((s) => {
-            // T1/T2/T4/T5：常量、微积分、参数式、物理分区带绑定时渲染编辑区（不再显示 coming soon）；其余分区维持占位
+            // T1/T2/T4/T5/ZOO-215：常量、微积分、参数式、物理、圆锥曲线分区带绑定时
+            // 渲染编辑区（不再显示 coming soon）；其余分区维持占位
             const constantsLive = s.id === 'constants' && constants;
             const calculusLive = s.id === 'calculus' && calculus;
             const parametricLive = s.id === 'parametric' && parametric;
             const physicsLive = s.id === 'physics' && physics;
-            const live = constantsLive || calculusLive || parametricLive || physicsLive;
-            // ZOO-204 方案 A：不适用分区默认折叠——微积分区仅显式函数可用（非显式
-            // 收起为一行原因，方程改回显式自动展开）；其余分区默认展开（模板行是
-            // 模式切换入口，常显）。任何分区都可手动折叠 / 展开（会话内记住）
-            const defaultOpen = s.id === 'calculus' ? Boolean(calculus?.applicable) : true;
+            const conicLive = s.id === 'conic' && conic;
+            const live = constantsLive || calculusLive || parametricLive || physicsLive || conicLive;
+            // ZOO-204 方案 A：不适用分区默认折叠——微积分区仅显式函数可用、圆锥
+            // 曲线区仅椭圆 / 双曲线 / 抛物线可用（不适用收起为一行原因，方程改回
+            // 生效形态自动展开）；其余分区默认展开（模板行是模式切换入口，常显）。
+            // 任何分区都可手动折叠 / 展开（会话内记住）
+            const defaultOpen =
+              s.id === 'calculus' ? Boolean(calculus?.applicable) : s.id === 'conic' ? Boolean(conic?.applicable) : true;
             const open = advancedCollapseOpen(s.id, defaultOpen);
             const bodyId = `adv-section-${s.id}`;
-            const inapplicableReason = calculusLive && calculus && !calculus.applicable ? t('advFormula.calcNotApplicable') : null;
+            const inapplicableReason =
+              calculusLive && calculus && !calculus.applicable
+                ? t('advFormula.calcNotApplicable')
+                : conicLive && conic && !conic.applicable
+                  ? t('advFormula.conicNotApplicable')
+                  : null;
             return (
               <section key={s.id} className="border border-gray-200 rounded-lg p-2.5 flex flex-col gap-1">
                 <button
@@ -1318,6 +1395,8 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
                       <ParametricArea binding={parametric} />
                     ) : physicsLive ? (
                       <PhysicsArea binding={physics} />
+                    ) : conicLive ? (
+                      <ConicArea binding={conic} />
                     ) : (
                       // T0 占位：分区控件由后续任务填充
                       <div className="text-[11px] text-gray-300 leading-relaxed select-none" aria-hidden="true">

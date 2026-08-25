@@ -16,6 +16,7 @@ import {
 import { formatPoiCoord } from './math/poi';
 import { resolveDragPoints } from './math/dragPoint';
 import { PHYSICS_GUIDE_DASH, PHYSICS_MARK_RADIUS_PX } from './math/physics';
+import { CONIC_GUIDE_DASH, CONIC_MARK_RADIUS_PX } from './math/conicMarks';
 import { plotTokenFor } from './math/cache';
 import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
@@ -242,7 +243,7 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
     }
     return d.trim();
   };
-  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent || render.overlays?.integral || render.overlays?.physics);
+  const hasOverlayDraw = Boolean(render.overlays?.derivative || render.overlays?.tangent || render.overlays?.integral || render.overlays?.physics || render.overlays?.conic);
   const d = polylinesToD(render.polylines);
   if (d || hasOverlayDraw) {
     // 曲线裁剪到内嵌绘图区（ZOO-147）：几何 kind 采样刻意越出卡片（贯穿边缘），
@@ -365,6 +366,34 @@ function mathPlotToSvg(el: MathPlotElement, t: LibT): string {
         let ry = landPy - 3;
         if (ry < gy + 10) ry = landPy + 14;
         parts.push(markLabel(rLabel, rx, ry));
+      }
+    }
+
+    // —— ZOO-215 圆锥曲线标注（与 drawGraphCore 同一套数据 / 配色 / 越界翻转
+    //    口径）：准线 / 渐近线虚线 → 焦点点标记 + F₁/F₂/F 文字标签 ——
+    if (render.overlays?.conic) {
+      const cm = render.overlays.conic;
+      const guides = cm.kind === 'parabola' && cm.directrix ? [cm.directrix] : cm.kind === 'hyperbola' && cm.asymptotes ? cm.asymptotes : [];
+      for (const g of guides) {
+        if (!g) continue;
+        parts.push(
+          `<line x1="${toX(g.a.x).toFixed(2)}" y1="${toY(g.a.y).toFixed(2)}" x2="${toX(g.b.x).toFixed(2)}" y2="${toY(g.b.y).toFixed(2)}" stroke="${PLOT_COLORS.overlayConic}" stroke-width="1" stroke-dasharray="${CONIC_GUIDE_DASH.join(',')}" clip-path="url(#mpc-${el.id})"${opacity}/>`,
+        );
+      }
+      for (const f of cm.foci) {
+        const px = toX(f.x);
+        const py = toY(f.y);
+        parts.push(
+          `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${CONIC_MARK_RADIUS_PX}" fill="${PLOT_COLORS.overlayConic}" stroke="#ffffff" stroke-width="1.5"${opacity}/>`,
+        );
+        const labelW = f.label.length * 5.4;
+        let lx = px + 9;
+        if (lx + labelW > gx + gw - 3) lx = px - 9 - labelW;
+        let ly = py - 3;
+        if (ly < gy + 10) ly = py + 14;
+        parts.push(
+          `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10" font-style="italic" font-family="system-ui, sans-serif" fill="${PLOT_COLORS.overlayConic}" text-anchor="start"${opacity}>${escapeXml(f.label)}</text>`,
+        );
       }
     }
 

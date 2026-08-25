@@ -22,10 +22,7 @@ describe('advancedFormulaState 普通元素（零回归基线）', () => {
     'line',
     'linePair',
     'point',
-    'parabola',
-    'hyperbola',
     'circle',
-    'ellipse',
     'error',
   ] as const)('kind=%s 无 overlays/constants → 不出现入口', (kind) => {
     expect(advancedFormulaState({ kind })).toEqual({ visible: false, overlayCount: 0 });
@@ -63,6 +60,12 @@ describe('advancedFormulaState 高级信号点亮入口', () => {
   it('新 kind（T4 parametric / polar，及任何基础集外 kind）→ 入口出现', () => {
     expect(advancedFormulaState({ kind: 'parametric' })).toEqual({ visible: true, overlayCount: 0 });
     expect(advancedFormulaState({ kind: 'polar' })).toEqual({ visible: true, overlayCount: 0 });
+  });
+
+  it('圆锥曲线 kind（ZOO-215 ellipse / hyperbola / parabola）→ 标注入口出现，徽标数为 0', () => {
+    expect(advancedFormulaState({ kind: 'ellipse' })).toEqual({ visible: true, overlayCount: 0 });
+    expect(advancedFormulaState({ kind: 'hyperbola' })).toEqual({ visible: true, overlayCount: 0 });
+    expect(advancedFormulaState({ kind: 'parabola' })).toEqual({ visible: true, overlayCount: 0 });
   });
 
   it('多信号并存 → 徽标数仅计 overlays', () => {

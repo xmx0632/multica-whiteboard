@@ -16,6 +16,12 @@
  */
 import { getPlotRender, plotSignature, setPlotRender } from './cache';
 import { derivativeOf, integralOf, tangentOf } from './calculus';
+import {
+  CONIC_GUIDE_DASH,
+  CONIC_MARK_RADIUS_PX,
+  conicMarks,
+  type ConicMarks,
+} from './conicMarks';
 import { beautifyEquation } from './label';
 import { parseEquation } from './parse';
 import { extremaOf, formatPoiCoord, zerosOf, type Extremum } from './poi';
@@ -49,6 +55,8 @@ export const PLOT_COLORS = {
   overlayTangent: '#22C55E',
   /** ZOO-192 T5 物理标注层色：紫（导引虚线 / 标注点 / H·R 文字，白底可读） */
   overlayPhysics: '#A855F7',
+  /** ZOO-215 圆锥曲线标注层色：青（准线 / 渐近线虚线、焦点标记、F₁F₂ 文字，白底可读） */
+  overlayConic: '#0D9488',
   /** ZOO-190 T3 定积分：着色区上面积 chip 的底色（元素色文字、白底可读） */
   integralChipBg: 'rgba(255,255,255,0.92)',
   /** ZOO-190 T3 定积分奇点报错 chip（红字白底，口径同错误占位） */
@@ -198,6 +206,13 @@ export interface OverlayRender {
    * 失效自动重算。仅 parametric kind 生效，其余 kind（含显式简谐）静默忽略。
    */
   physics?: TrajectoryMarks;
+  /**
+   * 圆锥曲线标注（ZOO-215）：焦点 / 准线 / 渐近线数据（数学坐标，纯数据无
+   * Path2D——标注是点/线/文字）；由 conic 探针参数派生，常量 / 方程改值经
+   * 渲染签名失效自动重算。仅 ellipse / hyperbola / parabola 生效，其余 kind
+   * 静默忽略、数据保留（方程改回圆锥曲线即恢复）。
+   */
+  conic?: ConicMarks;
 }
 
 /** 「好看刻度」步长（1/2/2.5/5×10^k，原型 niceStep 平移共享）。 */
@@ -717,6 +732,50 @@ export function drawGraphCore(ctx: CanvasRenderingContext2D, opts: DrawGraphCore
     }
   }
 
+  // —— ZOO-215 圆锥曲线标注（物理标注之后、POI 之前）：准线 / 渐近线虚线
+  //    （青，节律同物理导引虚线）→ 焦点点标记（青底白边圆点，与 POI / 物理
+  //    标注同规格）+ F₁/F₂/F 文字标签（教学记号、语言无关），文本越界翻转
+  //    口径与切线斜率标注同款——
+  if (overlays?.conic) {
+    const cm = overlays.conic;
+    ctx.globalAlpha = style.opacity;
+    ctx.strokeStyle = PLOT_COLORS.overlayConic;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([...CONIC_GUIDE_DASH]);
+    ctx.beginPath();
+    const guides = cm.kind === 'parabola' && cm.directrix ? [cm.directrix] : cm.kind === 'hyperbola' && cm.asymptotes ? cm.asymptotes : [];
+    for (const g of guides) {
+      if (!g) continue;
+      ctx.moveTo(t.toPxX(g.a.x), t.toPxY(g.a.y));
+      ctx.lineTo(t.toPxX(g.b.x), t.toPxY(g.b.y));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.font = 'italic 10px system-ui, sans-serif';
+    for (const f of cm.foci) {
+      const px = t.toPxX(f.x);
+      const py = t.toPxY(f.y);
+      ctx.beginPath();
+      ctx.arc(px, py, CONIC_MARK_RADIUS_PX, 0, Math.PI * 2);
+      ctx.fillStyle = PLOT_COLORS.overlayConic;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      const tw = ctx.measureText(f.label).width;
+      let lx = px + 9;
+      if (lx + tw > width - 3) lx = px - 9 - tw;
+      let ly = py - 8;
+      if (ly < 10) ly = py + 14;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = PLOT_COLORS.overlayConic;
+      ctx.fillText(f.label, lx, ly);
+    }
+  }
+
   // —— ZOO-199 持久化 POI 标注（末位顶层）：灰底白边圆点 + 坐标文本
   //    （(x, y)，formatPoiCoord——canvas / SVG 导出同款），文本越界翻转 /
   //    收拢口径与切线斜率标注一致；点越出视窗时收拢回卡片内缘——
@@ -1128,7 +1187,20 @@ function computePlotRender(spec: PlotSpec, frame: PlotFrame): PlotRender {
   //    常量 / t 域 / 叠加开关均进渲染签名——改值即重算（实时联动）。
   const physicsWanted = spec.overlays?.some((o) => o.type === 'physics');
   const marks = physicsWanted && parsed.kind === 'parametric' ? trajectoryMarks(parsed.fx, parsed.fy, spec.xAxis) : null;
+  // —— ZOO-215 圆锥曲线标注：仅 ellipse / hyperbola / parabola 生效（conic
+  //    叠加条目 + kind 双条件）——其余 kind 静默忽略、数据保留（方程改回
+  //    圆锥曲线即恢复）。标注坐标由 conic 探针参数派生（常量已裁决为数），
+  //    方程 / 常量改值随渲染签名失效自动重算（实时联动）。
+  const conicWanted = spec.overlays?.some((o) => o.type === 'conic');
+  const conic =
+    conicWanted && (parsed.kind === 'ellipse' || parsed.kind === 'hyperbola' || parsed.kind === 'parabola')
+      ? conicMarks(parsed, view)
+      : null;
   const pois = explicitPois(sampled.yMax - sampled.yMin);
   const base = { polylines: sampled.polylines, view, path2d, ...(pois ?? {}) };
-  return marks ? { ...base, overlays: { physics: marks } } : base;
+  const overlayRenders: OverlayRender = {
+    ...(marks ? { physics: marks } : {}),
+    ...(conic ? { conic } : {}),
+  };
+  return Object.keys(overlayRenders).length > 0 ? { ...base, overlays: overlayRenders } : base;
 }

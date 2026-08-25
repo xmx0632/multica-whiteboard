@@ -6,9 +6,10 @@
  * 只在页面会话内有效，刷新即回自动缺省。纯 UI 态：不入元素数据、不入撤销
  * 历史（与面板开合口径一致）。
  *
- * 键域：四个分区（calculus / physics / constants / parametric）+ 两个死控件
- * 内组（physics.marks = R·H 标注行、parametric.domain = t/θ 域行）。内组
- * 折叠不藏分区——模板行（模式切换入口）常显，收起的只是不可用控件。
+ * 键域：五个分区（calculus / physics / conic / constants / parametric）+ 两个
+ * 死控件内组（physics.marks = R·H 标注行、parametric.domain = t/θ 域行；
+ * conic 分区仅一个标注开关，不适用即整区折叠，无内组键）。内组折叠不藏分区
+ * ——模板行（模式切换入口）常显，收起的只是不可用控件。
  *
  * 纯 TS 无 React 依赖（node 单测覆盖，templateGroupCollapse 同款）；
  * 组件经 useSyncExternalStore 订阅。
@@ -22,6 +23,7 @@ const listeners = new Set<Listener>();
 export const ADVANCED_COLLAPSE_KEYS = [
   'calculus',
   'physics',
+  'conic',
   'constants',
   'parametric',
   'physics.marks',
