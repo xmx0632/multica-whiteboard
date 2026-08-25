@@ -11,7 +11,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
 import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, Operation, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
-import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash } from '@/lib/stroke';
+import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash, canFillFromToolPanel, elementFillColor } from '@/lib/stroke';
 import { elementRotation, normalizeRotation } from '@/lib/rotation';
 import { updateBindingsAfterMove } from '@/lib/binding';
 import { validateEquation } from '@/lib/math/validate';
@@ -33,10 +33,11 @@ const DASH_LABEL_KEYS: Record<StrokeDashStyle, string> = { solid: 'panel.dashSol
 
 export default function PropertyPanel() {
   const {
-    activeTool, elements, selectedId,
+    activeTool, elements, selectedId, selectedIds,
     strokeColor, strokeWidth, strokeDash,
-    fillColor, setFillColor, fontSize, setFontSize,
+    fillColor, fontSize, setFontSize,
     pickStrokeColor, inputStrokeColor, inputStrokeWidth, commitStrokeStyle, inputFontSize, pickStrokeDash,
+    pickFillColor, inputFillColor, commitFillStyle,
     addElement, updateElement, updateElementTransient, deleteElement,
     setSelected, setTool, pushOperations, requestMathPlotInsert,
   } = useStore();
@@ -357,7 +358,15 @@ export default function PropertyPanel() {
   const showDash = dashTarget != null || selectedEl == null;
   const panelDash = dashTarget ? elementDash(dashTarget) : strokeDash;
 
-  const showFill = ['rectangle', 'circle', 'diamond'].includes(activeTool);
+  // 填充（ZOO-228）：与左侧面板共用 pick/input/commit 三通道——选中矩形/菱形/圆形
+  // （多选批量）改元素，无选中维持原语义（设新形状默认填充），两处入口不打架。
+  const fillSelIds = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+  const fillTargets = fillSelIds.length > 0
+    ? elements.filter((e) => fillSelIds.includes(e.id) && canFillFromToolPanel(e))
+    : [];
+  const primaryFillEl = fillTargets.find((e) => e.id === selectedId) ?? fillTargets[fillTargets.length - 1] ?? null;
+  const panelFill = primaryFillEl ? elementFillColor(primaryFillEl) : fillColor;
+  const showFill = ['rectangle', 'circle', 'diamond'].includes(activeTool) || fillTargets.length > 0;
   const showFont = activeTool === 'text';
   // 字号滑杆（ZOO-159）：T 工具设默认字号；选中 text 元素时作用于该元素（D5 两段式）
   const selectedText = selectedEl?.type === 'text' ? selectedEl : null;
@@ -433,26 +442,27 @@ export default function PropertyPanel() {
           <label className="touch-target text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
             <input
               type="checkbox"
-              checked={fillColor !== null}
-              onChange={(e) => setFillColor(e.target.checked ? '#3B82F6' : null)}
+              checked={panelFill !== null}
+              onChange={(e) => pickFillColor(e.target.checked ? fillColor ?? '#3B82F6' : null)}
               className="accent-blue-500"
             />
-            {t('panel.fill')}
+            {t('panel.fill')}{fillTargets.length > 0 ? t('panel.selectedSuffix') : ''}
           </label>
-          {fillColor !== null && (
+          {panelFill !== null && (
             <div className="flex flex-wrap gap-1 mt-1">
               {COLORS.map((c) => (
                 <button
                   key={c}
-                  onClick={() => setFillColor(c)}
-                  className={`touch-swatch w-5 h-5 rounded-full border-2 ${fillColor === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
+                  onClick={() => pickFillColor(c)}
+                  className={`touch-swatch w-5 h-5 rounded-full border-2 ${panelFill === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
                   style={{ backgroundColor: c }}
                 />
               ))}
               <input
                 type="color"
-                value={fillColor}
-                onChange={(e) => setFillColor(e.target.value)}
+                value={panelFill}
+                onChange={(e) => inputFillColor(e.target.value)}
+                onBlur={commitFillStyle}
                 className="touch-swatch w-5 h-5 rounded cursor-pointer border border-gray-300"
               />
             </div>

@@ -15,7 +15,7 @@ import {
   CURRENT_SCHEMA_VERSION,
 } from './types';
 import type { EquationDraftPayload } from './math/types';
-import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor } from './stroke';
+import { strokeColorPatch, canRestyleFromToolPanel, canDashFromToolPanel, elementStrokeColor, canFillFromToolPanel, elementFillColor } from './stroke';
 import { measureTextElement } from './textElement';
 import { isPolyline, removeVertexPatch } from './polyline';
 import { reorderElements, reorderElementsMulti, ZOrderAction } from './zorder';
@@ -122,6 +122,18 @@ interface WhiteboardState {
   /** 线型点选（ZOO-165，离散）：有选中描边元素 → 立即改该元素线型（单条可撤销快照）并同步默认；无选中 → 仅设默认 */
   pickStrokeDash: (dash: StrokeDashStyle) => void;
   setFillColor: (color: string | null) => void;
+  /**
+   * 填充点选（ZOO-228，离散；左侧面板 / 右侧属性面板共用）：选中集合含
+   * 矩形/菱形/圆形 → 批量改 fillColor（多选一条快照整体撤销，非形状静默跳过）
+   * 并同步默认；无选中 → 仅设默认。null = 清除填充回透明。
+   */
+  pickFillColor: (color: string | null) => void;
+  /** 自定义取色器拖动（连续，ZOO-228）：选中形状直改预览（D5 不入栈）并同步默认；快照由 commitFillStyle 压入 */
+  inputFillColor: (color: string) => void;
+  /** 填充连续调整收尾（取色器失焦）：一次手势压一条可撤销批量快照（无改动不压栈） */
+  commitFillStyle: () => void;
+  /** 填充连续手势起手元素快照（D5 两段式；空数组语义同 null = 手势未开始） */
+  fillGestureBefore: WhiteboardElement[] | null;
   setFontSize: (size: number) => void;
 
   // Actions - 选中样式（ZOO-157：面板操作有选中元素时直接作用于该元素）
@@ -170,6 +182,14 @@ interface WhiteboardState {
   /** 列表侧重命名联动当前打开文档（ZOO-158）：写穿已持久化，不置 isDirty */
   applyDocumentRename: (id: string, title: string) => void;
   markSaved: () => void;
+}
+
+/** 填充目标（ZOO-228）：选中集合（多选优先，单选兜底）中的矩形/菱形/圆形，按元素序稳定 */
+function selectedFillTargets(s: Pick<WhiteboardState, 'elements' | 'selectedId' | 'selectedIds'>) {
+  const ids = s.selectedIds.length > 0 ? s.selectedIds : s.selectedId ? [s.selectedId] : [];
+  if (ids.length === 0) return [];
+  const idSet = new Set(ids);
+  return s.elements.filter((e) => idSet.has(e.id) && canFillFromToolPanel(e));
 }
 
 /** 撤销 / 重做后编辑态是否失效：编辑中的元素已不存在或不再是折线形态（ZOO-168） */
@@ -223,6 +243,8 @@ export const useStore = create<WhiteboardState>((set, get) => ({
 
   // 选中样式连续手势快照（取色器 / 线宽滑杆共用）
   strokeGestureBefore: null,
+  // 填充连续手势快照（ZOO-228）
+  fillGestureBefore: null,
 
   // Element actions
   addElement: (element) => {
@@ -471,6 +493,57 @@ export const useStore = create<WhiteboardState>((set, get) => ({
   },
   setFillColor: (color) => set({ fillColor: color }),
   setFontSize: (size) => set({ fontSize: size }),
+
+  // 填充（ZOO-228）：与 pickStrokeColor 同语义——选中即改（批量单快照），并同步默认
+  pickFillColor: (color) => {
+    const targets = selectedFillTargets(get());
+    const changed = targets.filter((el) => elementFillColor(el) !== color);
+    if (changed.length > 0) {
+      const byId = new Map(changed.map((el) => [el.id, { ...el, fillColor: color } as WhiteboardElement]));
+      const ops: Operation[] = changed.map((el) => ({
+        type: 'update' as const, elementId: el.id,
+        before: { ...el } as WhiteboardElement, after: byId.get(el.id)!,
+      }));
+      set((s) => ({
+        elements: s.elements.map((e) => byId.get(e.id) ?? e),
+        undoStack: [...s.undoStack.slice(-99), ops],
+        redoStack: [],
+        isDirty: true,
+      }));
+    }
+    set({ fillColor: color });
+  },
+
+  inputFillColor: (color) => {
+    const targets = selectedFillTargets(get());
+    if (targets.length > 0) {
+      if (!get().fillGestureBefore) {
+        set({ fillGestureBefore: targets.map((el) => ({ ...el } as WhiteboardElement)) });
+      }
+      const patchIds = new Set(targets.map((el) => el.id));
+      set((s) => ({
+        elements: s.elements.map((e) =>
+          patchIds.has(e.id) ? Object.assign({}, e, { fillColor: color }) as WhiteboardElement : e),
+        isDirty: true,
+      }));
+    }
+    set({ fillColor: color });
+  },
+
+  commitFillStyle: () => {
+    const before = get().fillGestureBefore;
+    set({ fillGestureBefore: null });
+    if (!before) return;
+    const { elements, pushOperations } = get();
+    const ops: Operation[] = [];
+    for (const b of before) {
+      const cur = elements.find((e) => e.id === b.id);
+      if (!cur || elementFillColor(cur) === elementFillColor(b)) continue;
+      ops.push({ type: 'update', elementId: b.id, before: b, after: { ...cur } as WhiteboardElement });
+    }
+    if (ops.length === 0) return;
+    pushOperations(ops);
+  },
 
   // 选中样式（ZOO-157）：mathPlot 有专属参数面板，默认面板操作跳过它防回归
   pickStrokeColor: (color) => {

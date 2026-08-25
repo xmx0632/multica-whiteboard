@@ -24,7 +24,8 @@
     "arrow": "Arrow",
     "text": "Text",
     "eraser": "Eraser",
-    "equation": "Equation"
+    "equation": "Equation",
+    "fill": "Fill color"
   },
   "confirm": {
     "discardTitle": "Discard unsaved changes?",
@@ -120,7 +121,8 @@
     "bringToFront": "To Front",
     "sendToBack": "To Back",
     "bringForward": "Forward",
-    "sendBackward": "Backward"
+    "sendBackward": "Backward",
+    "fillNone": "No fill (transparent)"
   },
   "equation": {
     "title": "Equation",
