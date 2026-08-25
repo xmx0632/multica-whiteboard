@@ -43,6 +43,23 @@ export function subscribeTemplateGroupCollapse(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+/** 批量展开指定组（ZOO-204 后续：高级面板选中微积分分区时联动展开显式函数
+ *  模板组）。只增不减——未列出的组保持原状态（互斥组不会被误展开 / 收起）；
+ *  未注册 id 忽略；全部已展开时幂等不通知。 */
+export function expandTemplateGroups(groupIds: readonly string[]): void {
+  const next = new Set(getExpandedGroupIds());
+  let changed = false;
+  for (const id of groupIds) {
+    if (TEMPLATE_GROUPS.some((g) => g.id === id) && !next.has(id)) {
+      next.add(id);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  expandedIds = next;
+  listeners.forEach((fn) => fn());
+}
+
 /** 重置为默认并清空订阅（单测隔离用） */
 export function resetTemplateGroupCollapse(): void {
   expandedIds = null;
