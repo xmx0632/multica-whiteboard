@@ -268,6 +268,7 @@
     "settingsAria": "Open formula settings ({count} overlays enabled)",
     "title": "Advanced formulas",
     "closeAria": "Close advanced formula panel",
+    "dragHint": "Drag the title bar to move the panel",
     "hint": "Calculus and physics capabilities are rolling out step by step, without affecting the basic equation panel.",
     "comingSoon": "Coming soon",
     "sectionCalculus": "Calculus",
