@@ -834,14 +834,17 @@ export function hitTest(el: WhiteboardElement, point: Point, viewport: Viewport)
     ? pointerToLocalFrame(point, bbox, elementRotation(el))
     : point;
 
-  // 菱形（ZOO-217）：精确轮廓命中——bbox 四角空白不误选。填充态 = 叉积同号
-  // 内点判定 ∨ 四边距离带（边带容差与 line/arrow 同口径）；无填充态仅四边距离带。
+  // 菱形（ZOO-217；ZOO-223 用户反馈修正）：精确轮廓命中——bbox 四角空白不误选。
+  // 内点判定（叉积同号）不再依赖 fillColor：无填充态的内部此前是点选死区，与
+  // rect/circle（AABB 整体可点）不一致，"画完自动选中一次、再点中心选不中"。
+  // 精确几何的目的是排除四角空白，不是把内部让空——内部无条件可选，边带容差
+  // 仍与 line/arrow 同口径（贴边 / 顶点略外 8px 内命中）。
   if (el.type === 'diamond') {
     const verts = diamondVertices(el);
     const closed = [...verts, verts[0]]; // 闭合回环：含左→右上一边
     const near = nearestOnPolyline(probe, closed);
     if (near !== null && near.dist <= margin) return true;
-    return Boolean(el.fillColor) && pointInConvexPolygon(probe, verts);
+    return pointInConvexPolygon(probe, verts);
   }
 
   // 帧（ZOO-198）：内部大片空白是板书区，不能挡内容命中——仅边框带 + 上缘标题条可选中

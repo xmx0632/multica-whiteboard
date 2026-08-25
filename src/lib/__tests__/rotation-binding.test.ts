@@ -241,10 +241,11 @@ describe('椭圆 / 菱形旋转全链路（复用 R1 基础设施）', () => {
   });
 
   it('hitTest 三形状 rot = 0 / 缺省：与旧行为一致（边线命中、边线外不命中）', () => {
-    // rect / ellipse 包围盒判定：中心命中；无填充菱形精确轮廓：中心不命中（ZOO-217 语义）
+    // rect / ellipse 包围盒判定：中心命中；菱形精确轮廓：中心为内部点同样命中
+    // （ZOO-223 修正：无填充内部不再是死区），仅 bbox 四角空白不命中
     expect(hitTest(rect(), CENTER, VP)).toBe(true);
     expect(hitTest(ellipse(), CENTER, VP)).toBe(true);
-    expect(hitTest(diamond(), CENTER, VP)).toBe(false);
+    expect(hitTest(diamond(), CENTER, VP)).toBe(true);
     for (const el of [rect(), ellipse(), diamond()]) {
       expect(hitTest(el, { x: 300, y: 150 }, VP)).toBe(true); // 右缘 / 右尖
       expect(hitTest(el, { x: 320, y: 150 }, VP)).toBe(false); // 边线外 20px
