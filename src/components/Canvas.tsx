@@ -4,7 +4,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, getElementBounds } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
-import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateArrowsBoundToElement, isBindableElement } from '@/lib/binding';
+import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement } from '@/lib/binding';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
@@ -108,6 +108,15 @@ function cancelLaserFrame() {
   }
 }
 
+/** 箭头起手快照（ZOO-220 绑定跟随）：深拷贝 points——跟随重算若原地写顶点不污染快照 */
+function snapshotArrows(elements: WhiteboardElement[]): ArrowElement[] {
+  return elements.flatMap((el) =>
+    el.type === 'arrow'
+      ? [{ ...el, points: el.points?.map((p) => ({ x: p.x, y: p.y })) }]
+      : []
+  );
+}
+
 export default function Canvas() {
   const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -145,6 +154,10 @@ export default function Canvas() {
   const groupDragAnchorIdRef = useRef<string | null>(null);
   /** 组拖拽累计位移（屏幕 px；< 3 视作点击不压快照） */
   const groupDragMovedPxRef = useRef(0);
+  // —— 绑定跟随（ZOO-220）——
+  /** select 拖拽（单选 / 组拖 / 帧拖）起手时的箭头快照：拖动中 updateBindingsAfterMove
+   *  重算绑定箭头端点，抬指对照它建 undo 快照——一次拖动回整组含跟随的箭头 */
+  const dragArrowsStartRef = useRef<ArrowElement[] | null>(null);
 
   // —— 内联文本输入（ZOO-159）——
   /** 当前草稿镜像（提交 / 取消以 ref 为准，state 只驱动渲染——blur 与卸载竞态下幂等） */
@@ -876,6 +889,9 @@ export default function Canvas() {
             handle, startEl: { ...sel }, startWorld: point,
             groupStart: isFrame(sel) ? frameContents(elements, sel) : undefined,
           };
+          // PR3（ZOO-219）：缩放起手快照箭头——拖动中跟随重算的绑定箭头，
+          // 抬指对照它并入同一条 undo 快照（与 ZOO-220 拖动并栈同构）
+          dragArrowsStartRef.current = snapshotArrows(elements);
           // 点中顶点手柄 = 选中该顶点（Delete 的删除目标）
           const vi = parseVertexHandle(handle);
           if (vi != null) selectPolylineVertex(vi);
@@ -943,12 +959,14 @@ export default function Canvas() {
             dragElementStartRef.current = hitEl;
             dragElementIdRef.current = hitEl.id;
             frameDragContentsRef.current = null;
+            dragArrowsStartRef.current = snapshotArrows(elements);
           } else {
             setSelected(hitEl.id);
             dragElementStartRef.current = hitEl;
             dragElementIdRef.current = hitEl.id;
             // 帧整体拖动（ZOO-198）：快照页内内容，拖动中联动平移
             frameDragContentsRef.current = isFrame(hitEl) ? frameContents(elements, hitEl) : null;
+            dragArrowsStartRef.current = snapshotArrows(elements);
           }
           found = true;
           break;
@@ -1290,33 +1308,20 @@ export default function Canvas() {
       if (next) {
         const groupById = new Map((scaledGroup ?? []).map((g) => [g.id, g]));
         const st = useStore.getState();
-        let updatedElements = st.elements.map((el) => {
-          if (el.id === rs.startEl.id) return { ...el, ...next };
-          return groupById.get(el.id) ?? el;
+        // PR3（ZOO-219）：元素缩放后绑定箭头端点重算——复用 ZOO-220 的跟随语义
+        // （movedIds = 外框变化的元素集合：本体 + 帧缩放联动的页内内容），
+        // bindPoint 对新轮廓求交，折线形态经 polylinePatch 同步首尾顶点
+        const changedIds = new Set<string>([rs.startEl.id]);
+        for (const g of scaledGroup ?? []) changedIds.add(g.id);
+        useStore.setState({
+          elements: updateBindingsAfterMove(
+            st.elements.map((el) => {
+              if (el.id === rs.startEl.id) return { ...el, ...next };
+              return groupById.get(el.id) ?? el;
+            }),
+            changedIds,
+          ),
         });
-
-        // PR3：更新绑定到缩放元素的箭头端点（ZOO-219）
-        const resizedEl = { ...rs.startEl, ...next } as WhiteboardElement;
-        if (resizedEl.type === 'rectangle' || resizedEl.type === 'circle' || resizedEl.type === 'diamond') {
-          const arrowUpdates = updateArrowsBoundToElement(updatedElements, resizedEl.id);
-          for (const { arrowId, patch } of arrowUpdates) {
-            updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
-          }
-        }
-
-        // 帧缩放时也要更新绑定到缩放后页内元素的箭头
-        if (scaledGroup) {
-          for (const scaledEl of scaledGroup) {
-            if (scaledEl.type === 'rectangle' || scaledEl.type === 'circle' || scaledEl.type === 'diamond') {
-              const arrowUpdates = updateArrowsBoundToElement(updatedElements, scaledEl.id);
-              for (const { arrowId, patch } of arrowUpdates) {
-                updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
-              }
-            }
-          }
-        }
-
-        useStore.setState({ elements: updatedElements });
       }
       return;
     }
@@ -1346,22 +1351,13 @@ export default function Canvas() {
           Math.hypot(dx, dy) * useStore.getState().viewport.scale,
         );
         const movedById = new Map(groupStarts.map((g) => [g.id, translateElement(g, dx, dy)]));
-
-        // PR3：更新绑定到移动元素的箭头端点（ZOO-219）
-        const st = useStore.getState();
-        let updatedElements = st.elements.map((e2) => movedById.get(e2.id) ?? e2);
-
-        // 对每个移动的元素，更新绑定到它的箭头
-        for (const movedEl of groupStarts) {
-          if (movedEl.type === 'rectangle' || movedEl.type === 'circle' || movedEl.type === 'diamond') {
-            const arrowUpdates = updateArrowsBoundToElement(updatedElements, movedEl.id);
-            for (const { arrowId, patch } of arrowUpdates) {
-              updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
-            }
-          }
-        }
-
-        useStore.setState({ elements: updatedElements });
+        // ZOO-220: 组拖拽时，指向组内元素的组外绑定箭头跟随重算端点
+        useStore.setState({
+          elements: updateBindingsAfterMove(
+            useStore.getState().elements.map((e2) => movedById.get(e2.id) ?? e2),
+            new Set(groupStarts.map((g) => g.id)),
+          ),
+        });
         return;
       }
       // Select tool dragging（ZOO-154：整体平移——以起手快照 + 位移重算，多锚点同步移动、形状不变）
@@ -1376,22 +1372,13 @@ export default function Canvas() {
             ? [start, ...(frameDragContentsRef.current ?? [])]
             : [start];
           const movedById = new Map(groupStarts.map((g) => [g.id, translateElement(g, dx, dy)]));
-
-          // PR3：更新绑定到移动元素的箭头端点（ZOO-219）
-          const st = useStore.getState();
-          let updatedElements = st.elements.map((e2) => movedById.get(e2.id) ?? e2);
-
-          // 对每个移动的元素，更新绑定到它的箭头
-          for (const movedEl of groupStarts) {
-            if (movedEl.type === 'rectangle' || movedEl.type === 'circle' || movedEl.type === 'diamond') {
-              const arrowUpdates = updateArrowsBoundToElement(updatedElements, movedEl.id);
-              for (const { arrowId, patch } of arrowUpdates) {
-                updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
-              }
-            }
-          }
-
-          useStore.setState({ elements: updatedElements });
+          // ZOO-220: 帧/单元素拖动联动时，指向被移动内容的绑定箭头跟随重算端点
+          useStore.setState({
+            elements: updateBindingsAfterMove(
+              useStore.getState().elements.map((e2) => movedById.get(e2.id) ?? e2),
+              new Set(groupStarts.map((g) => g.id)),
+            ),
+          });
         }
       }
       // Eraser drag
@@ -1490,6 +1477,9 @@ export default function Canvas() {
     if (rs) {
       resizeRef.current = null;
       arrowSnapFeedbackRef.current = null; // PR3：清除吸附反馈（ZOO-219）
+      // PR3（ZOO-219）：缩放起手箭头快照无条件收尾（下次手势起手重填）
+      const resizeArrowsStart = dragArrowsStartRef.current;
+      dragArrowsStartRef.current = null;
       const cur = useStore.getState().elements.find((el) => el.id === rs.startEl.id);
       if (cur && elementResizeChanged(cur, rs.startEl)) {
         const ops = [{
@@ -1501,6 +1491,14 @@ export default function Canvas() {
           const gCur = useStore.getState().elements.find((el) => el.id === g.id);
           if (gCur && elementResizeChanged(gCur, g)) {
             ops.push({ type: 'update', elementId: g.id, before: g, after: { ...gCur } });
+          }
+        }
+        // PR3（ZOO-219）：缩放跟随重算的绑定箭头并入同一条快照
+        // （before 取起手箭头，undo 一次回整组——与 ZOO-220 拖动并栈同构）
+        for (const a of resizeArrowsStart ?? []) {
+          const aCur = useStore.getState().elements.find((el) => el.id === a.id);
+          if (aCur && elementResizeChanged(aCur, a)) {
+            ops.push({ type: 'update', elementId: a.id, before: a, after: { ...aCur } });
           }
         }
         pushOperations(ops);
@@ -1518,8 +1516,12 @@ export default function Canvas() {
       tempElementRef.current = null;
     }
 
+    // ZOO-220：绑定跟随箭头的起手快照——收尾对照建 undo 快照后即清空（下次拖拽起手重填）
+    const dragArrowsStart = dragArrowsStartRef.current;
+    dragArrowsStartRef.current = null;
+
     // 组拖拽收尾（ZOO-205）：位移 < 3 屏幕 px 视作点击 → 收敛单选到按下元素；
-    // 有位移 → 一次手势一条批量快照（含帧联动的页内内容），选中集合保持
+    // 有位移 → 一次手势一条批量快照（含帧联动的页内内容 + 跟随的绑定箭头）
     const groupStarts = groupDragStartsRef.current;
     if (groupStarts) {
       const anchor = groupDragAnchorIdRef.current;
@@ -1537,6 +1539,13 @@ export default function Canvas() {
         const cur = st.elements.find((el) => el.id === g.id);
         if (cur && (cur.x !== g.x || cur.y !== g.y)) {
           ops.push({ type: 'update', elementId: g.id, before: g, after: { ...cur } });
+        }
+      }
+      // ZOO-220：跟随重算的箭头并入同一条快照（before 取起手箭头，undo 一次回整组）
+      for (const a of dragArrowsStart ?? []) {
+        const cur = st.elements.find((el) => el.id === a.id);
+        if (cur && elementResizeChanged(cur, a)) {
+          ops.push({ type: 'update', elementId: a.id, before: a, after: { ...cur } });
         }
       }
       if (ops.length > 0) st.pushOperations(ops);
@@ -1561,6 +1570,14 @@ export default function Canvas() {
               if (gCur && (gCur.x !== g.x || gCur.y !== g.y)) {
                 ops.push({ type: 'update', elementId: g.id, before: g, after: { ...gCur } });
               }
+            }
+          }
+          // ZOO-220：跟随重算的箭头并入同一条快照（帧含页内内容，undo 一次回整页）
+          const st = useStore.getState();
+          for (const a of dragArrowsStart ?? []) {
+            const cur = st.elements.find((e2) => e2.id === a.id);
+            if (cur && elementResizeChanged(cur, a)) {
+              ops.push({ type: 'update', elementId: a.id, before: a, after: { ...cur } });
             }
           }
           useStore.getState().pushOperations(ops);
