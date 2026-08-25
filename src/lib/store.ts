@@ -21,6 +21,7 @@ import { isPolyline, removeVertexPatch } from './polyline';
 import { reorderElements, reorderElementsMulti, ZOrderAction } from './zorder';
 import { framesOf, nextFrameRect, frameContents, duplicateFrameBundle } from './frame';
 import { translateElement } from './renderer';
+import { clearBindingsOfDeletedElements } from './binding';
 
 /** 粘贴 / 复制并平移的落位偏移（世界坐标，ZOO-205；Excalidraw 同数量级手感） */
 const CLIPBOARD_PASTE_OFFSET = 16;
@@ -258,8 +259,17 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     const el = get().elements.find((e) => e.id === id);
     if (!el) return;
     const ops: Operation[] = [{ type: 'delete', elementId: id, before: el }];
+    // ZOO-220: 清除指向被删除元素的绑定（端点冻结原地）；绑定解除并入同一条
+    // 可撤销记录——undo 恢复元素的同时恢复箭头绑定。变更检测用引用不等
+    // （纯函数仅对绑定被清除的箭头建新对象）
+    const elementsAfterBindingClear = clearBindingsOfDeletedElements(get().elements, new Set([id]));
+    for (const e2 of elementsAfterBindingClear) {
+      if (e2.type !== 'arrow') continue;
+      const before = get().elements.find((e3) => e3.id === e2.id);
+      if (before && before !== e2) ops.push({ type: 'update', elementId: e2.id, before, after: e2 });
+    }
     set((s) => ({
-      elements: s.elements.filter((e) => e.id !== id),
+      elements: elementsAfterBindingClear.filter((e) => e.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
       selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((sid) => sid !== id) : s.selectedIds,
       polylineEditId: s.polylineEditId === id ? null : s.polylineEditId,
@@ -286,9 +296,16 @@ export const useStore = create<WhiteboardState>((set, get) => ({
     if (removed.length === 0) return;
     const removedSet = new Set(removed.map((e) => e.id));
     const ops: Operation[] = removed.map((el) => ({ type: 'delete' as const, elementId: el.id, before: el }));
+    // ZOO-220: 清除指向被删除元素的绑定，并入同一条可撤销记录（同 deleteElement）
+    const elementsAfterBindingClear = clearBindingsOfDeletedElements(st.elements, removedSet);
+    for (const e2 of elementsAfterBindingClear) {
+      if (e2.type !== 'arrow') continue;
+      const before = st.elements.find((e3) => e3.id === e2.id);
+      if (before && before !== e2) ops.push({ type: 'update', elementId: e2.id, before, after: e2 });
+    }
     const editIdCleared = st.polylineEditId != null && removedSet.has(st.polylineEditId);
     set((s) => ({
-      elements: s.elements.filter((e) => !removedSet.has(e.id)),
+      elements: elementsAfterBindingClear.filter((e) => !removedSet.has(e.id)),
       selectedId: s.selectedId != null && removedSet.has(s.selectedId) ? null : s.selectedId,
       selectedIds: s.selectedIds.some((id) => removedSet.has(id)) ? [] : s.selectedIds,
       polylineEditId: editIdCleared ? null : s.polylineEditId,

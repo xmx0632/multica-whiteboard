@@ -16,7 +16,7 @@
  */
 import { Point, WhiteboardElement, RectangleElement, CircleElement, DiamondElement, ArrowElement, ArrowBinding } from './types';
 import { diamondVertices } from './renderer';
-import { nearestOnPolyline, lineVertices, parseVertexHandle } from './polyline';
+import { nearestOnPolyline, lineVertices, parseVertexHandle, isPolyline, polylinePatch } from './polyline';
 
 /** 可绑定元素（v1 白板形状三类；path/line/arrow 自身不作目标） */
 export type BindableElement = RectangleElement | CircleElement | DiamondElement;
@@ -239,4 +239,97 @@ export function resolveEndpointBinding(params: {
     hold && (!capture || hold.dist <= capture.dist) ? hold : capture;
   if (!chosen) return { binding: null, point: { ...world }, target: null };
   return { binding: { elementId: chosen.element.id }, point: { ...chosen.point }, target: chosen.element };
+}
+
+/**
+ * 元素移动后的绑定跟随（ZOO-220）：movedIds 内元素移动后，端点绑定指向它们的
+ * 箭头把端点重投影到目标移动后的轮廓上（bindPoint 沿目标中心→端点射线求交），
+ * 折线形态同步首/尾顶点（polylinePatch 同一语义，杜绝 x2/y2 与 points 双数据源漂移）。
+ *
+ * 绑定目标不在 movedIds 内的箭头原样返回（组外箭头不指向组内元素时不跟随）；
+ * 绑定目标已被删除（find 不到 / 类型不可绑）时同样原样返回——解绑语义由
+ * clearBindingsOfDeletedElements 在删除时一次性处理，这里不重复。
+ *
+ * 纯函数：不改传入元素（lineVertices 对折线返回 el.points 活引用，须先拷贝）。
+ */
+export function updateBindingsAfterMove(elements: WhiteboardElement[], movedIds: Set<string>): WhiteboardElement[] {
+  return elements.map((el) => {
+    // 只处理箭头元素
+    if (el.type !== 'arrow') return el;
+
+    const startMoved = !!el.startBinding && movedIds.has(el.startBinding.elementId);
+    const endMoved = !!el.endBinding && movedIds.has(el.endBinding.elementId);
+    if (!startMoved && !endMoved) return el;
+
+    let startPoint = { x: el.x, y: el.y };
+    let endPoint = { x: el.x2, y: el.y2 };
+    let projected = false;
+
+    // 检查起点绑定
+    if (startMoved) {
+      const target = elements.find((e) => e.id === el.startBinding!.elementId);
+      if (target && isBindableElement(target)) {
+        startPoint = bindPoint(target, startPoint);
+        projected = true;
+      }
+    }
+
+    // 检查终点绑定
+    if (endMoved) {
+      const target = elements.find((e) => e.id === el.endBinding!.elementId);
+      if (target && isBindableElement(target)) {
+        endPoint = bindPoint(target, endPoint);
+        projected = true;
+      }
+    }
+
+    if (!projected) return el;
+
+    // 折线箭头：绑定改端点一律走 polylinePatch（ZOO-220）——首尾顶点与 x/y、
+    // x2/y2 单一事实源；顶点先拷贝再改写，不污染传入元素的 points 活引用
+    if (isPolyline(el)) {
+      const pts = lineVertices(el).map((p) => ({ x: p.x, y: p.y }));
+      if (startMoved) pts[0] = startPoint;
+      if (endMoved) pts[pts.length - 1] = endPoint;
+      return { ...el, ...polylinePatch(el, pts) };
+    }
+
+    // 普通两点箭头
+    return { ...el, x: startPoint.x, y: startPoint.y, x2: endPoint.x, y2: endPoint.y };
+  });
+}
+
+/**
+ * 清除指向已删除元素的绑定（ZOO-220）：当元素被删除时，指向它的箭头的
+ * 绑定字段应被清除，端点冻结在当前位置（不报错、不跟随）。
+ *
+ * @param elements - 当前所有元素数组
+ * @param deletedIds - 被删除元素的ID集合
+ * @returns 更新后的元素数组（清除绑定后的箭头）
+ */
+export function clearBindingsOfDeletedElements(elements: WhiteboardElement[], deletedIds: Set<string>): WhiteboardElement[] {
+  return elements.map((el) => {
+    // 只处理箭头元素
+    if (el.type !== 'arrow') return el;
+
+    let updated = false;
+    const updates: Partial<ArrowElement> = {};
+
+    // 检查起点绑定是否指向已删除的元素
+    if (el.startBinding && deletedIds.has(el.startBinding.elementId)) {
+      updates.startBinding = undefined;
+      updated = true;
+    }
+
+    // 检查终点绑定是否指向已删除的元素
+    if (el.endBinding && deletedIds.has(el.endBinding.elementId)) {
+      updates.endBinding = undefined;
+      updated = true;
+    }
+
+    if (!updated) return el;
+
+    // 端点坐标保持不变（冻结在原地），只清除绑定字段
+    return { ...el, ...updates };
+  });
 }

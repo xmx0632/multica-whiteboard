@@ -22,6 +22,8 @@ import {
   endpointHandleSide,
   arrowBindingEquals,
   isBindableElement,
+  updateBindingsAfterMove,
+  clearBindingsOfDeletedElements,
 } from '../binding';
 
 const rect = (): RectangleElement => ({
@@ -285,5 +287,107 @@ describe('endpointHandleSide / arrowBindingEquals', () => {
     expect(arrowBindingEquals(null, undefined)).toBe(true);
     expect(arrowBindingEquals({ elementId: 'r1' }, undefined)).toBe(false);
     expect(arrowBindingEquals({ elementId: 'r1' }, { elementId: 'd1' })).toBe(false);
+  });
+});
+
+describe('updateBindingsAfterMove（组拖 / 帧拖 / 单拖的绑定跟随，ZOO-220）', () => {
+  it('目标移动后端点重投影到新轮廓：矩形下移后终点贴新上边缘', () => {
+    // 箭头终点吸附在 rect 右边缘中点 (300,150)；rect 下移 200 → (100,300,200,100)，
+    // 中心 (200,350)，旧端点方向 (100,-200) → t=min(100/100, 50/200)=0.25 → (225,300)
+    const moved = { ...rect(), y: 300 };
+    const a = arrow({ x2: 300, y2: 150, endBinding: { elementId: 'r1' } });
+    const out = updateBindingsAfterMove([moved, a], new Set(['r1']));
+    const updated = out[1] as ArrowElement;
+    expect(updated.x2).toBeCloseTo(225, 6);
+    expect(updated.y2).toBeCloseTo(300, 6);
+    // 起点未绑定不动
+    expect(updated.x).toBe(0);
+    expect(updated.y).toBe(0);
+    // 绑定引用保持
+    expect(updated.endBinding).toEqual({ elementId: 'r1' });
+  });
+
+  it('折线箭头：首尾顶点与 x/y、x2/y2 同步（polylinePatch 单一事实源）', () => {
+    const moved = { ...rect(), y: 300 };
+    const a = arrow({
+      x2: 300, y2: 150,
+      points: [{ x: 0, y: 0 }, { x: 150, y: 150 }, { x: 300, y: 150 }],
+      endBinding: { elementId: 'r1' },
+    });
+    const out = updateBindingsAfterMove([moved, a], new Set(['r1']));
+    const updated = out[1] as ArrowElement;
+    const pts = updated.points!;
+    expect(pts).toHaveLength(3);
+    expect(pts[0]).toEqual({ x: 0, y: 0 }); // 未绑定端不动
+    expect(pts[2].x).toBeCloseTo(225, 6);
+    expect(pts[2].y).toBeCloseTo(300, 6);
+    // 不变量：x/y = 首顶点，x2/y2 = 尾顶点
+    expect(updated.x).toBe(pts[0].x);
+    expect(updated.y).toBe(pts[0].y);
+    expect(updated.x2).toBeCloseTo(pts[2].x, 9);
+    expect(updated.y2).toBeCloseTo(pts[2].y, 9);
+  });
+
+  it('纯函数：传入箭头的 points 活引用不被原地改写（快照 / undo 数据源安全）', () => {
+    const moved = { ...rect(), y: 300 };
+    const a = arrow({
+      x2: 300, y2: 150,
+      points: [{ x: 0, y: 0 }, { x: 150, y: 150 }, { x: 300, y: 150 }],
+      endBinding: { elementId: 'r1' },
+    });
+    const before = a.points!.map((p) => ({ ...p }));
+    updateBindingsAfterMove([moved, a], new Set(['r1']));
+    expect(a.points).toEqual(before);
+    expect(a.x2).toBe(300);
+    expect(a.y2).toBe(150);
+  });
+
+  it('目标不在 movedIds（组外箭头不指向组内元素）与未绑定箭头：原样同引用返回', () => {
+    const a1 = arrow({ endBinding: { elementId: 'r1' } });
+    const a2 = arrow();
+    const out = updateBindingsAfterMove([rect(), a1, a2], new Set(['d1']));
+    expect(out[1]).toBe(a1); // 绑定目标未移动
+    expect(out[2]).toBe(a2); // 无绑定
+  });
+
+  it('绑定目标已被删除（movedIds 含 id 但元素不在场）：原样返回——解绑归删除时序处理', () => {
+    const a = arrow({ endBinding: { elementId: 'gone' } });
+    const out = updateBindingsAfterMove([rect(), a], new Set(['gone']));
+    expect(out[1]).toBe(a);
+  });
+});
+
+describe('clearBindingsOfDeletedElements（删除被绑元素 → 绑定解除、端点冻结，ZOO-220）', () => {
+  it('指向被删元素的 start/end 绑定被清除，端点坐标冻结不动', () => {
+    const a = arrow({
+      x: 12, y: 34, x2: 300, y2: 150,
+      startBinding: { elementId: 'r1' },
+      endBinding: { elementId: 'd1' },
+    });
+    const out = clearBindingsOfDeletedElements([rect(), diamond(), a], new Set(['r1', 'd1']));
+    const updated = out[2] as ArrowElement;
+    expect(updated.startBinding).toBeUndefined();
+    expect(updated.endBinding).toBeUndefined();
+    // 端点冻结：坐标逐字节不变
+    expect(updated.x).toBe(12);
+    expect(updated.y).toBe(34);
+    expect(updated.x2).toBe(300);
+    expect(updated.y2).toBe(150);
+  });
+
+  it('未指向被删元素的箭头与非箭头元素：原样同引用返回（无多余快照对象）', () => {
+    const a = arrow({ endBinding: { elementId: 'r1' } });
+    const r = rect();
+    const out = clearBindingsOfDeletedElements([r, a], new Set(['d1']));
+    expect(out[0]).toBe(r);
+    expect(out[1]).toBe(a);
+  });
+
+  it('仅一端指向被删元素：只清该端，另一端绑定保留', () => {
+    const a = arrow({ startBinding: { elementId: 'r1' }, endBinding: { elementId: 'd1' } });
+    const out = clearBindingsOfDeletedElements([rect(), diamond(), a], new Set(['d1']));
+    const updated = out[2] as ArrowElement;
+    expect(updated.startBinding).toEqual({ elementId: 'r1' });
+    expect(updated.endBinding).toBeUndefined();
   });
 });
