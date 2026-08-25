@@ -335,7 +335,7 @@
     "generic": "인식할 수 없는 식입니다 — 입력 형식을 확인하세요(예: y=sin(x))",
     "badCharSuffix": " — 숫자·영자와 + − × ÷ ^ ( ) 등의 문자만 사용할 수 있습니다",
     "badChar": "인식할 수 없는 문자 \"{ch}\"{suffix}",
-    "unknownFn": "인식할 수 없는 함수 \"{name}\"입니다 — 지원: sin, cos, tan, sqrt, abs, log, exp, asin, acos, atan",
+    "unknownFn": "인식할 수 없는 함수 \"{name}\"입니다 — 지원: sin, cos, tan, sec, csc, cot, sqrt, abs, log, exp, asin, acos, atan, floor, ceil, round, sign, mod, min, max",
     "arity": "함수 인수 개수가 잘못되었습니다 — 괄호 안의 인수를 확인하세요(예: sin(x), log(8,2))",
     "parenUnclosed": "괄호 또는 절댓값 기호가 닫히지 않았습니다 — 닫는 괄호를 보완하세요(예: y=sin(x))",
     "incomplete": "식이 완전하지 않습니다 — 수식을 완성하세요(예: y=2x+1)",

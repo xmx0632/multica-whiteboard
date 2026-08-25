@@ -45,6 +45,13 @@ describe('normalizeEquation 希腊 / 下标映射（ZOO-188）', () => {
     expect(normalizeEquation('x(t)=A*cos(ωt+φ)')).toBe('x(t)=a*cos(omega*t+phi)');
   });
 
+  it('λ/ρ → lambda/rho（ZOO-214；含大写 Λ/Ρ 与 λx 邻接拆分）', () => {
+    expect(normalizeEquation('y=sin(λx)')).toBe('y=sin(lambda*x)');
+    expect(normalizeEquation('y=Λ*x')).toBe('y=lambda*x');
+    expect(normalizeEquation('m(v)=ρ·v')).toBe('m(v)=rho*v');
+    expect(normalizeEquation('y=Ρ*v')).toBe('y=rho*v');
+  });
+
   it('下标数字并入标识符名（v₀ → v0、a₁₂ → a12）', () => {
     expect(normalizeEquation('y=v₀*t')).toBe('y=v0*t');
     expect(normalizeEquation('y=x₂')).toBe('y=x2');
@@ -66,12 +73,16 @@ describe('常量名归一与显示还原（存储层 ASCII ↔ 显示层原貌�
     expect(normalizeConstantKey('Ω')).toBe('omega');
     expect(normalizeConstantKey(' m ')).toBe('m');
     expect(normalizeConstantKey('k₂')).toBe('k2');
+    expect(normalizeConstantKey('λ')).toBe('lambda');
+    expect(normalizeConstantKey('ρ')).toBe('rho');
   });
 
-  it('constantDisplayName：theta→θ、v0→v₀、a12→a₁₂；非希腊名原样', () => {
+  it('constantDisplayName：theta→θ、lambda→λ、rho→ρ、v0→v₀；非希腊名原样', () => {
     expect(constantDisplayName('theta')).toBe('θ');
     expect(constantDisplayName('omega')).toBe('ω');
     expect(constantDisplayName('phi')).toBe('φ');
+    expect(constantDisplayName('lambda')).toBe('λ');
+    expect(constantDisplayName('rho')).toBe('ρ');
     expect(constantDisplayName('v0')).toBe('v₀');
     expect(constantDisplayName('a12')).toBe('a₁₂');
     expect(constantDisplayName('g')).toBe('g');
@@ -99,6 +110,25 @@ describe('parseEquation 符号三分法（ZOO-188）', () => {
   it('希腊原文公式绑定常量出图（模板 y=A·sin(ωx+φ)）', () => {
     const r = explicitFn('y=A·sin(ωx+φ)', { a: 2, omega: 1, phi: 0 });
     expect(r.fn(Math.PI / 2)).toBeCloseTo(2);
+  });
+
+  it('λ/ρ 原文公式绑定常量出图（ZOO-214：波长 / 密度书写习惯）', () => {
+    const r = explicitFn('y=A·sin(λ·x)', { a: 2, lambda: 1 });
+    expect(r.variable).toBeUndefined(); // 自变量恰为 x，不携带
+    expect(r.fn(Math.PI / 2)).toBeCloseTo(2);
+    const m = explicitFn('m(v)=ρ·v', { rho: 2 });
+    expect(m.variable).toBe('v');
+    expect(m.fn(3)).toBeCloseTo(6);
+    // ASCII 键与希腊原貌键同源（存储层统一 lambda/rho）
+    expect(explicitFn('y=lambda*x', { lambda: 3 }).fn(2)).toBeCloseTo(6);
+  });
+
+  it('λ/ρ 未赋值 → 常量区引导（与 θ/ω/φ 完全同口径，ZOO-214）', () => {
+    expect(errorMessage('y=ρ')).toContain('方程仍有未赋值符号（rho）');
+    expect(errorMessage('y=A·sin(λ·x)')).toContain('方程仍有未赋值符号（a、lambda、x）');
+    expect(errorMessage('y=A·sin(λ·x)').endsWith('常量区为其赋值，或只保留一个字母作为自变量')).toBe(true);
+    // 孤立 λ 不作自变量（y=λ 不是恒等线，是缺常量赋值）
+    expect(errorMessage('y=λ')).toContain('方程仍有未赋值符号（lambda）');
   });
 
   it('物理式自变量识别（x(t)=A·cos(ωt+φ) → variable=t）', () => {

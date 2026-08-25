@@ -272,6 +272,39 @@ describe('parseEquation 求值正确性（mathjs number 构建）', () => {
     expect(asExplicit('y=1/x')(4)).toBe(0.25);
   });
 
+  it('取整 / 符号 / 最值 / 取模（ZOO-214 白名单扩展，逐条可解析出图）', () => {
+    expect(parseEquation('y=floor(x)').kind).toBe('explicit');
+    expect(parseEquation('y=ceil(x)').kind).toBe('explicit');
+    expect(parseEquation('y=round(x)').kind).toBe('explicit');
+    expect(parseEquation('y=sign(x)').kind).toBe('explicit');
+    expect(parseEquation('y=mod(x,2)').kind).toBe('explicit');
+    expect(parseEquation('y=min(x,1)').kind).toBe('explicit');
+    expect(parseEquation('y=max(x,1)').kind).toBe('explicit');
+  });
+
+  it('取整 / 符号 / 最值 / 取模求值正确（mathjs number 原生语义）', () => {
+    expect(asExplicit('y=floor(x)')(2.7)).toBe(2);
+    expect(asExplicit('y=floor(x)')(-2.1)).toBe(-3);
+    expect(asExplicit('y=ceil(x)')(2.1)).toBe(3);
+    expect(asExplicit('y=round(x)')(2.5)).toBe(3);
+    expect(asExplicit('y=sign(x)')(-3)).toBe(-1);
+    expect(asExplicit('y=sign(x)')(0)).toBe(0);
+    expect(asExplicit('y=mod(x,2)')(5)).toBeCloseTo(1, 12);
+    expect(asExplicit('y=mod(x,2)')(-5)).toBeCloseTo(1, 12); // mathjs mod 结果符号随除数
+    expect(asExplicit('y=min(x,1)')(0.5)).toBe(0.5);
+    expect(asExplicit('y=min(x,1)')(2)).toBe(1);
+    expect(asExplicit('y=max(x,1)')(0.5)).toBe(1);
+    expect(asExplicit('y=max(x,1)')(2)).toBe(2);
+  });
+
+  it('扩展函数参与复合式（阶梯 / 包络课堂写法）', () => {
+    expect(asExplicit('y=floor(x)+0.5')(1.2)).toBeCloseTo(1.5, 12);
+    expect(asExplicit('y=max(sin(x),0)')(-1)).toBe(0);
+    expect(asExplicit('y=max(sin(x),0)')(Math.PI / 2)).toBeCloseTo(1, 12);
+    // min/max 可变参（mathjs 原生 ≥1 参）：max(x,0,1) 逐参取最值
+    expect(asExplicit('y=max(x,0,1)')(-2)).toBe(1);
+  });
+
   it('求值域外返回 NaN（采样期按断笔处理），不抛异常', () => {
     expect(asExplicit('y=√x')(-1)).toBeNaN();
     expect(asExplicit('y=ln(x)')(-1)).toBeNaN();
@@ -285,8 +318,10 @@ describe('parseEquation 错误处理（文案与 4a 结构校验对齐）', () =
     expect(errorMessage('y=')).toBe('方程缺少右侧表达式——请输入 y=f(x) 形式，如 y=2x+1');
   });
 
-  it('不可识别的函数（AST 白名单拒绝，ZOO-166 指引）', () => {
-    expect(errorMessage('y=foo(x)')).toBe('无法识别的函数 “foo”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan');
+  it('不可识别的函数（AST 白名单拒绝，ZOO-166 指引；清单与实际能力一致 ZOO-214）', () => {
+    expect(errorMessage('y=foo(x)')).toBe(
+      '无法识别的函数 “foo”——支持 sin、cos、tan、sec、csc、cot、sqrt、abs、log、exp、asin、acos、atan、floor、ceil、round、sign、mod、min、max',
+    );
     // 注：未知单字母不再报错（ZOO-166 方案 A 自由变量）；多字母 / 双自由字母见对应 describe
   });
 

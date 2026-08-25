@@ -72,11 +72,17 @@ function detectGeometry(src: string, t: LibT): ParseResult | null {
  * AST 函数白名单（原型 §6 函数族）。
  * ZOO-189（T2）：补 sec/csc/cot——tan 求导输出 sec(x)^2（calculus.ts 求导链
  * 产物需可回灌本解析管线），mathjs/number 原生可求值，此前仅被本白名单拦截。
+ * ZOO-214：补 floor/ceil/round/sign/mod/min/max——取整 / 符号 / 最值是课堂
+ * 高频书写（阶梯函数 y=floor(x)、包络 y=max(sin(x),0)），同为 mathjs/number
+ * 原生可求值、仅被白名单拦截的既有管线增量（改法同 ZOO-189）。
  */
-const ALLOWED_FUNCTIONS = new Set(['sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'exp', 'asin', 'acos', 'atan', 'sec', 'csc', 'cot']);
-/** 各函数允许的参数个数（log 支持带底 two-arg）。 */
+const ALLOWED_FUNCTIONS = new Set(['sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'exp', 'asin', 'acos', 'atan', 'sec', 'csc', 'cot', 'floor', 'ceil', 'round', 'sign', 'mod', 'min', 'max']);
+/** 各函数允许的参数个数（log 支持带底 two-arg；mod 恰两参；min/max 一参起可变参）。 */
 const FUNCTION_ARITY: Record<string, [number, number]> = {
   log: [1, 2],
+  mod: [2, 2],
+  min: [1, Infinity],
+  max: [1, Infinity],
 };
 for (const name of ALLOWED_FUNCTIONS) {
   if (!FUNCTION_ARITY[name]) FUNCTION_ARITY[name] = [1, 1];
