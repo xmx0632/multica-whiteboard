@@ -1,4 +1,4 @@
-import { StrokeDashStyle, WhiteboardElement } from './types';
+import { CircleElement, DiamondElement, RectangleElement, StrokeDashStyle, WhiteboardElement } from './types';
 
 /**
  * 选中改色补丁（ZOO-157）：颜色面板作用于选中元素时按类型取字段。
@@ -35,6 +35,19 @@ export function canDashFromToolPanel(el: WhiteboardElement | null | undefined): 
 /** 元素当前线型：dash 缺省（旧文档）读作 solid——渲染 / 面板回显统一入口 */
 export function elementDash(el: WhiteboardElement): StrokeDashStyle {
   return el.dash ?? 'solid';
+}
+
+/**
+ * 选中元素是否可填充（ZOO-228）：仅矩形 / 菱形 / 圆形三形状——内部区域封闭可填。
+ * path / line / arrow 无内部，text / mathPlot / frame 走各自通道，均不参与。
+ */
+export function canFillFromToolPanel(el: WhiteboardElement | null | undefined): el is RectangleElement | CircleElement | DiamondElement {
+  return el != null && (el.type === 'rectangle' || el.type === 'circle' || el.type === 'diamond');
+}
+
+/** 元素当前填充色：fillColor 缺省（旧文档）/ null 读作透明——面板回显统一入口 */
+export function elementFillColor(el: WhiteboardElement): string | null {
+  return 'fillColor' in el ? el.fillColor ?? null : null;
 }
 
 /**

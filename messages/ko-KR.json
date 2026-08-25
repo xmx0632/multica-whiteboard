@@ -24,7 +24,8 @@
     "arrow": "화살표",
     "text": "텍스트",
     "eraser": "지우개",
-    "equation": "방정식"
+    "equation": "방정식",
+    "fill": "채우기 색"
   },
   "confirm": {
     "discardTitle": "저장하지 않은 변경 사항을 버리시겠습니까?",
@@ -120,7 +121,8 @@
     "bringToFront": "맨 앞으로",
     "sendToBack": "맨 뒤로",
     "bringForward": "앞으로",
-    "sendBackward": "뒤로"
+    "sendBackward": "뒤로",
+    "fillNone": "채우기 없음(투명)"
   },
   "equation": {
     "title": "방정식",

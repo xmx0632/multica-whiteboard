@@ -24,7 +24,8 @@
     "arrow": "箭头",
     "text": "文本",
     "eraser": "橡皮",
-    "equation": "方程"
+    "equation": "方程",
+    "fill": "填充颜色"
   },
   "confirm": {
     "discardTitle": "放弃未保存的修改？",
@@ -120,7 +121,8 @@
     "bringToFront": "置顶",
     "sendToBack": "置底",
     "bringForward": "上移一层",
-    "sendBackward": "下移一层"
+    "sendBackward": "下移一层",
+    "fillNone": "无填充（透明）"
   },
   "equation": {
     "title": "方程",

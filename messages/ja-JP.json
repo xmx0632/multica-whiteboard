@@ -24,7 +24,8 @@
     "arrow": "矢印",
     "text": "テキスト",
     "eraser": "消しゴム",
-    "equation": "方程式"
+    "equation": "方程式",
+    "fill": "塗りつぶし色"
   },
   "confirm": {
     "discardTitle": "未保存の変更を破棄しますか？",
@@ -120,7 +121,8 @@
     "bringToFront": "最前面へ",
     "sendToBack": "最背面へ",
     "bringForward": "前面へ",
-    "sendBackward": "背面へ"
+    "sendBackward": "背面へ",
+    "fillNone": "塗りつぶしなし（透明）"
   },
   "equation": {
     "title": "方程式",
