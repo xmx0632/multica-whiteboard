@@ -2,7 +2,7 @@
  * 菱形元素单测（ZOO-217，绑定系列 PR1）：
  * - diamondVertices：外框四边中点（上→右→下→左）推导，负宽高（拖拽翻转）仍构成菱形；
  * - hitTest 精确轮廓：bbox 四角空白不命中、无填充中心空白不命中、边带 / 填充区内命中；
- * - getElementBounds / translateElement / 角控点：外框语义同 rectangle；
+ * - elementLocalFrame / translateElement / 角控点：外框语义同 rectangle；
  * - boxResizePatch：角控点对角锚定 + Shift 等比（参数联合含 DiamondElement）；
  * - SVG 导出：<polygon> 四顶点与画布同一份推导，dash / fill 属性同语义；
  * - keymap Alt+I + TOOL_BINDING；线型面板谓词；autosave 指纹含 fillColor；
@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DiamondElement, Viewport, CURRENT_SCHEMA_VERSION } from '../types';
-import { diamondVertices, getElementBounds, hitTest, hitTestSelectionHandle, translateElement } from '../renderer';
+import { diamondVertices, elementLocalFrame, hitTest, hitTestSelectionHandle, translateElement } from '../renderer';
 import { boxResizePatch } from '../shapeResize';
 import { exportToSvg } from '../export';
 import { canDashFromToolPanel, canRestyleFromToolPanel } from '../stroke';
@@ -79,8 +79,8 @@ describe('hitTest（精确轮廓，bbox 空白不误选）', () => {
 });
 
 describe('外框语义（同 rectangle）', () => {
-  it('getElementBounds 返回 x/y/width/height 外框', () => {
-    expect(getElementBounds(diamond())).toEqual({ x: 100, y: 100, width: 200, height: 120 });
+  it('elementLocalFrame 返回 x/y/width/height 外框', () => {
+    expect(elementLocalFrame(diamond())).toEqual({ x: 100, y: 100, width: 200, height: 120 });
   });
 
   it('translateElement 仅平移 x/y，形状不变（顶点随外框推导同步）', () => {

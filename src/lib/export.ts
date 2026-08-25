@@ -23,6 +23,7 @@ import { beautifyEquation } from './math/label';
 import { dashPatternFor } from './stroke';
 import { lineVertices, isPolyline } from './polyline';
 import { isFrame, frameContents, frameExportRegion } from './frame';
+import { elementRotation } from './rotation';
 
 export interface ExportOptions {
   format: 'png' | 'jpg' | 'svg';
@@ -74,8 +75,17 @@ function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
   switch (el.type) {
     case 'path':
       return `<path d="${pathToSvgPath(el)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)} fill="none" stroke-linecap="round" stroke-linejoin="round"${opacity}/>`;
-    case 'rectangle':
-      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}/>`;
+    // 矩形旋转（ZOO-221）：transform rotate(θ cx cy) 绕几何中心顺时针——与画布
+    // drawRectangle 同一角度口径（屏幕系 y 向下，SVG 正角同向）；rotation = 0 /
+    // 缺省不输出 transform 属性，旧文档导出逐字节不变。PNG/缩略图复用
+    // renderElement（viewport scale=1），零改动同语义。
+    case 'rectangle': {
+      const rot = elementRotation(el);
+      const rotateAttr = rot !== 0
+        ? ` transform="rotate(${rot} ${el.x + el.width / 2} ${el.y + el.height / 2})"`
+        : '';
+      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${rotateAttr}/>`;
+    }
     case 'circle': {
       const cx = el.x + el.width / 2;
       const cy = el.y + el.height / 2;

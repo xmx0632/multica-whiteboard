@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, getElementBounds } from '@/lib/renderer';
+import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, elementLocalFrame } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
 import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement } from '@/lib/binding';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
@@ -388,7 +388,7 @@ export default function Canvas() {
       if (id === selectedId) continue;
       const el = elements.find((e) => e.id === id);
       if (!el || el.id === hiddenTextId) continue;
-      const bbox = getElementBounds(el);
+      const bbox = elementLocalFrame(el);
       if (!bbox) continue;
       ctx.save();
       ctx.strokeStyle = '#3B82F6';

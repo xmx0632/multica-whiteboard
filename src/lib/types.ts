@@ -31,7 +31,20 @@ export interface PathElement extends BaseElement {
   points: Point[];
 }
 
-export interface RectangleElement extends BaseElement {
+/**
+ * 旋转（ZOO-221 矩形旋转系列 PR-R1）：角度制，绕几何中心顺时针（屏幕系 y 向下，
+ * canvas rotate 与 SVG rotate(θ) 同向）。x/y/width/height 保持**未旋转局部坐标系
+ * 外框**（Excalidraw 同构）——旋转不改外框字段，世界系占用包围盒由 renderer 的
+ * elementBoundsAABB 推导。可选字段：旧文档无 rotation 视为 0（沿 ZOO-165 dash
+ * 先例零迁移）；写入时经 rotation.ts 的 normalizeRotation 归一到 [0,360)。
+ * PR-R1 仅 rectangle 全链路（渲染/导出/命中/包围盒）生效，circle/diamond 由
+ * 后续 PR 挂接同一字段。
+ */
+export interface Rotatable {
+  rotation?: number;
+}
+
+export interface RectangleElement extends BaseElement, Rotatable {
   type: 'rectangle';
   width: number;
   height: number;

@@ -17,6 +17,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { WhiteboardDocument, WhiteboardElement, Viewport } from './types';
+import { elementRotation } from './rotation';
 
 // ========== 快照模型 ==========
 
@@ -71,6 +72,8 @@ export function elementSignature(el: WhiteboardElement): string {
       return `${base}|e:${Math.round(el.x2)},${Math.round(el.y2)}|${mid}`;
     }
     case 'rectangle':
+      // rotation（ZOO-221）：矩形旋转进指纹——改角度要触发自动保存
+      return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}|r:${elementRotation(el)}`;
     case 'circle':
     case 'diamond':
       return `${base}|s:${Math.round(el.width)}x${Math.round(el.height)}|${el.fillColor ?? ''}`;
