@@ -4,7 +4,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, getElementBounds } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
-import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals } from '@/lib/binding';
+import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateArrowsBoundToElement, isBindableElement } from '@/lib/binding';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
@@ -175,6 +175,20 @@ export default function Canvas() {
   /** 悬停点（ref 为准，渲染层直读高亮外圈）；state 只驱动光标（与 hoverHit 同构） */
   const pointHoverRef = useRef<{ elementId: string; pointId: string } | null>(null);
   const [pointCursor, setPointCursor] = useState(false);
+
+  // —— 箭头端点磁吸反馈（ZOO-219 PR3）——
+  /** 当前箭头端点的吸附态（ref 为准，渲染层直读高亮反馈）：
+   * arrowId: 正在拖动端点的箭头 id
+   * endpoint: 'start' | 'end'
+   * targetElementId: 吸附到的元素 id（如果有）
+   * snapPoint: 吸附点世界坐标
+   */
+  const arrowSnapFeedbackRef = useRef<{
+    arrowId: string;
+    endpoint: 'start' | 'end';
+    targetElementId: string | null;
+    snapPoint: Point | null;
+  } | null>(null);
 
   // —— 演示模式（ZOO-200）——
   /** 激光轨迹（纯渲染层，屏幕坐标）：不入 elements / 撤销栈 / 持久化 */
@@ -445,6 +459,53 @@ export default function Canvas() {
         }
       }
     }
+
+    // —— 箭头端点磁吸反馈层（ZOO-219 PR3；屏幕 px 纯视觉层）：
+    //    吸附态时高亮绑定点 + 微光标提示——不遮挡操作，不与选中框冲突 ——
+    const arrowSnap = arrowSnapFeedbackRef.current;
+    if (arrowSnap && arrowSnap.snapPoint) {
+      const snapScreen = {
+        x: arrowSnap.snapPoint.x * viewport.scale + viewport.offsetX,
+        y: arrowSnap.snapPoint.y * viewport.scale + viewport.offsetY,
+      };
+
+      // 高亮吸附点（蓝色实心圆点 + 外圈发光效果）
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(snapScreen.x, snapScreen.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
+      ctx.fill();
+
+      // 外圈发光
+      ctx.beginPath();
+      ctx.arc(snapScreen.x, snapScreen.y, 14, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // 如果有目标元素，绘制连接线提示
+      if (arrowSnap.targetElementId) {
+        const targetEl = elements.find((e) => e.id === arrowSnap.targetElementId);
+        if (targetEl && isBindableElement(targetEl)) {
+          // 绘制从目标元素中心到吸附点的细线提示
+          const targetCenter = {
+            x: (targetEl.x + targetEl.width / 2) * viewport.scale + viewport.offsetX,
+            y: (targetEl.y + targetEl.height / 2) * viewport.scale + viewport.offsetY,
+          };
+
+          ctx.beginPath();
+          ctx.moveTo(targetCenter.x, targetCenter.y);
+          ctx.lineTo(snapScreen.x, snapScreen.y);
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+
+      ctx.restore();
+    }
   }, [elements, selectedId, selectedIds, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, presenting, presentationFrameId, t]);
 
   useEffect(() => {
@@ -501,6 +562,7 @@ export default function Canvas() {
     tempElementRef.current = null;
     isDrawingRef.current = false;
     toolPointerIdRef.current = null;
+    arrowSnapFeedbackRef.current = null; // PR3：清除吸附反馈（ZOO-219）
 
     const rs = resizeRef.current;
     if (rs) {
@@ -1174,6 +1236,15 @@ export default function Canvas() {
               scale,
             });
             snap = resolution.point;
+
+            // PR3：更新吸附反馈（ZOO-219）
+            arrowSnapFeedbackRef.current = {
+              arrowId: arrow.id,
+              endpoint: side,
+              targetElementId: resolution.target?.id ?? null,
+              snapPoint: resolution.target ? { ...resolution.point } : null,
+            };
+
             const before = side === 'start' ? arrow.startBinding : arrow.endBinding;
             if (!arrowBindingEquals(before, resolution.binding)) {
               // undefined 而非 null：序列化自动剔除，未绑定箭头存档不添字段
@@ -1181,6 +1252,9 @@ export default function Canvas() {
                 ? { startBinding: resolution.binding ?? undefined }
                 : { endBinding: resolution.binding ?? undefined };
             }
+          } else {
+            // 非箭头端点操作时清除吸附反馈
+            arrowSnapFeedbackRef.current = null;
           }
           next = vi != null
             ? vertexDragPatch(start, vi, snap)
@@ -1215,12 +1289,34 @@ export default function Canvas() {
       }
       if (next) {
         const groupById = new Map((scaledGroup ?? []).map((g) => [g.id, g]));
-        useStore.setState({
-          elements: useStore.getState().elements.map((el) => {
-            if (el.id === rs.startEl.id) return { ...el, ...next };
-            return groupById.get(el.id) ?? el;
-          }),
+        const st = useStore.getState();
+        let updatedElements = st.elements.map((el) => {
+          if (el.id === rs.startEl.id) return { ...el, ...next };
+          return groupById.get(el.id) ?? el;
         });
+
+        // PR3：更新绑定到缩放元素的箭头端点（ZOO-219）
+        const resizedEl = { ...rs.startEl, ...next } as WhiteboardElement;
+        if (resizedEl.type === 'rectangle' || resizedEl.type === 'circle' || resizedEl.type === 'diamond') {
+          const arrowUpdates = updateArrowsBoundToElement(updatedElements, resizedEl.id);
+          for (const { arrowId, patch } of arrowUpdates) {
+            updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
+          }
+        }
+
+        // 帧缩放时也要更新绑定到缩放后页内元素的箭头
+        if (scaledGroup) {
+          for (const scaledEl of scaledGroup) {
+            if (scaledEl.type === 'rectangle' || scaledEl.type === 'circle' || scaledEl.type === 'diamond') {
+              const arrowUpdates = updateArrowsBoundToElement(updatedElements, scaledEl.id);
+              for (const { arrowId, patch } of arrowUpdates) {
+                updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
+              }
+            }
+          }
+        }
+
+        useStore.setState({ elements: updatedElements });
       }
       return;
     }
@@ -1250,9 +1346,22 @@ export default function Canvas() {
           Math.hypot(dx, dy) * useStore.getState().viewport.scale,
         );
         const movedById = new Map(groupStarts.map((g) => [g.id, translateElement(g, dx, dy)]));
-        useStore.setState({
-          elements: useStore.getState().elements.map((e2) => movedById.get(e2.id) ?? e2),
-        });
+
+        // PR3：更新绑定到移动元素的箭头端点（ZOO-219）
+        const st = useStore.getState();
+        let updatedElements = st.elements.map((e2) => movedById.get(e2.id) ?? e2);
+
+        // 对每个移动的元素，更新绑定到它的箭头
+        for (const movedEl of groupStarts) {
+          if (movedEl.type === 'rectangle' || movedEl.type === 'circle' || movedEl.type === 'diamond') {
+            const arrowUpdates = updateArrowsBoundToElement(updatedElements, movedEl.id);
+            for (const { arrowId, patch } of arrowUpdates) {
+              updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
+            }
+          }
+        }
+
+        useStore.setState({ elements: updatedElements });
         return;
       }
       // Select tool dragging（ZOO-154：整体平移——以起手快照 + 位移重算，多锚点同步移动、形状不变）
@@ -1267,9 +1376,22 @@ export default function Canvas() {
             ? [start, ...(frameDragContentsRef.current ?? [])]
             : [start];
           const movedById = new Map(groupStarts.map((g) => [g.id, translateElement(g, dx, dy)]));
-          useStore.setState({
-            elements: useStore.getState().elements.map((e2) => movedById.get(e2.id) ?? e2),
-          });
+
+          // PR3：更新绑定到移动元素的箭头端点（ZOO-219）
+          const st = useStore.getState();
+          let updatedElements = st.elements.map((e2) => movedById.get(e2.id) ?? e2);
+
+          // 对每个移动的元素，更新绑定到它的箭头
+          for (const movedEl of groupStarts) {
+            if (movedEl.type === 'rectangle' || movedEl.type === 'circle' || movedEl.type === 'diamond') {
+              const arrowUpdates = updateArrowsBoundToElement(updatedElements, movedEl.id);
+              for (const { arrowId, patch } of arrowUpdates) {
+                updatedElements = updatedElements.map((e) => e.id === arrowId ? { ...e, ...patch } as WhiteboardElement : e);
+              }
+            }
+          }
+
+          useStore.setState({ elements: updatedElements });
         }
       }
       // Eraser drag
@@ -1367,6 +1489,7 @@ export default function Canvas() {
     const rs = resizeRef.current;
     if (rs) {
       resizeRef.current = null;
+      arrowSnapFeedbackRef.current = null; // PR3：清除吸附反馈（ZOO-219）
       const cur = useStore.getState().elements.find((el) => el.id === rs.startEl.id);
       if (cur && elementResizeChanged(cur, rs.startEl)) {
         const ops = [{

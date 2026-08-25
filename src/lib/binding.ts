@@ -16,7 +16,7 @@
  */
 import { Point, WhiteboardElement, RectangleElement, CircleElement, DiamondElement, ArrowElement, ArrowBinding } from './types';
 import { diamondVertices } from './renderer';
-import { nearestOnPolyline, lineVertices, parseVertexHandle } from './polyline';
+import { nearestOnPolyline, lineVertices, parseVertexHandle, polylinePatch } from './polyline';
 
 /** 可绑定元素（v1 白板形状三类；path/line/arrow 自身不作目标） */
 export type BindableElement = RectangleElement | CircleElement | DiamondElement;
@@ -239,4 +239,94 @@ export function resolveEndpointBinding(params: {
     hold && (!capture || hold.dist <= capture.dist) ? hold : capture;
   if (!chosen) return { binding: null, point: { ...world }, target: null };
   return { binding: { elementId: chosen.element.id }, point: { ...chosen.point }, target: chosen.element };
+}
+
+/**
+ * 箭头更新补丁（被绑元素移动/缩放后使用，ZOO-219 PR3）：
+ * arrowId 为需更新的箭头 id；patch 为直接合入 updateElement 的补丁对象。
+ */
+export interface ArrowUpdatePatch {
+  arrowId: string;
+  patch: Partial<ArrowElement>;
+}
+
+/**
+ * 被绑元素移动/缩放后的箭头端点重算（ZOO-219 PR3）：
+ *
+ * - 找到所有绑定到 targetId 的箭头（起点或终点绑到该元素）；
+ * - 对每个箭头的绑定端点，使用 bindPoint() 重算精确轮廓位置并存回元素字段；
+ * - 折线形态箭头（points.length > 2）必须经 polylinePatch() 同步首/尾顶点，
+ *   防止 x2/y2 与 points 双数据源漂移（endpointResizePatch 先例同构）；
+ * - 未绑定箭头、绑定目标已删除的箭头均跳过（静默忽略）。
+ *
+ * 返回需要更新的箭头补丁数组（每项含 arrowId 和 patch），调用方批量更新 store。
+ */
+export function updateArrowsBoundToElement(
+  elements: WhiteboardElement[],
+  targetId: string
+): ArrowUpdatePatch[] {
+  const target = elements.find((el) => el.id === targetId);
+  if (!target || !isBindableElement(target)) return [];
+
+  const updates: ArrowUpdatePatch[] = [];
+
+  for (const el of elements) {
+    if (el.type !== 'arrow') continue;
+
+    const arrow = el as ArrowElement;
+    let endpoint: 'start' | 'end' | null = null;
+
+    // 检查起点是否绑定到目标元素
+    if (arrow.startBinding?.elementId === targetId) {
+      endpoint = 'start';
+    }
+    // 检查终点是否绑定到目标元素
+    else if (arrow.endBinding?.elementId === targetId) {
+      endpoint = 'end';
+    }
+
+    if (!endpoint) continue;
+
+    // 重算绑定端点的轮廓吸附位置
+    const currentX = endpoint === 'start' ? arrow.x : arrow.x2;
+    const currentY = endpoint === 'start' ? arrow.y : arrow.y2;
+    const newPoint = bindPoint(target, { x: currentX, y: currentY });
+
+    // 检查是否为折线形态
+    const vertices = lineVertices(arrow);
+    const isPolylineArrow = vertices.length > 2;
+
+    if (isPolylineArrow) {
+      // 折线形态：更新对应顶点后用 polylinePatch 同步首尾到 x/y/x2/y2
+      const newVertices = vertices.map((p, i) => {
+        if (endpoint === 'start' && i === 0) {
+          return { x: newPoint.x, y: newPoint.y };
+        }
+        if (endpoint === 'end' && i === vertices.length - 1) {
+          return { x: newPoint.x, y: newPoint.y };
+        }
+        return p;
+      });
+
+      updates.push({
+        arrowId: arrow.id,
+        patch: polylinePatch(arrow, newVertices) as Partial<ArrowElement>,
+      });
+    } else {
+      // 普通直线箭头：直接更新端点坐标
+      if (endpoint === 'start') {
+        updates.push({
+          arrowId: arrow.id,
+          patch: { x: newPoint.x, y: newPoint.y },
+        });
+      } else {
+        updates.push({
+          arrowId: arrow.id,
+          patch: { x2: newPoint.x, y2: newPoint.y },
+        });
+      }
+    }
+  }
+
+  return updates;
 }

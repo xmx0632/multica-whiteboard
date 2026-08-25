@@ -22,6 +22,7 @@ import {
   endpointHandleSide,
   arrowBindingEquals,
   isBindableElement,
+  updateArrowsBoundToElement,
 } from '../binding';
 
 const rect = (): RectangleElement => ({
@@ -285,5 +286,112 @@ describe('endpointHandleSide / arrowBindingEquals', () => {
     expect(arrowBindingEquals(null, undefined)).toBe(true);
     expect(arrowBindingEquals({ elementId: 'r1' }, undefined)).toBe(false);
     expect(arrowBindingEquals({ elementId: 'r1' }, { elementId: 'd1' })).toBe(false);
+  });
+});
+
+describe('updateArrowsBoundToElement（ZOO-219 PR3：被绑元素移动/缩放后箭头端点重算）', () => {
+  it('元素移动后，绑定到该元素的箭头端点更新到新轮廓位置', () => {
+    const elements: WhiteboardElement[] = [
+      rect(), // x:100, y:100, w:200, h:100
+      arrow({ x: 90, y: 150, x2: 300, y2: 150, startBinding: { elementId: 'r1' } }), // 起点绑在矩形左侧
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'r1');
+    expect(updates.length).toBe(1);
+    expect(updates[0].arrowId).toBe('a1');
+    // 起点应该重新计算到矩形左边缘的中点 (100,150)
+    expect(updates[0].patch.x).toBe(100);
+    expect(updates[0].patch.y).toBe(150);
+  });
+
+  it('元素缩放后，绑定到该元素的箭头端点更新到新轮廓位置', () => {
+    const elements: WhiteboardElement[] = [
+      circle(), // x:100, y:100, w:200, h:200, r=100
+      arrow({ x: 50, y: 200, x2: 200, y2: 200, startBinding: { elementId: 'c1' } }), // 起点绑在圆左侧
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'c1');
+    expect(updates.length).toBe(1);
+    expect(updates[0].arrowId).toBe('a1');
+    // 起点应该吸附到圆左侧轮廓点 (100,200)
+    expect(updates[0].patch.x).toBeCloseTo(100, 9);
+    expect(updates[0].patch.y).toBe(200);
+  });
+
+  it('终点绑定的箭头也能正确更新', () => {
+    const elements: WhiteboardElement[] = [
+      diamond(), // x:100, y:100, w:200, h:200, 中心 (200,200)
+      arrow({ x: 50, y: 50, x2: 80, y2: 150, endBinding: { elementId: 'd1' } }), // 终点在菱形外部左侧
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'd1');
+    expect(updates.length).toBe(1);
+    expect(updates[0].arrowId).toBe('a1');
+    // 终点在菱形外部左侧 (80,150)，bindPoint 会沿中心射线方向吸附到轮廓
+    // 从中心 (200,200) 到 (80,150) 的方向是 (-120,-50)
+    // 菱形的 bindPoint 使用 L1 范数闭式解：t = 1/(|dx|/a + |dy|/b) = 1/(120/100 + 50/100) = 1/1.7 ≈ 0.588
+    // 吸附点 = (200 - 120*0.588, 200 - 50*0.588) ≈ (129.4, 170.6)
+    const patch = updates[0].patch;
+    expect(patch.x2).toBeCloseTo(129.4, 1);
+    expect(patch.y2).toBeCloseTo(170.6, 1);
+  });
+
+  it('折线箭头的端点更新使用 polylinePatch 同步首尾顶点', () => {
+    const elements: WhiteboardElement[] = [
+      rect(), // x:100, y:100, w:200, h:100
+      arrow({
+        x: 90, y: 150, x2: 300, y2: 150,
+        startBinding: { elementId: 'r1' },
+        points: [{ x: 90, y: 150 }, { x: 150, y: 150 }, { x: 200, y: 200 }, { x: 300, y: 150 }],
+      }),
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'r1');
+    expect(updates.length).toBe(1);
+    const patch = updates[0].patch;
+    // 折线箭头应该同时更新 x/y 和 points
+    expect(patch.x).toBe(100);
+    expect(patch.y).toBe(150);
+    expect(patch.points).toBeDefined();
+    expect(patch.points![0]).toEqual({ x: 100, y: 150 });
+    // 其他顶点保持不变
+    expect(patch.points![1]).toEqual({ x: 150, y: 150 });
+    expect(patch.points![2]).toEqual({ x: 200, y: 200 });
+  });
+
+  it('多个箭头绑定到同一元素时都能正确更新', () => {
+    const elements: WhiteboardElement[] = [
+      rect(),
+      arrow({ x: 90, y: 150, x2: 50, y2: 50, startBinding: { elementId: 'r1' } }),
+      arrow({ id: 'a2', type: 'arrow', x: 300, y: 150, x2: 400, y2: 150, startBinding: { elementId: 'r1' }, strokeColor: '#000000', strokeWidth: 2, opacity: 1 } as ArrowElement),
+      arrow({ id: 'a3', type: 'arrow', x: 200, y: 90, x2: 200, y2: 50, endBinding: { elementId: 'r1' }, strokeColor: '#000000', strokeWidth: 2, opacity: 1 } as ArrowElement),
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'r1');
+    expect(updates.length).toBe(3);
+    // 三个箭头都应该更新
+    expect(updates.some(u => u.arrowId === 'a1')).toBe(true);
+    expect(updates.some(u => u.arrowId === 'a2')).toBe(true);
+    expect(updates.some(u => u.arrowId === 'a3')).toBe(true);
+  });
+
+  it('未绑定的箭头不会被更新', () => {
+    const elements: WhiteboardElement[] = [
+      rect(),
+      arrow({ x: 50, y: 50, x2: 150, y2: 150 }), // 无绑定
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'r1');
+    expect(updates.length).toBe(0);
+  });
+
+  it('目标元素不存在时返回空数组', () => {
+    const elements: WhiteboardElement[] = [rect(), arrow()];
+    const updates = updateArrowsBoundToElement(elements, 'nonexistent');
+    expect(updates.length).toBe(0);
+  });
+
+  it('目标元素不是可绑定类型时返回空数组', () => {
+    const elements: WhiteboardElement[] = [
+      rect(),
+      arrow({ startBinding: { elementId: 'a1' } }),
+      { id: 'a1', type: 'arrow', x: 0, y: 0, x2: 50, y2: 50, strokeColor: '#000000', strokeWidth: 2, opacity: 1 } as ArrowElement,
+    ];
+    const updates = updateArrowsBoundToElement(elements, 'a1');
+    expect(updates.length).toBe(0);
   });
 });
