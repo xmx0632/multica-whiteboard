@@ -335,7 +335,7 @@
     "generic": "无法识别的表达式——请检查输入格式（如 y=sin(x)）",
     "badCharSuffix": "——仅支持数字、字母与 + − × ÷ ^ ( ) 等字符",
     "badChar": "无法识别的字符 “{ch}”{suffix}",
-    "unknownFn": "无法识别的函数 “{name}”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan",
+    "unknownFn": "无法识别的函数 “{name}”——支持 sin、cos、tan、sec、csc、cot、sqrt、abs、log、exp、asin、acos、atan、floor、ceil、round、sign、mod、min、max",
     "arity": "函数参数个数有误——请检查括号内的参数（如 sin(x)、log(8,2)）",
     "parenUnclosed": "括号或绝对值符号未闭合——请补全右括号，如 y=sin(x)",
     "incomplete": "表达式不完整——请补全公式，如 y=2x+1",

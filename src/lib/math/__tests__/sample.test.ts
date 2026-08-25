@@ -316,7 +316,7 @@ describe('sampleGeometry parabola / hyperbola（二元二次参数化，ZOO-147 
 describe('sampleEquation 统一分发（4c 渲染管线入口）', () => {
   it('error 结果透传', () => {
     const r = sampleEquation(parseEquation('y=foo(x)'), { xMin: -10, xMax: 10 });
-    expect(r).toEqual({ error: '无法识别的函数 “foo”——支持 sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan' });
+    expect(r).toEqual({ error: '无法识别的函数 “foo”——支持 sin、cos、tan、sec、csc、cot、sqrt、abs、log、exp、asin、acos、atan、floor、ceil、round、sign、mod、min、max' });
   });
 
   it('explicit / circle 分发正确', () => {

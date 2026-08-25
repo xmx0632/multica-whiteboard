@@ -335,7 +335,7 @@
     "generic": "認識できない式です — 入力形式を確認してください（例：y=sin(x)）",
     "badCharSuffix": " — 数字・英字・+ − × ÷ ^ ( ) などの文字のみ使用できます",
     "badChar": "認識できない文字 \"{ch}\"{suffix}",
-    "unknownFn": "認識できない関数 \"{name}\"です — 対応：sin、cos、tan、sqrt、abs、log、exp、asin、acos、atan",
+    "unknownFn": "認識できない関数 \"{name}\"です — 対応：sin、cos、tan、sec、csc、cot、sqrt、abs、log、exp、asin、acos、atan、floor、ceil、round、sign、mod、min、max",
     "arity": "関数の引数の数が正しくありません — 括弧内の引数を確認してください（例：sin(x)、log(8,2)）",
     "parenUnclosed": "括弧または絶対値記号が閉じていません — 右括弧を補ってください（例：y=sin(x)）",
     "incomplete": "式が未完成です — 数式を補ってください（例：y=2x+1）",

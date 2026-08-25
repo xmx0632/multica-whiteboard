@@ -3,7 +3,8 @@
  *
  * 只做「数学符号翻译，不改语义」：π→pi、上标→^n、√→sqrt、·×→*、÷→/、
  * 全角括号/逗号→半角、|…|→abs(…)、ln→log、字母连写的隐式乘法补 `*`。
- * ZOO-188（T1 常量绑定）：希腊字母 θ/ω/φ→theta/omega/phi、下标 ₀-₉→0-9，
+ * ZOO-188（T1 常量绑定）：希腊字母 θ/ω/φ→theta/omega/phi、下标 ₀-₉→0-9
+ * （ZOO-214 增 λ/ρ→lambda/rho），
  * 含符号常量的公式（y=A·sin(ωx+φ)、x(t)=A·cos(ωt+φ)）归一为可 parse 的 ASCII。
  * 归一化产物是 mathjs 可直接 parse 的 ASCII 语法（mathjs 原生支持 2x、2sin(x)
  * 等值元邻接隐式乘法，但会把粘连字母吞成一个符号，如 2pix → pix，故需拆分）。
@@ -27,12 +28,16 @@ const SUPERSCRIPTS: Record<string, string> = {
  * 希腊字母 → ASCII 名（ZOO-188 T1 常量绑定）：θ→theta、ω→omega、φ→phi
  * （φ 含 U+03D5 直立形变体）。存储层统一 ASCII 名，显示层经 constantDisplayName
  * 还原原貌（面板 / chip 标签）。
+ * ZOO-214：补 λ→lambda（波长）、ρ→rho（密度）——物理书写高频符号，
+ * 与 θ/ω/φ 同口径（常量命名空间，未赋值引导常量区）。
  */
 const GREEK_TO_ASCII: Record<string, string> = {
   'θ': 'theta',
   'ω': 'omega',
   'φ': 'phi',
   'ϕ': 'phi',
+  'λ': 'lambda',
+  'ρ': 'rho',
 };
 
 /** 下标数字 → 普通数字（v₀ → v0，并入标识符名，不再是独立字符）。 */
@@ -52,8 +57,10 @@ const SUBSCRIPT_DIGITS: Record<string, string> = {
 /** 白名单标识符（贪心切分，长名在前；asin 在 sin 前、exp 在 e 前）。ln 在切分时译为 log。
  *  y 供二元方程隐式分类（ZOO-146 / D7）：无已知标识符以 y 开头，切分无冲突。
  *  ZOO-188：补希腊名 theta/omega/phi（ωx → omega*x 需贪心拆出），三者互为
- *  前缀无关、与既有标识符亦无前缀关系，置于表首即可。 */
-const KNOWN_IDS = ['theta', 'omega', 'phi', 'asin', 'acos', 'atan', 'sqrt', 'abs', 'sin', 'cos', 'tan', 'exp', 'log', 'ln', 'pi', 'e', 'x', 'y'];
+ *  前缀无关、与既有标识符亦无前缀关系，置于表首即可。
+ *  ZOO-214：补 lambda/rho（λx → lambda*x），与 theta/omega/phi 及既有标识符
+ *  同样无前缀关系，并置表首。 */
+const KNOWN_IDS = ['lambda', 'rho', 'theta', 'omega', 'phi', 'asin', 'acos', 'atan', 'sqrt', 'abs', 'sin', 'cos', 'tan', 'exp', 'log', 'ln', 'pi', 'e', 'x', 'y'];
 
 /** √(…) → sqrt(…)：括号配平扫描（支持嵌套括号，如 √(sin(x)+1)）。 */
 function convertSqrtParen(s: string): string {
@@ -157,7 +164,7 @@ export function normalizeEquation(raw: string): string {
     .toLowerCase()
     .replace(/\s+/g, '')
     .replace(/π/g, 'pi')
-    .replace(/[θωφϕ]/g, (ch) => GREEK_TO_ASCII[ch])
+    .replace(/[θωφϕλρ]/g, (ch) => GREEK_TO_ASCII[ch])
     .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹ˣ]/g, (ch) => SUPERSCRIPTS[ch])
     .replace(/[₀-₉]/g, (ch) => SUBSCRIPT_DIGITS[ch])
     .replace(/（/g, '(')
@@ -183,16 +190,18 @@ export function normalizeConstantKey(raw: string): string {
     .toLowerCase()
     .replace(/\s+/g, '')
     .replace(/π/g, 'pi')
-    .replace(/[θωφϕ]/g, (ch) => GREEK_TO_ASCII[ch])
+    .replace(/[θωφϕλρ]/g, (ch) => GREEK_TO_ASCII[ch])
     .replace(/[₀-₉]/g, (ch) => SUBSCRIPT_DIGITS[ch])
     .replace(/[^a-z0-9]/g, '');
 }
 
-/** ASCII 名 → 希腊字母原貌（constantDisplayName 用反向表）。 */
+/** ASCII 名 → 希腊字母原貌（constantDisplayName 用反向表；λ/ρ 见 ZOO-214）。 */
 const ASCII_TO_GREEK: Record<string, string> = {
   theta: 'θ',
   omega: 'ω',
   phi: 'φ',
+  lambda: 'λ',
+  rho: 'ρ',
 };
 
 /**
