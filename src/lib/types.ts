@@ -44,14 +44,31 @@ export interface Rotatable {
   rotation?: number;
 }
 
-export interface RectangleElement extends BaseElement, Rotatable {
+/**
+ * 形状中心文字标签（ZOO-232 L1）：矩形 / 椭圆 / 菱形内嵌居中多行文本。
+ * color 落笔即快照具体色值（初始 = 当时描边色），此后与描边色完全解耦——
+ * 后续改描边色不动已有标签。可选字段（沿 dash / rotation 先例零迁移，
+ * 不升 CURRENT_SCHEMA_VERSION）：无 label 的旧文档渲染路径逐字节等价。
+ */
+export interface ShapeLabel {
+  content: string;
+  fontSize: number;
+  color: string;
+}
+
+/** 可带中心标签的元素（ZOO-232 L1 起 rectangle / circle / diamond） */
+export interface Labeled {
+  label?: ShapeLabel;
+}
+
+export interface RectangleElement extends BaseElement, Rotatable, Labeled {
   type: 'rectangle';
   width: number;
   height: number;
   fillColor: string | null;
 }
 
-export interface CircleElement extends BaseElement, Rotatable {
+export interface CircleElement extends BaseElement, Rotatable, Labeled {
   type: 'circle';
   width: number;
   height: number;
@@ -66,7 +83,7 @@ export interface CircleElement extends BaseElement, Rotatable {
  * ZOO-223 起可旋转（Rotatable）：顶点推导恒在局部系，旋转由渲染 / 命中 / 导出
  * 各自的旋转变换承担。
  */
-export interface DiamondElement extends BaseElement, Rotatable {
+export interface DiamondElement extends BaseElement, Rotatable, Labeled {
   type: 'diamond';
   width: number;
   height: number;
