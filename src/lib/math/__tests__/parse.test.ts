@@ -15,9 +15,9 @@ const errorMessage = (raw: string) => {
 };
 
 describe('parseEquation 分类：14 模板 + PRD 方程族', () => {
-  it('全部 17 个模板可解析', () => {
+  it('全部面板模板可解析（ZOO-213：带常量模板按其常量预置裁决——点选即回填）', () => {
     for (const tpl of EQUATION_TEMPLATES) {
-      const r = parseEquation(tpl.equation);
+      const r = parseEquation(tpl.equation, undefined, tpl.constants);
       expect(r.kind, `模板「${tpl.id}」${tpl.equation}`).not.toBe('error');
     }
   });

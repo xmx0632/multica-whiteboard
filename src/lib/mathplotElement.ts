@@ -119,6 +119,17 @@ export function mathPlotFieldsFromPayload(payload: EquationDraftPayload, fallbac
   ) {
     return { ...base, ...geometryFields(outcome) };
   }
+  // ZOO-213：显式函数的域预置（学段模板的自变量定义域——物理时间窗 / 落地
+  // 截断 / 机械波三波长窗口）落元素 xAxis；非法域（倒序 / 非有限）忽略、
+  // 落默认 ±10（与 createPreviewPolylines 的域校验同口径）。既有编辑流不在
+  // 显式方程上携带 domain（高级面板 t/θ 域输入仅参数式激活、重编辑回填仅
+  // 参数式元素），行为不变。
+  if (outcome.kind === 'explicit' && payload.domain !== undefined) {
+    const d = payload.domain;
+    if (Number.isFinite(d.min) && Number.isFinite(d.max) && d.min < d.max) {
+      return { ...base, xAxis: { min: d.min, max: d.max } };
+    }
+  }
   return base;
 }
 

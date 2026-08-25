@@ -30,7 +30,7 @@ import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import AdvancedFormulaPanel from './AdvancedFormulaPanel';
 import MiniPreview from './MiniPreview';
 import { useT } from '@/i18n/I18nProvider';
-import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey, type PhysicsTemplate } from '@/lib/math/templates';
+import { SYMBOL_BUTTONS, groupTemplates, symbolTitleKey, templateGroupNameKey, templateNameKey, type EquationTemplate, type PhysicsTemplate } from '@/lib/math/templates';
 import { getExpandedGroupIds, subscribeTemplateGroupCollapse, toggleGroupExpansion } from '@/lib/templateGroupCollapse';
 import { validateEquation } from '@/lib/math/validate';
 import { DEFAULT_PARAMETER_DOMAIN, createPreviewPolylines as samplePreviewPolylines } from '@/lib/math/sample';
@@ -154,7 +154,8 @@ export default function EquationEditor({
     input.focus();
   };
 
-  const applyTemplate = (equation: string) => {
+  /** 方程文本回填输入框（模板点选的公共落点：草稿位由各 apply* 先行写好） */
+  const fillEquation = (equation: string) => {
     setDraft(equation);
     requestAnimationFrame(() => {
       const input = inputRef.current;
@@ -165,14 +166,28 @@ export default function EquationEditor({
     });
   };
 
+  // ZOO-213：面板模板点选——整包回填草稿（方程 + 常量预置 + 滑块元数据 +
+  // 自变量/参数域 + 叠加预置），确认载荷全量带出，插入即出图（带常量模板
+  // 不允许出现欠定/缺常量错误）。载荷位缺省（存量 19 条纯方程模板）不触碰
+  // 对应草稿——插入行为与演进前逐字节一致（零回归）；paramDomain 一律重置
+  // （上一模板的域预置不串到无域模板——显式函数的域会落元素 xAxis）。
+  const applyTemplate = (tpl: EquationTemplate) => {
+    setParamDomain(tpl.domain ? { ...tpl.domain } : null);
+    if (tpl.constants) setConstantValues({ ...tpl.constants });
+    if (tpl.constantSliders) setConstantSliderDraft({ ...tpl.constantSliders });
+    if (tpl.overlays) setOverlayDraft(tpl.overlays.map((o) => ({ ...o })));
+    fillEquation(tpl.equation);
+  };
+
   // ZOO-191：参数式模板点选——回填方程并重置参数域草稿（四类模板整周期取默认域）
   const applyParametricTemplate = (equation: string) => {
     setParamDomain(null);
-    applyTemplate(equation);
+    fillEquation(equation);
   };
 
   // ZOO-192 T5：物理模板点选——整包回填草稿（方程 + 常量预置 + t 域预置 +
-  // 标注预置），确认载荷全量带出——插入即出图（抛体预置 v₀/θ/g 与落地时间域）
+  // 标注预置），确认载荷全量带出——插入即出图（抛体预置 v₀/θ/g 与落地时间域）。
+  // 标注（physics 叠加）与微积分叠加共用数组：只替换 physics 条目、保留其余。
   const applyPhysicsTemplate = (tpl: PhysicsTemplate) => {
     setConstantValues({ ...tpl.constants });
     setParamDomain({ ...tpl.domain });
@@ -180,7 +195,7 @@ export default function EquationEditor({
       const rest = prev.filter((o) => o.type !== 'physics');
       return tpl.marks ? [...rest, { type: 'physics' }] : rest;
     });
-    applyTemplate(tpl.equation);
+    fillEquation(tpl.equation);
   };
 
   const statusLine = () => {
@@ -330,7 +345,7 @@ export default function EquationEditor({
                         key={tpl.id}
                         type="button"
                         title={tpl.equation}
-                        onClick={() => applyTemplate(tpl.equation)}
+                        onClick={() => applyTemplate(tpl)}
                         className="touch-target border border-gray-200 bg-white rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 active:bg-blue-100 transition-colors"
                       >
                         <span className="block text-[10px] text-gray-400 leading-tight">{t(templateNameKey(tpl.id))}</span>
@@ -401,7 +416,7 @@ export default function EquationEditor({
             sliders: constantSliderDraft,
             onChange: setConstantValues, // 函数式更新直连（ZOO-188 修复：连点预置槽逐次叠加）
             onSlidersChange: setConstantSliderDraft,
-            onApplyTemplate: applyTemplate,
+            onApplyTemplate: fillEquation,
           }}
           calculus={{
             values: overlayDraft,
