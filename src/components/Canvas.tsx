@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, hitTestRotationHandle, isRotatable, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, elementBoundsAABB } from '@/lib/renderer';
-import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
+import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, isDegenerateShapeClick, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
 import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement } from '@/lib/binding';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, RectangleElement, CircleElement, DiamondElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { elementRotation, normalizeRotation, stepRotation, pointerToLocalFrame } from '@/lib/rotation';
@@ -116,6 +116,17 @@ function snapshotArrows(elements: WhiteboardElement[]): ArrowElement[] {
       ? [{ ...el, points: el.points?.map((p) => ({ x: p.x, y: p.y })) }]
       : []
   );
+}
+
+/** 画布指针捕获显式释放（ZOO-223）：hasPointerCapture 先查再放，未持有 /
+ *  指针已失效（合成事件）静默跳过——与 pointerdown 侧的防御性捕获对称。 */
+function releasePointerCaptureOf(canvas: HTMLCanvasElement | null, pointerId: number) {
+  if (!canvas) return;
+  try {
+    if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+  } catch {
+    /* noop */
+  }
 }
 
 export default function Canvas() {
@@ -1513,10 +1524,17 @@ export default function Canvas() {
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
     // 演示态路由（ZOO-200）：激光收尾 / 横滑翻页（cancel 只收尾不翻页）
     if (presenting) {
+      releasePointerCaptureOf(canvasRef.current, e.pointerId);
       handlePresentPointerUp(e, cancelled);
       return;
     }
     activePointersRef.current.delete(e.pointerId);
+
+    // 捕获无条件显式释放（ZOO-223）：pointerdown 无条件 setPointerCapture，
+    // 此处对应无条件 release——不再依赖抬指隐式释放。Safari / 部分触摸通道的
+    // 隐式释放存在失效个案，捕获一旦泄漏，后续所有指针事件（含点工具栏）被
+    // 重定向进画布：工具切换失效 + 画布连点连续落元素。
+    releasePointerCaptureOf(canvasRef.current, e.pointerId);
 
     // 双指之一抬起：结束捏合并落定最终帧；残余触摸标记惰性（防止误画）
     const pinch = pinchRef.current;
@@ -1643,7 +1661,9 @@ export default function Canvas() {
 
     const temp = tempElementRef.current;
     if (temp) {
-      addElement(temp);
+      // 单击（零拖拽）的退化形状不落元素（ZOO-223）：0×0 形状不可见不可选，
+      // 落进文档只成垃圾——形状工具下画布连点不再逐点累积隐形元素
+      if (!isDegenerateShapeClick(temp)) addElement(temp);
       tempElementRef.current = null;
     }
 

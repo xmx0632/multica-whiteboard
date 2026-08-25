@@ -148,3 +148,15 @@ export function elementResizeChanged(cur: WhiteboardElement, before: WhiteboardE
   }
   return false;
 }
+
+/**
+ * 单击（零拖拽）产生的退化形状判定（ZOO-223）：rect/circle/diamond 的
+ * |width| 与 |height| 均 < 1 世界 px——四顶点塌缩成一点，不可见也不可选，
+ * 落进文档只成垃圾元素（形状工具下画布连点的"不停创建"放大器：每一次
+ * 误触/单击都会累积一个隐形元素）。拖拽 ≥1px 的形状不在此列；
+ * line/arrow 不适用（两端可重合是既有绘制语义）。
+ */
+export function isDegenerateShapeClick(el: WhiteboardElement): boolean {
+  if (el.type !== 'rectangle' && el.type !== 'circle' && el.type !== 'diamond') return false;
+  return Math.abs(el.width) < 1 && Math.abs(el.height) < 1;
+}
