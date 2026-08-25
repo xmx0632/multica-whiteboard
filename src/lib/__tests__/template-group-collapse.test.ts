@@ -4,9 +4,11 @@ import {
   getExpandedGroupIds,
   isGroupExpanded,
   toggleGroupExpansion,
+  expandTemplateGroups,
   subscribeTemplateGroupCollapse,
   resetTemplateGroupCollapse,
 } from '../templateGroupCollapse';
+import { EXPLICIT_FUNCTION_GROUP_IDS } from '../math/templates';
 
 /** ZOO-164：ƒ 面板模板分组折叠状态（会话级模块单例） */
 describe('templateGroupCollapse（分组折叠状态 store）', () => {
@@ -70,5 +72,33 @@ describe('templateGroupCollapse（分组折叠状态 store）', () => {
     unsubscribe();
     toggleGroupExpansion(TEMPLATE_GROUPS[1].id);
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('expandTemplateGroups：批量展开指定组，未列出的组保持原状态（ZOO-204 联动）', () => {
+    // 默认仅首组展开；联动展开显式函数三组
+    expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS);
+    for (const id of EXPLICIT_FUNCTION_GROUP_IDS) {
+      expect(isGroupExpanded(id)).toBe(true);
+    }
+    // 互斥组（几何曲线 / 直线与方程）不在清单——保持默认收起
+    expect(isGroupExpanded('conic')).toBe(false);
+    expect(isGroupExpanded('line')).toBe(false);
+  });
+
+  it('expandTemplateGroups：只增不减——用户已展开的互斥组不被收起', () => {
+    toggleGroupExpansion('conic'); // 用户手动展开几何曲线
+    expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS);
+    expect(isGroupExpanded('conic')).toBe(true);
+    expect(isGroupExpanded('trig')).toBe(true);
+  });
+
+  it('expandTemplateGroups：全部已展开时幂等不通知；未注册 id 忽略', () => {
+    expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS);
+    const fn = vi.fn();
+    const unsubscribe = subscribeTemplateGroupCollapse(fn);
+    expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS); // 全部已展开
+    expandTemplateGroups(['no-such-group']);
+    expect(fn).not.toHaveBeenCalled();
+    unsubscribe();
   });
 });

@@ -45,6 +45,11 @@
  *   标题均可点击折叠（教学聚焦）；手动开合为会话级纯 UI 态
  *   （advancedPanelCollapse.ts，刷新复位），禁用但数据保留的语义不变——
  *   展开后控件仍是禁用态，方程改回生效形态自动恢复。
+ * - ZOO-204 后续（选中态与联动展开）：模板按钮在当前方程与模板方程一致时
+ *   呈选中态（蓝边框 / 底色 / ✓ + aria-pressed，TemplateButton）；点击展开
+ *   微积分分区联动展开关联的基础公式——常量区 + 基础方程面板的显式函数
+ *   模板组（expandTemplateGroups，只增不减）；互斥面（参数式 / 物理分区、
+ *   几何曲线 / 直线与方程组）不触碰。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -60,11 +65,13 @@ import {
   subscribeAdvancedCollapse,
   type AdvancedCollapseKey,
 } from '@/lib/advancedPanelCollapse';
+import { expandTemplateGroups } from '@/lib/templateGroupCollapse';
 import { addDragPoint, removeDragPoint } from '@/lib/math/dragPoint';
 import type { DraggablePoint, MathPlotOverlay } from '@/lib/math/types';
 import { validateEquation } from '@/lib/math/validate';
 import {
   ADVANCED_TEMPLATES,
+  EXPLICIT_FUNCTION_GROUP_IDS,
   PARAMETRIC_TEMPLATES,
   PHYSICS_TEMPLATES,
   advancedTemplateNameKey,
@@ -260,6 +267,43 @@ function InapplicableHintLine({ open, collapseKey, reason }: { open: boolean; co
   );
 }
 
+/**
+ * 高级面板模板按钮（ZOO-204 后续）：当前方程与模板方程一致时呈**选中态**——
+ * 蓝色边框 + 底色 + 名称行 ✓ 前缀 + `aria-pressed`，点选回填后一眼可见
+ * 「已选中」，再点其他模板 / 手改方程即切换。
+ */
+function TemplateButton({
+  selected,
+  name,
+  equation,
+  onApply,
+}: {
+  selected: boolean;
+  name: string;
+  equation: string;
+  onApply: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      title={equation}
+      onClick={onApply}
+      className={`touch-target flex-1 border rounded-md px-1.5 py-1 text-left cursor-pointer active:bg-blue-100 transition-colors ${
+        selected
+          ? 'border-blue-500 bg-blue-100 ring-1 ring-blue-400'
+          : 'border-blue-200 bg-blue-50/50 hover:border-blue-500 hover:bg-blue-50'
+      }`}
+    >
+      <span className={`block text-[10px] leading-tight ${selected ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+        {selected ? '✓ ' : ''}
+        {name}
+      </span>
+      <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{equation}</span>
+    </button>
+  );
+}
+
 /** T1 常量编辑区：模板行 + 预置槽 + 已绑定行（ZOO-197 各带滑块 / 播放）+ 自定义项 + 解析状态行。 */
 function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
   const t = useT();
@@ -411,20 +455,18 @@ function ConstantsArea({ binding }: { binding: AdvancedConstantsBinding }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* 示例模板：点选回填方程输入（三角变换联动教学，ZOO-188） */}
+      {/* 示例模板：点选回填方程输入（三角变换联动教学，ZOO-188）；当前方程
+          与模板一致时呈选中态（ZOO-204 后续） */}
       {binding.onApplyTemplate && (
         <div className="flex flex-wrap gap-1">
           {ADVANCED_TEMPLATES.map((tpl) => (
-            <button
+            <TemplateButton
               key={tpl.id}
-              type="button"
-              onClick={() => binding.onApplyTemplate?.(tpl.equation)}
-              title={tpl.equation}
-              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-            >
-              <span className="block text-[10px] text-gray-400 leading-tight">{t(advancedTemplateNameKey(tpl.id))}</span>
-              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
-            </button>
+              selected={binding.equation.trim() === tpl.equation}
+              name={t(advancedTemplateNameKey(tpl.id))}
+              equation={tpl.equation}
+              onApply={() => binding.onApplyTemplate?.(tpl.equation)}
+            />
           ))}
         </div>
       )}
@@ -1008,20 +1050,18 @@ function ParametricArea({ binding }: { binding: AdvancedParametricBinding }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* 模板行：点选回填方程输入并重置参数域为缺省（四类模板整周期 [0,2π]） */}
+      {/* 模板行：点选回填方程输入并重置参数域为缺省（四类模板整周期 [0,2π]）；
+          当前方程与模板一致时呈选中态（ZOO-204 后续） */}
       {binding.onApplyTemplate && (
         <div className="flex flex-wrap gap-1">
           {PARAMETRIC_TEMPLATES.map((tpl) => (
-            <button
+            <TemplateButton
               key={tpl.id}
-              type="button"
-              onClick={() => binding.onApplyTemplate?.(tpl.equation)}
-              title={tpl.equation}
-              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-            >
-              <span className="block text-[10px] text-gray-400 leading-tight">{t(advancedTemplateNameKey(tpl.id))}</span>
-              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
-            </button>
+              selected={binding.equation.trim() === tpl.equation}
+              name={t(advancedTemplateNameKey(tpl.id))}
+              equation={tpl.equation}
+              onApply={() => binding.onApplyTemplate?.(tpl.equation)}
+            />
           ))}
         </div>
       )}
@@ -1118,20 +1158,18 @@ function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* 物理模板行：点选整包回填（方程 + 常量预置 + t 域预置 + 标注预置） */}
+      {/* 物理模板行：点选整包回填（方程 + 常量预置 + t 域预置 + 标注预置）；
+          当前方程与模板一致时呈选中态（ZOO-204 后续，常量改值不影响选中判定） */}
       {binding.onApplyTemplate && (
         <div className="flex flex-wrap gap-1">
           {PHYSICS_TEMPLATES.map((tpl) => (
-            <button
+            <TemplateButton
               key={tpl.id}
-              type="button"
-              onClick={() => binding.onApplyTemplate?.(tpl)}
-              title={tpl.equation}
-              className="touch-target flex-1 border border-blue-200 bg-blue-50/50 rounded-md px-1.5 py-1 text-left cursor-pointer hover:border-blue-500 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-            >
-              <span className="block text-[10px] text-gray-400 leading-tight">{t(physicsTemplateNameKey(tpl.id))}</span>
-              <span className="block font-serif text-xs text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis">{tpl.equation}</span>
-            </button>
+              selected={binding.equation.trim() === tpl.equation}
+              name={t(physicsTemplateNameKey(tpl.id))}
+              equation={tpl.equation}
+              onApply={() => binding.onApplyTemplate?.(tpl)}
+            />
           ))}
         </div>
       )}
@@ -1175,6 +1213,18 @@ function PhysicsArea({ binding }: { binding: AdvancedPhysicsBinding }) {
 export default function AdvancedFormulaPanel({ onClose, constants, calculus, parametric, physics }: AdvancedFormulaPanelProps) {
   const t = useT();
   useAdvancedCollapseOverrides();
+
+  /**
+   * 选中微积分分区（点击标题展开时，ZOO-204 后续）：联动展开**关联的基础
+   * 公式**——常量区（地基，显式函数的符号常量都靠它）与基础方程面板的
+   * 显式函数模板组（基本 / 三角 / 指数对数）。**互斥面不触碰**：参数式 /
+   * 物理分区保持各自自动缺省（不适用即折叠），几何曲线 / 直线与方程组
+   * 不在展开清单。
+   */
+  const engageCalculus = () => {
+    setAdvancedCollapseOpen('constants', true);
+    expandTemplateGroups(EXPLICIT_FUNCTION_GROUP_IDS);
+  };
 
   // Esc 关闭（窗口级监听，LanguageSwitch 同款）。T1 起面板含文本输入（常量名/数值），
   // 输入中 Esc 关面板是模态标准行为；画布快捷键守卫按事件目标判定，不受本监听影响
@@ -1233,7 +1283,12 @@ export default function AdvancedFormulaPanel({ onClose, constants, calculus, par
                   type="button"
                   aria-expanded={open}
                   aria-controls={bodyId}
-                  onClick={() => setAdvancedCollapseOpen(s.id, !open)}
+                  onClick={() => {
+                    setAdvancedCollapseOpen(s.id, !open);
+                    // ZOO-204 后续：选中（展开）微积分分区 → 联动展开关联的基础公式；
+                    // 收起与其他分区开合不触发
+                    if (s.id === 'calculus' && !open) engageCalculus();
+                  }}
                   className="touch-target w-full flex items-center gap-1.5 border-none bg-transparent text-left cursor-pointer rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors"
                 >
                   <span className="font-serif italic text-blue-500 text-sm leading-none">{s.glyph}</span>

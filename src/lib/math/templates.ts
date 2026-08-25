@@ -65,6 +65,13 @@ export const TEMPLATE_GROUPS: readonly TemplateGroup[] = [
 /** 分组显示名资源键（equation.group<Id>）。 */
 export const templateGroupNameKey = (id: string) => `equation.group${keySuffix(id)}`;
 
+/**
+ * 显式函数 y=f(x) 模板组（ZOO-204 后续）：高级公式面板选中微积分分区时
+ * 联动展开这些「关联的基础公式」组；几何曲线 / 直线与方程组与微积分叠加
+ * 互斥（无全局 y=f(x) 关系），不参与联动。
+ */
+export const EXPLICIT_FUNCTION_GROUP_IDS: readonly string[] = ['basic', 'trig', 'explog'];
+
 export interface ResolvedTemplateGroup extends TemplateGroup {
   /** 组内模板对象（按 templateIds 声明序） */
   templates: EquationTemplate[];
