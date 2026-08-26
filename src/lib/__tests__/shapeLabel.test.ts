@@ -1,23 +1,29 @@
 /**
- * 形状中心文字标签单测（ZOO-232 L1，纯函数库 shapeLabel.ts）：
+ * 形状中心文字标签单测（ZOO-232 L1，纯函数库 shapeLabel.ts；ZOO-230 L2 增补）：
  * - measureShapeLabel：多行实度量（textElement 同一口径——最长行宽 / 行数 × 1.3 行高）；
  * - labelPatch：首次落笔（初始字号 + 描边色快照）/ 沿用现值 / opts 覆盖 /
  *   空串清除（label: undefined——store 浅合并 + JSON 直通丢弃键）；
  * - initialLabelFontSize：min(|w|,|h|) × 0.3 四舍五入 + 字号边界夹取（负宽高 / 极值）；
  * - labelFirstLineTop 垂直居中：文本块中心 = 形状中心（1 / 2 / 3 行，首行 top
- *   与末行 bottom 关于 cy 对称）。
+ *   与末行 bottom 关于 cy 对称）；
+ * - labelDraftOf（L2）：编辑草稿预填——已有标签沿用 / 无标签初始推导，
+ *   与 labelPatch 首次落笔派生同源；
+ * - labelOverlayAnchor（L2）：编辑浮层锚点——水平按实测宽居中到形状中心、
+ *   垂直按首行 top，随视口 scale / offset 变换，随内容实时重算。
  *
  * 度量器注入假实现（字符数 × 10px）使宽度断言确定；渲染路径回归门 = 全量
  * 存量测试保持绿（无 label 路径零新增 canvas 操作，逐字节等价）。
  */
 import { describe, expect, it } from 'vitest';
-import { RectangleElement, CircleElement, DiamondElement, ShapeLabel, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '../types';
+import { RectangleElement, CircleElement, DiamondElement, ShapeLabel, Viewport, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '../types';
 import { TEXT_LINE_HEIGHT, TextWidthMeasurer } from '../textElement';
 import {
   initialLabelFontSize,
+  labelDraftOf,
   labelFirstLineTop,
   labelLineHeight,
   labelLines,
+  labelOverlayAnchor,
   labelPatch,
   measureShapeLabel,
   SHAPE_LABEL_FONT_FAMILY,
@@ -177,5 +183,72 @@ describe('labelFirstLineTop（垂直居中：文本块中心 = 形状中心）',
 describe('SHAPE_LABEL_FONT_FAMILY（度量与渲染共用单一字体源）', () => {
   it('常量兜底 sans-serif（label 不落 fontFamily 字段）', () => {
     expect(SHAPE_LABEL_FONT_FAMILY).toBe('sans-serif');
+  });
+});
+
+describe('labelDraftOf（L2 编辑草稿预填）', () => {
+  it('已有标签：整只沿用（浮层预填 = 现值，编辑不改样式）', () => {
+    const existing = label('现有', 36, '#3B82F6');
+    expect(labelDraftOf(host({ label: existing }))).toBe(existing);
+  });
+
+  it('无标签：空内容 + 初始字号 + 当前描边色起稿', () => {
+    expect(labelDraftOf(host())).toEqual({
+      content: '',
+      fontSize: initialLabelFontSize(200, 120),
+      color: '#EF4444',
+    });
+  });
+
+  it('与 labelPatch 首次落笔派生同源：字号 / 颜色逐字段相等（预览 = 落笔）', () => {
+    const draft = labelDraftOf(host());
+    const patch = labelPatch(host(), '内容', { fontSize: draft.fontSize, color: draft.color });
+    expect(patch.label).toEqual({ content: '内容', fontSize: draft.fontSize, color: draft.color });
+  });
+});
+
+describe('labelOverlayAnchor（L2 编辑浮层锚点：居中到形状中心）', () => {
+  const identity: Viewport = { offsetX: 0, offsetY: 0, scale: 1 };
+
+  it('单行：水平按实测宽居中，垂直 = cy - 半行高（首行 top）', () => {
+    // 度量宽 'abcd' = 40；中心 (100, 60)；行高 20×1.3 = 26
+    expect(labelOverlayAnchor(label('abcd', 20), { x: 100, y: 60 }, identity, measurer))
+      .toEqual({ x: 100 - 20, y: 60 - 13 });
+  });
+
+  it('多行：行数 × 行高参与垂直居中，宽取最长行', () => {
+    // 'ab\ncdef'：宽 = 40（最长行），2 行 → top = cy - 26
+    expect(labelOverlayAnchor(label('ab\ncdef', 20), { x: 0, y: 100 }, identity, measurer))
+      .toEqual({ x: -20, y: 100 - 26 });
+  });
+
+  it('空内容：宽 0 → 锚点水平即中心（无幻影偏移）', () => {
+    expect(labelOverlayAnchor(label('', 20), { x: 50, y: 50 }, identity, measurer))
+      .toEqual({ x: 50, y: 50 - 13 });
+  });
+
+  it('视口变换：世界中心 → 屏幕坐标，宽度 / 行高同乘 scale', () => {
+    const vp: Viewport = { offsetX: 10, offsetY: 20, scale: 2 };
+    // 世界中心 (50, 50) → 屏幕 (110, 120)；'abc' 世界宽 30 → 屏幕 60 → x = 110 - 30；
+    // 行高 10×1.3×2 = 26 → y = 120 - 13
+    expect(labelOverlayAnchor(label('abc', 10), { x: 50, y: 50 }, vp, measurer))
+      .toEqual({ x: 110 - 30, y: 120 - 13 });
+  });
+
+  it('随内容实时重算（输入即预览）：内容变宽 → 锚点左移保持居中', () => {
+    const center = { x: 100, y: 100 };
+    const short = labelOverlayAnchor(label('ab', 20), center, identity, measurer);
+    const long = labelOverlayAnchor(label('abcdef', 20), center, identity, measurer);
+    expect(short.x).toBe(100 - 10);
+    expect(long.x).toBe(100 - 30);
+    expect(long.y).toBe(short.y); // 行数不变 → 垂直不动
+  });
+
+  it('锚点与渲染落位同式：确认后画布标签视觉零跳变（同一垂直居中口径）', () => {
+    const cy = 80;
+    const l = label('x\ny\nz', 20);
+    const anchor = labelOverlayAnchor(l, { x: 0, y: cy }, identity, measurer);
+    const lineHeight = labelLineHeight(l);
+    expect(anchor.y).toBe(labelFirstLineTop(cy, lineHeight, labelLines(l).length));
   });
 });

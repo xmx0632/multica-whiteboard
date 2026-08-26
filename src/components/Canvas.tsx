@@ -10,6 +10,7 @@ import { elementRotation, normalizeRotation, stepRotation, pointerToLocalFrame }
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
 import { createMathPlotElement } from '@/lib/mathplotElement';
 import { createTextElement, textContentPatch, textResizePatch } from '@/lib/textElement';
+import { labelDraftOf, labelOverlayAnchor, labelPatch } from '@/lib/shapeLabel';
 import { parseVertexHandle, vertexDragPatch, insertVertexPatch } from '@/lib/polyline';
 import { PinchSnapshot, pinchViewport, shouldPromoteToPinch, zoomAt, panBy } from '@/lib/gestures';
 import { CANVAS_INTERACT_EVENT } from '@/lib/landscape';
@@ -35,9 +36,13 @@ interface ActivePointer {
   type: string; // 'mouse' | 'pen' | 'touch'
 }
 
-/** 内联文本输入草稿（ZOO-159）：editingId 为 null 表示新建，否则为原位编辑目标 */
+/** 内联文本输入草稿（ZOO-159）：editingId 为 null 表示新建，否则为原位编辑目标。
+ *  ZOO-230 L2 起 editingShapeId 非 null 为形状标签编辑分支（与 editingId 互斥
+ *  区分）：worldX/worldY 存形状几何中心（旋转不改中心），value/fontSize/color
+ *  为标签草稿（预填 labelDraftOf），浮层锚点按实时内容度量居中到中心。 */
 interface TextDraft {
   editingId: string | null;
+  editingShapeId: string | null;
   worldX: number;
   worldY: number;
   value: string;
@@ -127,6 +132,12 @@ function releasePointerCaptureOf(canvas: HTMLCanvasElement | null, pointerId: nu
   } catch {
     /* noop */
   }
+}
+
+/** 三形状判定（ZOO-230 L2）：可带中心标签的元素类型收窄——双击 / T 工具
+ *  命中分派与提交路径共用同一份类型口径（与 isRotatable 同惯例）。 */
+function isLabeledShape(el: WhiteboardElement): el is RectangleElement | CircleElement | DiamondElement {
+  return el.type === 'rectangle' || el.type === 'circle' || el.type === 'diamond';
 }
 
 export default function Canvas() {
@@ -269,6 +280,7 @@ export default function Canvas() {
   const openTextDraftForElement = useCallback((el: TextElement) => {
     const d: TextDraft = {
       editingId: el.id,
+      editingShapeId: null,
       worldX: el.x,
       worldY: el.y,
       value: el.content,
@@ -285,6 +297,7 @@ export default function Canvas() {
     const { fontSize: fs, strokeColor: color } = useStore.getState();
     const d: TextDraft = {
       editingId: null,
+      editingShapeId: null,
       worldX: point.x,
       worldY: point.y,
       value: '',
@@ -295,6 +308,25 @@ export default function Canvas() {
     setTextDraft(d);
   }, []);
 
+  /** 形状标签编辑（ZOO-230 L2，双击 / T 工具点中三形状）：预填 labelDraftOf
+   *  （已有标签沿用其样式；无标签按初始字号 + 当前描边色起稿），锚形状几何
+   *  中心；编辑中本体照常渲染、仅隐藏标签（hideLabelOf），浮层即标签替身 */
+  const openLabelDraftForShape = useCallback((el: RectangleElement | CircleElement | DiamondElement) => {
+    const pre = labelDraftOf(el);
+    const d: TextDraft = {
+      editingId: null,
+      editingShapeId: el.id,
+      worldX: el.x + el.width / 2,
+      worldY: el.y + el.height / 2,
+      value: pre.content,
+      fontSize: pre.fontSize,
+      color: pre.color,
+    };
+    textDraftRef.current = d;
+    setTextDraft(d);
+    setSelected(el.id);
+  }, [setSelected]);
+
   const handleDraftChange = useCallback((value: string) => {
     const d = textDraftRef.current;
     if (!d) return;
@@ -303,14 +335,24 @@ export default function Canvas() {
     setTextDraft(next);
   }, []);
 
-  /** 确认：新建 → 实度量落元素并选中；编辑 → 更新内容与实度量宽高（均可撤销） */
+  /** 确认：新建 → 实度量落元素并选中；编辑 → 更新内容与实度量宽高；形状分支 →
+   *  labelPatch 单条 update 快照（undo/redo 一次回整元素，现有机制零改动） */
   const commitTextDraft = useCallback(() => {
     const d = textDraftRef.current;
     if (!d) return; // 幂等：blur / 键序 / 画布点按多路触发只生效一次
     textDraftRef.current = null;
     setTextDraft(null);
     const content = d.value;
-    if (!content) return; // 空内容不落：新建跳过，编辑保持原文（不误删）
+    if (!content) return; // 空内容不落：新建跳过，编辑保持原文 / 原标签（不误删）
+    if (d.editingShapeId) {
+      const st = useStore.getState();
+      const el = st.elements.find((e) => e.id === d.editingShapeId);
+      if (el && isLabeledShape(el)) {
+        // opts 传浮层现值：预览（浮层字号 / 颜色）= 落笔（label 字段），零漂移
+        st.updateElement(el.id, labelPatch(el, content, { fontSize: d.fontSize, color: d.color }));
+      }
+      return;
+    }
     if (d.editingId) {
       const st = useStore.getState();
       const el = st.elements.find((e) => e.id === d.editingId);
@@ -334,6 +376,9 @@ export default function Canvas() {
 
   /** 原位编辑中的元素 id（画布隐藏其本体与选中框，浮层即其替身） */
   const hiddenTextId = textDraft?.editingId ?? null;
+  /** 标签编辑中的形状 id（ZOO-230 L2）：本体照常渲染，仅隐藏标签——对称于
+   *  hiddenTextId 机制，浮层即标签替身（renderer 的 hideLabelOf 透传） */
+  const hideLabelOf = textDraft?.editingShapeId ?? null;
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -382,13 +427,14 @@ export default function Canvas() {
     for (const f of frames) {
       drawFrame(ctx, f, viewport, { active: f.id === activeFrameId });
     }
-    // 传入可视尺寸启用视口 culling（§6.4，视口外元素跳过绘制）
+    // 传入可视尺寸启用视口 culling（§6.4，视口外元素跳过绘制）；
+    // hideLabelOf（ZOO-230 L2）：标签编辑中的形状跳过标签绘制（浮层即替身）
     const contentElements = frames.length > 0 ? elements.filter((e) => !isFrame(e)) : elements;
     renderElements(
       ctx,
       hiddenTextId ? contentElements.filter((e) => e.id !== hiddenTextId) : contentElements,
       viewport,
-      { width: rect.width, height: rect.height, t }
+      { width: rect.width, height: rect.height, t, hideLabelOf: hideLabelOf ?? undefined }
     );
     if (tempElementRef.current) {
       renderElements(ctx, [tempElementRef.current], viewport);
@@ -541,7 +587,7 @@ export default function Canvas() {
 
       ctx.restore();
     }
-  }, [elements, selectedId, selectedIds, viewport, hiddenTextId, polylineEditId, polylineVertexIndex, activeFrameId, presenting, presentationFrameId, t]);
+  }, [elements, selectedId, selectedIds, viewport, hiddenTextId, hideLabelOf, polylineEditId, polylineVertexIndex, activeFrameId, presenting, presentationFrameId, t]);
 
   useEffect(() => {
     render();
@@ -1090,6 +1136,16 @@ export default function Canvas() {
           return;
         }
       }
+      // 点中三形状 → 标签编辑（ZOO-230 L2 触摸通道主入口：纯 dblclick 在触屏
+      // 不可靠，T 工具单点即改；text 元素循环在前——叠放时先进文字编辑）
+      for (let i = elements.length - 1; i >= 0; i--) {
+        const el = elements[i];
+        if (isLabeledShape(el) && hitTest(el, point, viewport)) {
+          openLabelDraftForShape(el);
+          isDrawingRef.current = false;
+          return;
+        }
+      }
       openTextDraftForNew(point);
       isDrawingRef.current = false;
       return;
@@ -1120,7 +1176,7 @@ export default function Canvas() {
           break;
       }
     }
-  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, commitTextDraft, presenting, handlePresentPointerDown]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, openLabelDraftForShape, commitTextDraft, presenting, handlePresentPointerDown]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {
@@ -1783,6 +1839,8 @@ export default function Canvas() {
    * line/arrow → 折线编辑态（ZOO-168）：双击中段进入编辑态，并在双击处
    * （最近段投影点）插入首个可拖顶点；已在编辑态 → 双击某段即追加顶点。
    * 距段端点过近（<12 屏幕 px）不插——双击落在端点 / 既有顶点手柄上防重合顶点。
+   * rect/circle/diamond → 中心标签编辑（ZOO-230 L2，桌面主通道）：命中即开
+   * 标签草稿——循环在 text / line / arrow 之后，叠放时优先级最低不劫持既有语义。
    */
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (presenting) return; // 演示态无双击编辑（ZOO-200）
@@ -1813,7 +1871,38 @@ export default function Canvas() {
         return;
       }
     }
-  }, [activeTool, getCanvasPoint, openTextDraftForElement, presenting]);
+    for (let i = st.elements.length - 1; i >= 0; i--) {
+      const el = st.elements[i];
+      if (isLabeledShape(el) && hitTest(el, point, st.viewport)) {
+        openLabelDraftForShape(el);
+        return;
+      }
+    }
+  }, [activeTool, getCanvasPoint, openTextDraftForElement, openLabelDraftForShape, presenting]);
+
+  // 浮层锚点（ZOO-159 text 落点 / ZOO-230 L2 形状中心）：形状分支按元素实时
+  // 数据居中（缩放 / 平移下锚点跟手；元素已不存在时退回开草稿时的中心快照），
+  // 按草稿内容实时度量（输入即预览——宽 / 行数变则锚点随动）。
+  const draftShapeEl = textDraft?.editingShapeId
+    ? elements.find(
+        (e): e is RectangleElement | CircleElement | DiamondElement =>
+          isLabeledShape(e) && e.id === textDraft.editingShapeId
+      )
+    : undefined;
+  const overlayAnchor = textDraft
+    ? textDraft.editingShapeId
+      ? labelOverlayAnchor(
+          { content: textDraft.value, fontSize: textDraft.fontSize, color: textDraft.color },
+          draftShapeEl
+            ? { x: draftShapeEl.x + draftShapeEl.width / 2, y: draftShapeEl.y + draftShapeEl.height / 2 }
+            : { x: textDraft.worldX, y: textDraft.worldY },
+          viewport,
+        )
+      : {
+          x: textDraft.worldX * viewport.scale + viewport.offsetX,
+          y: textDraft.worldY * viewport.scale + viewport.offsetY,
+        }
+    : null;
 
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden">
@@ -1842,14 +1931,14 @@ export default function Canvas() {
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {textDraft && (
+      {textDraft && overlayAnchor && (
         <TextInputOverlay
-          x={textDraft.worldX * viewport.scale + viewport.offsetX}
-          y={textDraft.worldY * viewport.scale + viewport.offsetY}
+          x={overlayAnchor.x}
+          y={overlayAnchor.y}
           fontSizePx={textDraft.fontSize * viewport.scale}
           color={textDraft.color}
           value={textDraft.value}
-          maxWidth={Math.max(120, containerWidth - (textDraft.worldX * viewport.scale + viewport.offsetX) - 8)}
+          maxWidth={Math.max(120, containerWidth - overlayAnchor.x - 8)}
           onChange={handleDraftChange}
           onConfirm={commitTextDraft}
           onCancel={cancelTextDraft}

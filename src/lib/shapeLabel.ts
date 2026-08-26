@@ -6,7 +6,7 @@
  * measureTextElement + TEXT_LINE_HEIGHT（行高同源，预览与渲染不漂移）；
  * 度量器注入同其模式（node 单测走退化估计，无 DOM 结果确定）。
  */
-import { Labeled, ShapeLabel, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from './types';
+import { Labeled, Point, ShapeLabel, Viewport, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from './types';
 import { createTextMeasurer, measureTextElement, TextWidthMeasurer, TEXT_LINE_HEIGHT } from './textElement';
 
 /** 标签字体：不落 fontFamily 字段，度量与渲染共用此常量（两处永不漂移） */
@@ -49,11 +49,25 @@ export interface LabelPatchOptions {
 }
 
 /**
+ * 编辑草稿预填（ZOO-230 L2）：已有标签整只沿用；无标签按「初始字号 + 当前
+ * 描边色」起稿——与 labelPatch 首次落笔的派生同一份（浮层预览的字号 / 颜色
+ * = 确认落 label 的字号 / 颜色，两处永不漂移）。
+ */
+export function labelDraftOf(el: LabelHost): ShapeLabel {
+  if (el.label) return el.label;
+  return {
+    content: '',
+    fontSize: initialLabelFontSize(el.width, el.height),
+    color: el.strokeColor,
+  };
+}
+
+/**
  * 标签变更补丁（浅合并语义，供 store.updateElement 直用）：
  * - content 为空串 → `{ label: undefined }` 清除——store Object.assign 浅合并
  *   后 JSON.stringify 丢弃 undefined 键，序列化即净清除（已验证直通）；
  * - 首次落笔（el 无 label）：字号 = initialLabelFontSize(w, h)，颜色 = 当时
- *   描边色快照（此后与描边色解耦，见 ShapeLabel 注释）；
+ *   描边色快照（此后与描边色解耦，见 ShapeLabel 注释）——派生走 labelDraftOf；
  * - 非首次：沿用现字号 / 现颜色，opts 显式覆盖才变。
  */
 export function labelPatch(
@@ -62,11 +76,7 @@ export function labelPatch(
   opts?: LabelPatchOptions
 ): { label: ShapeLabel | undefined } {
   if (content === '') return { label: undefined };
-  const prev: ShapeLabel = el.label ?? {
-    content: '',
-    fontSize: initialLabelFontSize(el.width, el.height),
-    color: el.strokeColor,
-  };
+  const prev = labelDraftOf(el);
   return {
     label: {
       content,
@@ -93,4 +103,26 @@ export function labelLineHeight(label: ShapeLabel): number {
  */
 export function labelFirstLineTop(cy: number, lineHeight: number, lineCount: number): number {
   return cy - (lineHeight * lineCount) / 2;
+}
+
+/**
+ * 标签编辑浮层锚点（ZOO-230 L2）：TextInputOverlay 首行左上角的屏幕坐标——
+ * 水平按 measureShapeLabel 实测宽居中到形状中心、垂直按 labelFirstLineTop
+ * 首行 top（浮层即标签替身，确认后画布侧标签落位视觉零跳变）。center 为
+ * 形状几何中心（世界系；旋转不改中心，浮层恒轴对齐）。随草稿内容实时调用
+ * ——宽度 / 行数随输入变，锚点即重算（对齐 ZOO-159「输入即预览」）。
+ */
+export function labelOverlayAnchor(
+  label: ShapeLabel,
+  center: Point,
+  viewport: Viewport,
+  measure: TextWidthMeasurer = createTextMeasurer()
+): Point {
+  const { width } = measureShapeLabel(label, measure);
+  const cx = center.x * viewport.scale + viewport.offsetX;
+  const cy = center.y * viewport.scale + viewport.offsetY;
+  return {
+    x: cx - (width * viewport.scale) / 2,
+    y: labelFirstLineTop(cy, labelLineHeight(label) * viewport.scale, labelLines(label).length),
+  };
 }
