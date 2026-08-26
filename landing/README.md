@@ -33,16 +33,21 @@ cd landing && npx serve .                      # → http://localhost:3000
 
 `landing/` 目录本身即完整产物，**没有构建步骤**，把目录内容原样上传即可：
 
+- **GitHub Pages（已配置，推荐）**：仓库自带 `.github/workflows/landing-pages.yml`，
+  `main` 分支上 `landing/**` 有变更即自动发布，访问 **https://xmx0632.github.io/multica-whiteboard/** 。
+  首次启用需做一次性设置：仓库 **Settings → Pages → Build and deployment → Source 选 "GitHub Actions"**。
 - **Vercel / Netlify**：新建独立项目，Root Directory 指向 `landing/`（或把该目录作为独立仓库推送），Framework Preset 选 "Other / Static"。
-- **GitHub / Gitee Pages**：把 `landing/` 推为独立分支或独立仓库，Pages 指向它。
 - **Nginx / 任意虚拟主机**：`root` 指向 `landing/`，`try_files $uri $uri/ /index.html;`。
 
 ### 部署前需要确认的两处
 
 1. **主应用入口链接**：搜索 `APP_URL` 注释（`index.html` 中共 5 处 `<a href="https://board.readpodcast.top">`），
    落地页启用独立域名后如需改指向，统一替换即可。
-2. **SEO 规范地址**：`<link rel="canonical">` 与 `og:url` 目前指向 `https://board.readpodcast.top/`；
-   落地页拥有独立域名后改为新域名（SEO 深度优化见 ZOO-181）。
+2. **SEO 规范地址**：搜索 `SITE_URL` 注释——canonical / og:url / og:image / JSON-LD url 四处
+   当前指向 GitHub Pages 地址；换独立域名时统一替换（og:image 必须是绝对地址，SEO 深度优化见 ZOO-181）。
+
+> 子路径说明：GitHub Pages 项目站点带 `/multica-whiteboard/` 前缀；页面内所有资源引用均为
+> 相对路径（`css/…`、`js/…`、`assets/…`），子路径下直接可用，无需改 base。
 
 ## 与主应用的关系（零影响）
 

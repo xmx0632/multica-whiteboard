@@ -1,0 +1,45 @@
+# 落地页 → GitHub Pages（ZOO-236）
+# 把 landing/ 目录作为静态站点发布到 https://xmx0632.github.io/multica-whiteboard/
+# 仅依赖 landing/** 与本文件本身的变更触发，不影响主应用的构建与部署。
+# 首次使用需在仓库 Settings → Pages → Build and deployment → Source 选择 "GitHub Actions"。
+name: Deploy landing to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "landing/**"
+      - ".github/workflows/landing-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只保留一次 Pages 部署
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload landing/ as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: landing
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
