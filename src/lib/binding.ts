@@ -18,7 +18,7 @@
  * 绑定目标（ZOO-153 结论沿用）。
  */
 import { Point, WhiteboardElement, RectangleElement, CircleElement, DiamondElement, ArrowElement, ArrowBinding } from './types';
-import { diamondVertices } from './renderer';
+import { diamondVertices, elementBoundsAABB } from './renderer';
 import { elementRotation } from './rotation';
 import { nearestOnPolyline, lineVertices, parseVertexHandle, isPolyline, polylinePatch } from './polyline';
 
@@ -246,6 +246,39 @@ export function resolveEndpointBinding(params: {
     hold && (!capture || hold.dist <= capture.dist) ? hold : capture;
   if (!chosen) return { binding: null, point: { ...world }, target: null };
   return { binding: { elementId: chosen.element.id }, point: { ...chosen.point }, target: chosen.element };
+}
+
+/**
+ * 视口内可绑候选集（ZOO-233 绘制即吸附的性能预筛）：可绑定元素中 AABB 与
+ * 「可视区外扩 BIND_RELEASE_PX」有交集者。箭头创建手势起手快照一次（手势期间
+ * 元素集不变），逐帧捕获解析只扫候选集——大画布多元素下避免 mousemove 每帧
+ * 全量扫描（无空间索引，AABB 预筛即索引替代）。margin 取解绑阈值：AABB 与
+ * 外扩可视区无交集的元素，其轮廓到视口内指针的距离必 > BIND_RELEASE_PX，
+ * 捕获 / 解绑判定不受预筛影响（旋转元素走 elementBoundsAABB，旋出局部外框
+ * 的部分不被误筛）。
+ */
+export function bindableCandidatesInViewport(
+  elements: WhiteboardElement[],
+  viewport: { offsetX: number; offsetY: number; scale: number },
+  viewWidth: number,
+  viewHeight: number,
+): BindableElement[] {
+  const scale = viewport.scale || 1;
+  const margin = BIND_RELEASE_PX / scale;
+  const left = -viewport.offsetX / scale - margin;
+  const top = -viewport.offsetY / scale - margin;
+  const right = left + viewWidth / scale + margin * 2;
+  const bottom = top + viewHeight / scale + margin * 2;
+  const out: BindableElement[] = [];
+  for (const el of elements) {
+    if (!isBindableElement(el)) continue;
+    const bbox = elementBoundsAABB(el);
+    if (!bbox) continue;
+    if (bbox.x + bbox.width >= left && bbox.x <= right && bbox.y + bbox.height >= top && bbox.y <= bottom) {
+      out.push(el);
+    }
+  }
+  return out;
 }
 
 /**

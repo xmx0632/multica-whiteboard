@@ -4,7 +4,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { renderGrid, renderElements, renderSelection, hitTest, screenToCanvas, hitTestSelectionHandle, hitTestRotationHandle, isRotatable, MathPlotHandle, ResizeHandleId, translateElement, drawFrame, elementBoundsAABB } from '@/lib/renderer';
 import { boxResizePatch, endpointResizePatch, pathResizePatch, elementResizeChanged, isDegenerateShapeClick, CornerHandle, SHAPE_MIN_SIZE } from '@/lib/shapeResize';
-import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement } from '@/lib/binding';
+import { resolveEndpointBinding, endpointHandleSide, arrowBindingEquals, updateBindingsAfterMove, isBindableElement, bindableCandidatesInViewport, type BindableElement } from '@/lib/binding';
 import { WhiteboardElement, PathElement, Point, MathPlotElement, TextElement, Operation, ArrowElement, RectangleElement, CircleElement, DiamondElement, MATHPLOT_MIN_WIDTH, MATHPLOT_MIN_HEIGHT } from '@/lib/types';
 import { elementRotation, normalizeRotation, stepRotation, pointerToLocalFrame } from '@/lib/rotation';
 import { isFrame, frameContents, scaleFrameContents, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '@/lib/frame';
@@ -233,6 +233,12 @@ export default function Canvas() {
     targetElementId: string | null;
     snapPoint: Point | null;
   } | null>(null);
+
+  // —— 绘制即吸附（ZOO-233）——
+  /** 箭头创建手势的视口候选集：起手快照一次（手势期间元素集不变），落笔起点
+   *  与逐帧终点捕获只扫候选集（bindableCandidatesInViewport 性能口径）；
+   *  null = 非箭头绘制手势 */
+  const drawBindCandidatesRef = useRef<BindableElement[] | null>(null);
 
   // —— 演示模式（ZOO-200）——
   /** 激光轨迹（纯渲染层，屏幕坐标）：不入 elements / 撤销栈 / 持久化 */
@@ -644,6 +650,7 @@ export default function Canvas() {
     isDrawingRef.current = false;
     toolPointerIdRef.current = null;
     arrowSnapFeedbackRef.current = null; // PR3：清除吸附反馈（ZOO-219）
+    drawBindCandidatesRef.current = null; // ZOO-233：绘制吸附候选集一并丢弃
 
     const rs = resizeRef.current;
     if (rs) {
@@ -1171,12 +1178,39 @@ export default function Canvas() {
         case 'line':
           tempElementRef.current = { ...base, type: 'line', x2: point.x, y2: point.y } as any;
           break;
-        case 'arrow':
-          tempElementRef.current = { ...base, type: 'arrow', x2: point.x, y2: point.y } as any;
+        case 'arrow': {
+          // 绘制即吸附（ZOO-233）：落点贴近可绑元素轮廓（≤ 捕获阈值）时起点吸附
+          // 到轮廓并建立 startBinding，空处为自由起点。捕获 / 解绑走
+          // resolveEndpointBinding 同一语义（新箭头无绑定，即纯捕获）。候选集
+          // 起手快照一次，逐帧终点捕获复用（大画布下免每帧全量扫描）
+          const canvasRect = canvasRef.current?.getBoundingClientRect();
+          const candidates = canvasRect
+            ? bindableCandidatesInViewport(elements, viewport, canvasRect.width, canvasRect.height)
+            : elements.filter(isBindableElement);
+          drawBindCandidatesRef.current = candidates;
+          const el = { ...base, type: 'arrow', x2: point.x, y2: point.y } as ArrowElement;
+          const start = resolveEndpointBinding({
+            elements: candidates, arrow: el, endpoint: 'start', world: point, scale: viewport.scale,
+          });
+          if (start.binding) {
+            // 端点改写经 endpointResizePatch（ZOO-168 折线防漂移同源；创建恒
+            // 两点直线，此处即 x/y 补丁）
+            Object.assign(el, endpointResizePatch('p1', el, start.point));
+            el.startBinding = start.binding;
+            // 吸附反馈复用 ZOO-219 高亮：起点吸附即时点亮，预知「起点已连上」
+            arrowSnapFeedbackRef.current = {
+              arrowId: el.id, endpoint: 'start',
+              targetElementId: start.target?.id ?? null,
+              snapPoint: start.target ? { ...start.point } : null,
+            };
+            render();
+          }
+          tempElementRef.current = el;
           break;
+        }
       }
     }
-  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, openLabelDraftForShape, commitTextDraft, presenting, handlePresentPointerDown]);
+  }, [activeTool, elements, selectedId, strokeColor, strokeWidth, strokeDash, fillColor, spaceDown, viewport, polylineEditId, getLocalPoint, getCanvasPoint, setSelected, selectPolylineVertex, cancelToolGesture, beginPinch, touchCount, openTextDraftForElement, openTextDraftForNew, openLabelDraftForShape, commitTextDraft, presenting, handlePresentPointerDown, render]);
 
   // pan 帧回调：只读 ref，无需依赖数组
   const applyPanFromRaf = useCallback(() => {
@@ -1570,8 +1604,29 @@ export default function Canvas() {
       temp.width = point.x - temp.x;
       temp.height = point.y - temp.y;
     } else if (temp.type === 'line' || temp.type === 'arrow') {
-      (temp as any).x2 = point.x;
-      (temp as any).y2 = point.y;
+      if (temp.type === 'arrow') {
+        // 绘制即吸附（ZOO-233）：终点实时捕获 / 解绑——传当前 temp（其
+        // endBinding 即最近捕获态，滞回防边界闪烁），捕获 / 解绑语义与端点
+        // 拖拽路径同源；吸附反馈复用 ZOO-219 高亮。空处即自由端点（松手不绑定）
+        const snap = resolveEndpointBinding({
+          elements: drawBindCandidatesRef.current ?? [],
+          arrow: temp,
+          endpoint: 'end',
+          world: point,
+          scale: viewport.scale,
+        });
+        Object.assign(temp, endpointResizePatch('p2', temp, snap.point));
+        temp.endBinding = snap.binding ?? undefined;
+        arrowSnapFeedbackRef.current = {
+          arrowId: temp.id, endpoint: 'end',
+          targetElementId: snap.target?.id ?? null,
+          snapPoint: snap.target ? { ...snap.point } : null,
+        };
+      } else {
+        // else 分支收窄为 line（无绑定语义，自由端点）
+        temp.x2 = point.x;
+        temp.y2 = point.y;
+      }
     }
     render();
   }, [activeTool, selectedId, viewport, getLocalPoint, getCanvasPoint, render, applyPanFromRaf, applyResize, applyPinchFromRaf, updateHoverTrace, updateHoverHit, updatePointHover, updateRotateHover, clearHoverTrace, presenting, handlePresentPointerMove]);
@@ -1722,6 +1777,11 @@ export default function Canvas() {
       if (!isDegenerateShapeClick(temp)) addElement(temp);
       tempElementRef.current = null;
     }
+    // 绘制即吸附（ZOO-233）：吸附反馈与候选集随手势收尾清除——箭头恒非退化，
+    // addElement 必触发 elements 变化重绘，反馈高亮随之消失。绑定字段在箭头
+    // 元素上，单条 create 快照即含全部绑定：一次 undo 同时撤销箭头与绑定
+    arrowSnapFeedbackRef.current = null;
+    drawBindCandidatesRef.current = null;
 
     // ZOO-220：绑定跟随箭头的起手快照——收尾对照建 undo 快照后即清空（下次拖拽起手重填）
     const dragArrowsStart = dragArrowsStartRef.current;
