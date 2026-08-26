@@ -10,11 +10,13 @@
  *   与 labelPatch 首次落笔派生同源；
  * - labelOverlayAnchor（L2）：编辑浮层锚点——水平按实测宽居中到形状中心、
  *   垂直按首行 top，随视口 scale / offset 变换，随内容实时重算。
+ * - L3（ZOO-231）：SVG 导出带标签结构 / 旋转成组 / 无标签逐字节一致；
+ *   面板写入路径 updateElement + labelPatch——单条快照与描边解耦（文末）。
  *
  * 度量器注入假实现（字符数 × 10px）使宽度断言确定；渲染路径回归门 = 全量
  * 存量测试保持绿（无 label 路径零新增 canvas 操作，逐字节等价）。
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { RectangleElement, CircleElement, DiamondElement, ShapeLabel, Viewport, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '../types';
 import { TEXT_LINE_HEIGHT, TextWidthMeasurer } from '../textElement';
 import {
@@ -28,6 +30,8 @@ import {
   measureShapeLabel,
   SHAPE_LABEL_FONT_FAMILY,
 } from '../shapeLabel';
+import { exportToSvg } from '../export';
+import { useStore } from '../store';
 
 // 假度量器：宽度 = 字符数 × 10px（与字号无关，断言可预测）
 const measurer: TextWidthMeasurer = (text) => text.length * 10;
@@ -250,5 +254,158 @@ describe('labelOverlayAnchor（L2 编辑浮层锚点：居中到形状中心）'
     const anchor = labelOverlayAnchor(l, { x: 0, y: cy }, identity, measurer);
     const lineHeight = labelLineHeight(l);
     expect(anchor.y).toBe(labelFirstLineTop(cy, lineHeight, labelLines(l).length));
+  });
+});
+
+// ———— ZOO-231 L3：SVG 导出 + 面板写入路径 ————
+
+/**
+ * L3 单测（ZOO-231）：
+ * - SVG 导出：带 label 的三形状输出 <text> 多行 tspan（首行 y = 垂直居中公式、
+ *   dy = 行距——与 drawShapeLabel 同一份 shapeLabel.ts 推导）；旋转时形状与文字
+ *   包进 <g transform="rotate(θ cx cy)"> 同组随转（形状节点不带 transform）；
+ *   无 label 输出与既有格式逐字节一致（回归硬约束，字面量钉死）；
+ * - 面板写入路径（store 级，镜像面板真实调用）：updateElement + labelPatch——
+ *   改色 / 改字号 / 清除各一条可撤销快照；label.color 与 strokeColor 双向解耦。
+ */
+describe('SVG 导出（ZOO-231 L3）：无 label 逐字节一致（回归硬约束）', () => {
+  it('rect 直角 / 旋转 / 半透明：与既有输出完全相同（无 text / g 节点混入）', () => {
+    const plain = exportToSvg([host()]);
+    expect(plain).toContain('<rect x="0" y="0" width="200" height="120" stroke="#EF4444" stroke-width="2" fill="none"/>');
+    const rotated = exportToSvg([host({ opacity: 0.5, rotation: 90 })]);
+    expect(rotated).toContain('<rect x="0" y="0" width="200" height="120" stroke="#EF4444" stroke-width="2" fill="none" opacity="0.5" transform="rotate(90 100 60)"/>');
+  });
+
+  it('circle / diamond 同构：无 label 不出现 text 节点，旋转 transform 仍在形状节点上', () => {
+    const circle: CircleElement = {
+      id: 'c1', type: 'circle', x: 0, y: 0, width: 100, height: 100,
+      strokeColor: '#000000', strokeWidth: 2, opacity: 1, fillColor: null,
+    };
+    const diamond: DiamondElement = {
+      id: 'd1', type: 'diamond', x: 0, y: 0, width: 160, height: 80,
+      strokeColor: '#A855F7', strokeWidth: 2, opacity: 1, fillColor: null, rotation: 90,
+    };
+    const svg = exportToSvg([circle, diamond]);
+    expect(svg).toContain('<ellipse cx="50" cy="50" rx="50" ry="50" stroke="#000000" stroke-width="2" fill="none"/>');
+    expect(svg).toContain('<polygon points="80,0 160,40 80,80 0,40" stroke="#A855F7" stroke-width="2" fill="none" stroke-linejoin="round" transform="rotate(90 80 40)"/>');
+    expect(svg).not.toContain('<text');
+    expect(svg).not.toContain('<g transform');
+  });
+});
+
+describe('SVG 导出（ZOO-231 L3）：带 label 的 <text> 结构与几何', () => {
+  // host() 200×120 @ (0,0) → 中心 (100, 60)；三行 fontSize=20 → 行高 26，首行 y = 60 - 26×3/2 = 21
+  it('rect 多行：text-anchor=middle 居中 + tspan 逐行 dy 行距（与 labelFirstLineTop 同式）', () => {
+    const l = label('a\nb\nc', 20, '#3B82F6');
+    const svg = exportToSvg([host({ label: l })]);
+    const cy = 60;
+    const firstTop = labelFirstLineTop(cy, labelLineHeight(l), labelLines(l).length);
+    expect(firstTop).toBe(21);
+    expect(svg).toContain(
+      `<rect x="0" y="0" width="200" height="120" stroke="#EF4444" stroke-width="2" fill="none"/>` +
+      `<text x="100" y="${firstTop}" text-anchor="middle" font-size="20" font-family="sans-serif" fill="#3B82F6">` +
+      `<tspan x="100" dy="0">a</tspan><tspan x="100" dy="26">b</tspan><tspan x="100" dy="26">c</tspan></text>`,
+    );
+    expect(svg).not.toContain('<g transform'); // 直角：无包裹 g
+  });
+
+  it('rect 旋转 90°：rotate 提到包裹 <g>，形状不带 transform、文字同组随转', () => {
+    const svg = exportToSvg([host({ label: label('起点', 20, '#3B82F6'), rotation: 90 })]);
+    expect(svg).toContain(
+      `<g transform="rotate(90 100 60)">` +
+      `<rect x="0" y="0" width="200" height="120" stroke="#EF4444" stroke-width="2" fill="none"/>` +
+      `<text x="100" y="47" text-anchor="middle" font-size="20" font-family="sans-serif" fill="#3B82F6">` +
+      `<tspan x="100" dy="0">起点</tspan></text></g>`,
+    );
+    // 形状节点自身不带 transform（旋转由 g 承担）
+    expect(svg).not.toContain('fill="none" transform=');
+  });
+
+  it('circle / diamond 同构：几何中心同式推导', () => {
+    const circle: CircleElement = {
+      id: 'c1', type: 'circle', x: 0, y: 0, width: 100, height: 100,
+      strokeColor: '#000000', strokeWidth: 2, opacity: 1, fillColor: null,
+      label: label('圆', 10, '#EF4444'),
+    };
+    const diamond: DiamondElement = {
+      id: 'd1', type: 'diamond', x: 0, y: 0, width: 160, height: 80,
+      strokeColor: '#A855F7', strokeWidth: 2, opacity: 1, fillColor: null,
+      label: label('菱', 10, '#3B82F6'),
+    };
+    const svg = exportToSvg([circle, diamond]);
+    // 单行 fontSize=10 → 行高 13 → 首/末行 y = 50 - 6.5 = 43.5 / 40 - 6.5 = 33.5
+    expect(svg).toContain(
+      `<ellipse cx="50" cy="50" rx="50" ry="50" stroke="#000000" stroke-width="2" fill="none"/>` +
+      `<text x="50" y="43.5" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#EF4444">` +
+      `<tspan x="50" dy="0">圆</tspan></text>`,
+    );
+    expect(svg).toContain(
+      `<polygon points="80,0 160,40 80,80 0,40" stroke="#A855F7" stroke-width="2" fill="none" stroke-linejoin="round"/>` +
+      `<text x="80" y="33.5" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#3B82F6">` +
+      `<tspan x="80" dy="0">菱</tspan></text>`,
+    );
+  });
+
+  it('XML 转义：内容中的 < & " 进 tspan 前转义', () => {
+    const svg = exportToSvg([host({ label: label('a<&"b', 20, '#3B82F6') })]);
+    expect(svg).toContain('<tspan x="100" dy="0">a&lt;&amp;&quot;b</tspan>');
+  });
+
+  it('opacity 随元素：半透明时 text 节点携带 opacity 属性', () => {
+    const svg = exportToSvg([host({ label: label('淡', 20, '#3B82F6'), opacity: 0.5 })]);
+    expect(svg).toContain('fill="#3B82F6" opacity="0.5">');
+  });
+});
+
+describe('面板写入路径（store 级，ZOO-231 L3）：updateElement + labelPatch', () => {
+  const el = () => useStore.getState().elements.find((e) => e.id === 'r1') as RectangleElement;
+
+  beforeEach(() => {
+    useStore.setState({
+      elements: [host({ id: 'r1', label: label('起点', 36, '#3B82F6') })],
+      selectedId: 'r1',
+      activeTool: 'select',
+      undoStack: [],
+      redoStack: [],
+      isDirty: false,
+      strokeGestureBefore: null,
+    });
+  });
+
+  it('改色：单条可撤销快照，undo 回退（面板 pickLabelColor 同款调用）', () => {
+    const before = el();
+    useStore.getState().updateElement(before.id, labelPatch(before, before.label!.content, { color: '#22C55E' }));
+    expect(el().label).toEqual({ content: '起点', fontSize: 36, color: '#22C55E' });
+    expect(useStore.getState().undoStack).toHaveLength(1);
+    useStore.getState().undo();
+    expect(el().label?.color).toBe('#3B82F6');
+  });
+
+  it('解耦断言：改 label.color 不碰 strokeColor（核心诉求）', () => {
+    const before = el();
+    useStore.getState().updateElement(before.id, labelPatch(before, before.label!.content, { color: '#22C55E' }));
+    expect(el().strokeColor).toBe('#EF4444'); // host() 描边色原样
+  });
+
+  it('解耦断言：pickStrokeColor 改描边不碰 label（既有通道无联动）', () => {
+    useStore.getState().pickStrokeColor('#000000');
+    expect(el().strokeColor).toBe('#000000');
+    expect(el().label).toEqual({ content: '起点', fontSize: 36, color: '#3B82F6' });
+  });
+
+  it('改字号：单条快照，内容 / 颜色沿用现值（渲染按新字号居中为派生）', () => {
+    const before = el();
+    useStore.getState().updateElement(before.id, labelPatch(before, before.label!.content, { fontSize: 48 }));
+    expect(el().label).toEqual({ content: '起点', fontSize: 48, color: '#3B82F6' });
+    expect(useStore.getState().undoStack).toHaveLength(1);
+  });
+
+  it('清除文字：labelPatch(el, "") 单条快照净清除，undo 完整恢复（唯一显式入口）', () => {
+    const before = el();
+    useStore.getState().updateElement(before.id, labelPatch(before, ''));
+    expect(el().label).toBeUndefined();
+    expect(useStore.getState().undoStack).toHaveLength(1);
+    useStore.getState().undo();
+    expect(el().label).toEqual({ content: '起点', fontSize: 36, color: '#3B82F6' });
   });
 });
