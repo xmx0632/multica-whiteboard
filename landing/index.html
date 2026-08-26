@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- ============================================================
+       MulticaBoard 教学白板 · 落地页（纯静态，零构建）
+       · 站点链接统一收口：搜索 APP_URL 注释处替换正式域名
+       · i18n 预留：正文节点均带 data-i18n 键，见 js/main.js 与 README
+       ============================================================ -->
+  <title>MulticaBoard 教学白板 — 写下方程式，图形立即成形</title>
+  <meta name="description" content="面向课堂教学的在线白板：具备常规白板的全部能力，并能直接书写数学方程式，选中即自动生成对应的矢量图形（如 sin 曲线、抛物线、圆）。浏览器直接使用，无需安装。" />
+  <meta name="keywords" content="教学白板,数学白板,在线白板,方程绘图,函数图像,sin曲线,课堂教学工具" />
+
+  <link rel="canonical" href="https://board.readpodcast.top/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="MulticaBoard" />
+  <meta property="og:title" content="MulticaBoard 教学白板 — 写下方程式，图形立即成形" />
+  <meta property="og:description" content="具备常规白板全部能力的在线教学白板，并能在白板上书写数学方程式，选中后自动生成对应的矢量图形。" />
+  <meta property="og:url" content="https://board.readpodcast.top/" />
+  <meta property="og:image" content="assets/og.png" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232456A6'/%3E%3Cpath d='M10 36 C 20 12, 28 12, 34 32 S 48 54, 54 30' fill='none' stroke='%23EFEAD9' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+  <link rel="stylesheet" href="css/style.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "MulticaBoard 教学白板",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Web",
+    "description": "面向课堂教学的在线白板：具备常规白板的全部能力，并能书写数学方程式，选中后自动生成对应的矢量图形。",
+    "url": "https://board.readpodcast.top/",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+    "inLanguage": "zh-CN"
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <!-- ======================= 导航 ======================= -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="#" aria-label="MulticaBoard 教学白板 首页">
+        <svg class="brand-glyph" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--blue)"/><path d="M10 36 C 20 12, 28 12, 34 32 S 48 54, 54 30" fill="none" stroke="var(--chalk)" stroke-width="5" stroke-linecap="round"/></svg>
+        <span class="brand-name" data-i18n="brand.name">MulticaBoard</span>
+        <span class="brand-sub" data-i18n="brand.sub">教学白板</span>
+      </a>
+      <nav class="nav-links" aria-label="页面导航">
+        <a href="#equation" data-i18n="nav.equation">方程出图</a>
+        <a href="#whiteboard" data-i18n="nav.whiteboard">白板能力</a>
+        <a href="#scenes" data-i18n="nav.scenes">使用场景</a>
+        <a href="#gallery" data-i18n="nav.gallery">产品实拍</a>
+      </nav>
+      <!-- APP_URL：主应用入口 -->
+      <a class="btn btn-primary btn-sm" href="https://board.readpodcast.top" data-i18n="nav.cta">免费开始使用</a>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ======================= Hero ======================= -->
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span class="eyebrow-tick" aria-hidden="true">ƒ</span>MulticaBoard · 面向课堂教学的在线白板</p>
+          <h1 data-i18n="hero.title">
+            写下方程式，<br />
+            <span class="hero-mark">图形<svg class="underline-swoosh" viewBox="0 0 120 14" aria-hidden="true" preserveAspectRatio="none"><path d="M3 9 C 22 3, 40 13, 60 7 S 98 2, 117 8"/></svg></span>
+            随之成形。
+          </h1>
+          <p class="hero-sub" data-i18n="hero.sub">
+            一块拥有常规白板全部能力的在线白板——画笔、形状、文本、撤销重做、导出，一样不少；再加上数学课最需要的那一件事：输入
+            <span class="eq-inline">y&nbsp;=&nbsp;sin(x)</span>，选中即得到一条可移动、可缩放、可调参的矢量曲线。
+          </p>
+          <div class="hero-actions">
+            <!-- APP_URL：主应用入口 -->
+            <a class="btn btn-primary" href="https://board.readpodcast.top" data-i18n="hero.ctaPrimary">免费开始使用</a>
+            <a class="btn btn-ghost" href="#equation" data-i18n="hero.ctaSecondary">看它怎么画&nbsp;↓</a>
+          </div>
+          <p class="hero-note" data-i18n="hero.note">浏览器直接使用 · 无需安装 · 内容自动保存</p>
+        </div>
+
+        <!-- 签名元素：实时方程出图演示 -->
+        <div class="hero-demo reveal" aria-label="方程出图实时演示">
+          <div class="board-card" id="heroBoard">
+            <div class="board-toolbar" aria-hidden="true">
+              <span class="tool tool-pen" title="画笔"></span>
+              <span class="tool tool-rect" title="矩形"></span>
+              <span class="tool tool-circle" title="圆"></span>
+              <span class="tool tool-text" title="文本">T</span>
+              <span class="tool tool-fn is-active" title="方程">ƒ</span>
+              <span class="toolbar-tail" data-i18n="demo.toolbarHint">方程工具 · 快捷键 F</span>
+            </div>
+            <div class="board-plot">
+              <svg id="heroPlot" role="img" aria-label="方程曲线坐标图"></svg>
+            </div>
+            <div class="board-input">
+              <span class="fn-badge" aria-hidden="true">ƒ</span>
+              <span class="eq" id="heroEq" aria-live="polite"></span><span class="caret" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="chips" id="heroChips" role="group" aria-label="切换演示方程">
+            <button class="chip" type="button" data-demo="sin">y = sin(x)</button>
+            <button class="chip" type="button" data-demo="poly">y = x² − 2x − 3</button>
+            <button class="chip" type="button" data-demo="circle">(x−1)² + (y−2)² = 9</button>
+            <button class="chip" type="button" data-demo="recip">y = 1 / x</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= §1 方程出图（差异化卖点） ======================= -->
+    <section class="section" id="equation">
+      <div class="section-head reveal">
+        <p class="section-eyebrow"><span class="sec-no">§1</span><span data-i18n="eq.eyebrow">方程出图 · 差异化能力</span></p>
+        <h2 data-i18n="eq.title">从一行式子，到一幅讲得清的图</h2>
+        <p class="section-sub" data-i18n="eq.sub">
+          ƒ 方程工具即输即校验、实时预览。出图不是贴一张位图，而是一个自带局部坐标系的 MathPlot 元素——和其他白板元素一样选中、移动、缩放、撤销，每一步都可调。
+        </p>
+      </div>
+
+      <div class="showcase reveal">
+        <div class="board-card board-large">
+          <div class="board-toolbar" aria-hidden="true">
+            <span class="tool tool-fn is-active" title="方程">ƒ</span>
+            <span class="toolbar-tail" data-i18n="eq.boardHint">同一块板上的三条曲线 · 各自独立可编辑</span>
+          </div>
+          <div class="board-plot board-plot-tall">
+            <svg id="showPlot" role="img" aria-label="多条方程曲线共存的白板示例"></svg>
+          </div>
+          <div class="board-input board-input-multi" aria-hidden="true">
+            <span class="fn-badge">ƒ</span><span class="eq" id="showEq1"></span>
+            <span class="fn-badge fn-badge-2">ƒ</span><span class="eq" id="showEq2"></span>
+            <span class="fn-badge fn-badge-3">ƒ</span><span class="eq" id="showEq3"></span>
+          </div>
+        </div>
+
+        <aside class="props" aria-label="MathPlot 可调参数（示例）">
+          <p class="props-title" data-i18n="eq.propsTitle">属性面板 · 实时生效</p>
+          <div class="prop">
+            <span class="prop-label" data-i18n="eq.propDomain">定义域</span>
+            <span class="prop-value">[−2π, 2π]</span>
+          </div>
+          <div class="prop">
+            <span class="prop-label" data-i18n="eq.propSample">采样精度</span>
+            <span class="prop-value">200 点</span>
+          </div>
+          <div class="prop">
+            <span class="prop-label" data-i18n="eq.propAxes">坐标轴 / 网格</span>
+            <span class="prop-value prop-check"><i class="dot-check"></i>显示</span>
+          </div>
+          <div class="prop">
+            <span class="prop-label" data-i18n="eq.propStyle">颜色 / 线宽</span>
+            <span class="prop-value"><i class="swatch swatch-blue"></i><i class="swatch swatch-red"></i><i class="swatch swatch-green"></i>2.5 px</span>
+          </div>
+          <ul class="families" aria-label="支持的方程类型">
+            <li data-i18n="eq.f1">一次 / 多项式（n ≤ 4）</li>
+            <li data-i18n="eq.f2">三角 · 幂 · 根 · 反比例</li>
+            <li data-i18n="eq.f3">指数 · 对数 · 绝对值</li>
+            <li data-i18n="eq.f4">圆 · 椭圆</li>
+          </ul>
+          <p class="props-note" data-i18n="eq.propsNote">内置 13 个方程模板，选中即用</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ======================= §2 白板能力 ======================= -->
+    <section class="section" id="whiteboard">
+      <div class="section-head reveal">
+        <p class="section-eyebrow"><span class="sec-no">§2</span><span data-i18n="wb.eyebrow">白板的全副笔墨</span></p>
+        <h2 data-i18n="wb.title">先是一块好用的白板，然后才谈数学</h2>
+        <p class="section-sub" data-i18n="wb.sub">常规白板该有的，一样不少——而且都在浏览器里，打开即用。</p>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature reveal">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20 C 8 8, 14 16, 20 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <h3 data-i18n="wb.f1t">自由画笔与形状</h3>
+          <p data-i18n="wb.f1d">画笔、矩形、圆、直线、箭头、文本，笔触与线型随手调。</p>
+        </div>
+        <div class="feature reveal">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 6 v12 M14 6 v12" stroke="currentColor" stroke-width="2"/></svg></span>
+          <h3 data-i18n="wb.f2t">选择 · 移动 · 缩放</h3>
+          <p data-i18n="wb.f2d">视口滚轮缩放、Space 拖拽平移；元素整体选中编辑，触摸屏同样顺手。</p>
+        </div>
+        <div class="feature reveal">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 14 L 4 19 a 2 2 0 0 0 3 3 l 5 -5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13 4 l 7 7 -8 8 -7 -7 z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
+          <h3 data-i18n="wb.f3t">撤销与重做</h3>
+          <p data-i18n="wb.f3d">快照式历史，栈深 100 步——讲错一步，退回去重来。</p>
+        </div>
+        <div class="feature reveal">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="12" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M17 5 h4 M17 12 h4 M17 19 h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <h3 data-i18n="wb.f4t">多页与演示模式</h3>
+          <p data-i18n="wb.f4d">一节课多块板，页面条快速切换；演示模式全屏放映。</p>
+        </div>
+        <div class="feature reveal">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7 10 l 5 5 5 -5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 20 h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <h3 data-i18n="wb.f5t">导出 PNG · JPG · SVG</h3>
+          <p data-i18n="wb.f5d">矢量或位图一键导出，直接进讲义与课件。</p>
+        </div>
+        <div class="feature reveal">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4 h9 l4 4 v12 a0 0 0 0 1 0 0 H6 z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12 h6 M9 16 h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <h3 data-i18n="wb.f6t">自动保存与本地文件</h3>
+          <p data-i18n="wb.f6d">浏览器本地持久化 + 服务器保存，关掉再开，板还在。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= §3 使用场景 ======================= -->
+    <section class="section" id="scenes">
+      <div class="section-head reveal">
+        <p class="section-eyebrow"><span class="sec-no">§3</span><span data-i18n="sc.eyebrow">讲台上的三个时刻</span></p>
+        <h2 data-i18n="sc.title">从备课到铃响，都在同一块板上</h2>
+      </div>
+
+      <div class="scene-grid">
+        <article class="scene reveal">
+          <p class="scene-when" data-i18n="sc.s1when">课堂上</p>
+          <h3 data-i18n="sc.s1t">讲到函数，当场画给学生看</h3>
+          <p data-i18n="sc.s1d">写下 y = x² − 2x − 3，零点、顶点、开口一目了然——不用提前截图，不用切换软件，图形跟着讲解长出来。</p>
+        </article>
+        <article class="scene reveal">
+          <p class="scene-when" data-i18n="sc.s2when">备课时</p>
+          <h3 data-i18n="sc.s2t">例题版面一次成型</h3>
+          <p data-i18n="sc.s2d">文字、图形、方程混排在同一块板上；定义域和线宽随手调，例题图比手画的更准、更好看。</p>
+        </article>
+        <article class="scene reveal">
+          <p class="scene-when" data-i18n="sc.s3when">演示中</p>
+          <h3 data-i18n="sc.s3t">全屏放映，或导出进讲义</h3>
+          <p data-i18n="sc.s3d">演示模式逐页全屏；课后导出 SVG / PNG，讲义和作业册直接复用，曲线仍是矢量。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ======================= §4 产品实拍 ======================= -->
+    <section class="section" id="gallery">
+      <div class="section-head reveal">
+        <p class="section-eyebrow"><span class="sec-no">§4</span><span data-i18n="ga.eyebrow">产品实拍</span></p>
+        <h2 data-i18n="ga.title">真实运行中的 MulticaBoard</h2>
+        <p class="section-sub" data-i18n="ga.sub">以下截图来自当前版本的实际界面。</p>
+      </div>
+
+      <div class="gallery">
+        <figure class="shot reveal">
+          <img src="assets/app-whiteboard.png" alt="MulticaBoard 白板主界面：左侧工具栏、画布与属性面板" loading="lazy" width="1600" height="1000" />
+          <figcaption data-i18n="ga.c1">白板主界面——工具栏、画布、属性面板一屏尽览</figcaption>
+        </figure>
+        <figure class="shot reveal">
+          <img src="assets/app-mathplot.png" alt="MathPlot 方程出图演示：输入方程后在坐标系中生成矢量曲线" loading="lazy" width="1600" height="1000" />
+          <figcaption data-i18n="ga.c2">方程出图演示页——输入方程，坐标系中生成可调参的矢量曲线</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ======================= 黑板收尾 CTA ======================= -->
+    <section class="cta-board">
+      <div class="cta-inner reveal">
+        <p class="cta-eyebrow" data-i18n="cta.eyebrow">下一节课</p>
+        <h2 data-i18n="cta.title">从一行方程开始。</h2>
+        <p class="cta-sub" data-i18n="cta.sub">打开浏览器，写下你今天要讲的第一个式子。</p>
+        <!-- APP_URL：主应用入口 -->
+        <a class="btn btn-chalk" href="https://board.readpodcast.top" data-i18n="cta.btn">打开白板</a>
+      </div>
+      <svg class="cta-curve" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
+        <path id="ctaPath" d="M0 120 C 150 20, 300 20, 450 90 S 750 160, 900 70 S 1120 10, 1200 60" />
+      </svg>
+    </section>
+  </main>
+
+  <!-- ======================= 页脚 ======================= -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <a class="brand brand-footer" href="#" aria-label="MulticaBoard">
+        <svg class="brand-glyph" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--chalk)"/><path d="M10 36 C 20 12, 28 12, 34 32 S 48 54, 54 30" fill="none" stroke="var(--board)" stroke-width="5" stroke-linecap="round"/></svg>
+        <span class="brand-name">MulticaBoard</span>
+      </a>
+      <nav class="footer-links" aria-label="页脚导航">
+        <!-- APP_URL：主应用入口 -->
+        <a href="https://board.readpodcast.top" data-i18n="footer.app">打开白板</a>
+        <a href="#equation" data-i18n="footer.feature">方程出图</a>
+        <a href="https://gitee.com/xmx0632/multica-whiteboard" data-i18n="footer.repo">源码仓库</a>
+      </nav>
+      <p class="footer-copy">© 2026 MulticaBoard</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js" defer></script>
+</body>
+</html>
