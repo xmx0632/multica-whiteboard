@@ -10,9 +10,10 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/lib/store';
-import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, Operation, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE } from '@/lib/types';
+import { COLORS, MathPlotElement, StrokeDashStyle, WhiteboardElement, Operation, TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE, RectangleElement, CircleElement, DiamondElement } from '@/lib/types';
 import { canRestyleFromToolPanel, elementStrokeColor, canDashFromToolPanel, elementDash, canFillFromToolPanel, elementFillColor } from '@/lib/stroke';
 import { elementRotation, normalizeRotation } from '@/lib/rotation';
+import { labelPatch, type LabelPatchOptions } from '@/lib/shapeLabel';
 import { updateBindingsAfterMove } from '@/lib/binding';
 import { validateEquation } from '@/lib/math/validate';
 import { pruneDragPoints } from '@/lib/math/dragPoint';
@@ -46,6 +47,9 @@ export default function PropertyPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   // D5 两段式：手势（滑杆拖动 / 文本输入）开始前的元素快照，onCommit 时压一条快照
   const gestureStartRef = useRef<MathPlotElement | null>(null);
+  // ZOO-231 L3：标签样式手势（字号滑杆 / 自定义取色连续拖动）开始前的元素快照，
+  // 收尾压一条快照——D5 两段式，同 mathPlot gestureStartRef / stroke 手势语义
+  const labelGestureRef = useRef<RectangleElement | CircleElement | DiamondElement | null>(null);
   // ZOO-155：方程提交非法的瞬时提示（元素保持原值，不落元素、不入历史）
   const [equationError, setEquationError] = useState<string | null>(null);
   // 旋转角度输入草稿（ZOO-222）：编辑中镜像面板字符串，blur / 回车收敛落元素
@@ -54,10 +58,11 @@ export default function PropertyPanel() {
 
   const selectedEl = elements.find((e) => e.id === selectedId) ?? null;
 
-  // 切换选中元素：方程提交提示随上一元素失效，清空防串显；旋转草稿同弃
+  // 切换选中元素：方程提交提示随上一元素失效，清空防串显；旋转草稿 / 标签手势同弃
   useEffect(() => {
     setEquationError(null);
     setRotationDraft(null);
+    labelGestureRef.current = null;
   }, [selectedId]);
   // 原位替换态只在「仍选中该元素」时有效：点选别处 / 取消选中即自然退出
   const editingEl =
@@ -71,6 +76,14 @@ export default function PropertyPanel() {
     selectedEl && (selectedEl.type === 'rectangle' || selectedEl.type === 'circle' || selectedEl.type === 'diamond')
       ? selectedEl
       : null;
+
+  // 形状中心标签（ZOO-231 L3）：选中带 label 的 rect/circle/diamond 显示「文字」区
+  // ——与描边 / 填充 / 旋转角并列的独立分区；无 label 不出现（落标签入口在双击）
+  const selectedLabelEl =
+    selectedEl && (selectedEl.type === 'rectangle' || selectedEl.type === 'circle' || selectedEl.type === 'diamond') && selectedEl.label
+      ? selectedEl
+      : null;
+  const selectedLabel = selectedLabelEl?.label ?? null;
 
   /** 旋转输入收敛（ZOO-222）：blur / 回车时归一 [0,360) 落元素——一条 update
    *  快照 = 一次 undo；非法输入（空 / 非数字）静默丢弃，回显元素当前角度。
@@ -102,6 +115,55 @@ export default function PropertyPanel() {
     }
     pushOperations(ops);
   }, [rotationDraft, selectedRotation, pushOperations]);
+
+  /**
+   * 标签样式写入（ZOO-231 L3）：全部走 labelPatch——补丁只携带 label 键，
+   * 颜色 / 字号与元素描边完全解耦（改描边不碰 label，改 label 不碰描边）。
+   * - 色板点选 / 清除文字为离散修改：updateElement 单条快照，Ctrl+Z 单步撤销
+   *   （同构 ZOO-222 旋转角数值输入的「选中 → 控件改属性 → 单条快照」模式）；
+   * - 字号滑杆 / 自定义取色为连续手势（对齐 ZOO-159 / stroke 取色交互）：
+   *   拖动走 transient 直改预览不入栈，pointerup / blur 收尾压一条快照。
+   * 字号夹取 [TEXT_MIN_FONT_SIZE, TEXT_MAX_FONT_SIZE]；改后标签按新字号
+   * 居中重排（渲染侧派生，无需额外处理）。
+   */
+  const pickLabelColor = useCallback((color: string) => {
+    const el = selectedLabelEl;
+    if (!el?.label) return;
+    useStore.getState().updateElement(el.id, labelPatch(el, el.label.content, { color }));
+  }, [selectedLabelEl]);
+
+  const clearLabel = useCallback(() => {
+    const el = selectedLabelEl;
+    if (!el?.label) return;
+    labelGestureRef.current = null;
+    // L2 语义：编辑中空内容保持原标签（防误删）——标签移除的唯一显式入口在此
+    useStore.getState().updateElement(el.id, labelPatch(el, ''));
+  }, [selectedLabelEl]);
+
+  const inputLabelStyle = useCallback((patch: LabelPatchOptions) => {
+    const el = selectedLabelEl;
+    if (!el?.label) return;
+    const clamped: LabelPatchOptions = patch.fontSize !== undefined
+      ? { ...patch, fontSize: Math.min(TEXT_MAX_FONT_SIZE, Math.max(TEXT_MIN_FONT_SIZE, patch.fontSize)) }
+      : patch;
+    if (!labelGestureRef.current) labelGestureRef.current = el;
+    useStore.getState().updateElementTransient(el.id, labelPatch(el, el.label.content, clamped));
+  }, [selectedLabelEl]);
+
+  const commitLabelStyle = useCallback(() => {
+    const before = labelGestureRef.current;
+    labelGestureRef.current = null;
+    if (!before?.label) return;
+    const cur = useStore.getState().elements.find((e) => e.id === before.id);
+    const curLabel = cur && (cur.type === 'rectangle' || cur.type === 'circle' || cur.type === 'diamond') ? cur.label : undefined;
+    if (!cur || !curLabel) return;
+    const changed =
+      curLabel.content !== before.label.content ||
+      curLabel.fontSize !== before.label.fontSize ||
+      curLabel.color !== before.label.color;
+    if (!changed) return;
+    pushOperations([{ type: 'update', elementId: before.id, before, after: { ...cur } }]);
+  }, [pushOperations]);
 
   // —— ZOO-152/156 手机紧凑布局（横屏 / 竖屏）：面板可折叠（默认收起为 chip，方程 / 参数面板出现时自动展开）——
   const phoneLandscape = usePhoneLandscape();
@@ -467,6 +529,56 @@ export default function PropertyPanel() {
               />
             </div>
           )}
+        </div>
+      )}
+
+      {/* 形状中心文字（ZOO-231 L3）：选中带 label 的形状显示——颜色 / 字号与描边
+          完全解耦的独立样式区；清除文字为标签移除的唯一显式入口 */}
+      {selectedLabel && (
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">
+            {t('panel.label')}{t('panel.selectedSuffix')}
+          </label>
+          <div className="text-xs text-gray-400 mb-1">{t('panel.labelColor')}</div>
+          <div className="flex flex-wrap gap-1">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={t('panel.labelColor')}
+                onClick={() => pickLabelColor(c)}
+                className={`touch-swatch w-5 h-5 rounded-full border-2 ${selectedLabel.color === c ? 'border-blue-500 scale-110' : 'border-gray-300'}`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+            <input
+              type="color"
+              value={selectedLabel.color}
+              onChange={(e) => inputLabelStyle({ color: e.target.value })}
+              onBlur={commitLabelStyle}
+              className="touch-swatch w-5 h-5 rounded cursor-pointer border border-gray-300"
+            />
+          </div>
+          <label className="text-xs font-medium text-gray-500 mb-1 mt-2 block">
+            {t('panel.fontSize', { n: selectedLabel.fontSize })}
+          </label>
+          <input
+            type="range"
+            min={TEXT_MIN_FONT_SIZE}
+            max={TEXT_MAX_FONT_SIZE}
+            value={selectedLabel.fontSize}
+            onChange={(e) => inputLabelStyle({ fontSize: Number(e.target.value) })}
+            onPointerUp={commitLabelStyle}
+            onKeyUp={commitLabelStyle}
+            className="touch-target w-full accent-blue-500"
+          />
+          <button
+            type="button"
+            onClick={clearLabel}
+            className="touch-target mt-2 w-full h-7 rounded-md border border-gray-300 bg-white text-xs text-gray-600 active:bg-gray-100"
+          >
+            {t('panel.clearLabel')}
+          </button>
         </div>
       )}
 

@@ -1,5 +1,6 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement } from './types';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, ShapeLabel } from './types';
 import { renderElement, drawFrame, getAllElementsBounds, mathPlotSpecOf, diamondVertices } from './renderer';
+import { SHAPE_LABEL_FONT_FAMILY, labelFirstLineTop, labelLineHeight, labelLines } from './shapeLabel';
 import { zhT, type LibT } from '../i18n/lib';
 import {
   formatAreaValue,
@@ -69,6 +70,45 @@ function svgDashAttr(el: WhiteboardElement): string {
   return pattern.length > 0 ? ` stroke-dasharray="${pattern.join(',')}"` : '';
 }
 
+/**
+ * 形状中心标签 → SVG <text>（ZOO-231 L3）：text-anchor=middle 居中到形状中心，
+ * 多行 tspan——首行 y = labelFirstLineTop 垂直居中公式、后续 dy = labelLineHeight
+ * 行距（与画布 drawShapeLabel 同一份 shapeLabel.ts 推导，不另写一套；y 口径沿
+ * 既有 text 元素导出——canvas textBaseline='top' 的 y 直作 SVG y）。fill =
+ * label.color（与描边解耦），字体族 / 字号与渲染同源，opacity 随元素。
+ */
+function shapeLabelSvg(label: ShapeLabel, cx: number, cy: number, opacity: string): string {
+  const lines = labelLines(label);
+  const lineHeight = labelLineHeight(label);
+  const firstTop = labelFirstLineTop(cy, lineHeight, lines.length);
+  const tspans = lines
+    .map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
+    .join('');
+  return `<text x="${cx}" y="${firstTop}" text-anchor="middle" font-size="${label.fontSize}" font-family="${SHAPE_LABEL_FONT_FAMILY}" fill="${label.color}"${opacity}>${tspans}</text>`;
+}
+
+/**
+ * 形状 + 中心标签成组（ZOO-231 L3）：无 label 原样返回形状节点（含既有 rotate
+ * transform——回归硬约束：无标签输出逐字节一致）；有 label 时形状节点剥去
+ * transform、与 <text> 一起包进 <g transform="rotate(θ cx cy)">——与画布
+ * translate(中心) → rotate 同一角度口径，形状与文字同组刚体旋转
+ * （rot = 0 不包 g，零 transform 属性）。
+ */
+function withShapeLabel(
+  shapeSvg: string,
+  label: ShapeLabel | undefined,
+  cx: number,
+  cy: number,
+  rot: number,
+  opacity: string
+): string {
+  if (!label) return shapeSvg;
+  const text = shapeLabelSvg(label, cx, cy, opacity);
+  return rot !== 0
+    ? `<g transform="rotate(${rot} ${cx} ${cy})">${shapeSvg}${text}</g>`
+    : shapeSvg + text;
+}
+
 function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
   const opacity = el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
 
@@ -79,34 +119,52 @@ function elementToSvg(el: WhiteboardElement, t: LibT = zhT): string {
     // drawRectangle 同一角度口径（屏幕系 y 向下，SVG 正角同向）；rotation = 0 /
     // 缺省不输出 transform 属性，旧文档导出逐字节不变。PNG/缩略图复用
     // renderElement（viewport scale=1），零改动同语义。
+    // ZOO-231 L3：有 label 时 transform 剥到包裹 <g>（withShapeLabel），无 label
+    // 路径逐字节不变。
     case 'rectangle': {
       const rot = elementRotation(el);
-      const rotateAttr = rot !== 0
-        ? ` transform="rotate(${rot} ${el.x + el.width / 2} ${el.y + el.height / 2})"`
+      const cx = el.x + el.width / 2;
+      const cy = el.y + el.height / 2;
+      const rotateAttr = !el.label && rot !== 0
+        ? ` transform="rotate(${rot} ${cx} ${cy})"`
         : '';
-      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${rotateAttr}/>`;
+      return withShapeLabel(
+        `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${rotateAttr}/>`,
+        el.label, cx, cy, rot, opacity,
+      );
     }
     // 椭圆旋转（ZOO-223）：同 rect 口径的 transform rotate(θ cx cy)——与画布
     // drawCircle 的 ellipse rotation 形参同一角度；rotation = 0 / 缺省不输出
-    // transform 属性，旧文档导出逐字节不变
+    // transform 属性，旧文档导出逐字节不变。ZOO-231 L3：有 label 时 transform
+    // 剥到包裹 <g>（withShapeLabel），无 label 路径逐字节不变
     case 'circle': {
       const cx = el.x + el.width / 2;
       const cy = el.y + el.height / 2;
       const rx = el.width / 2;
       const ry = el.height / 2;
       const circleRot = elementRotation(el);
-      const circleRotateAttr = circleRot !== 0 ? ` transform="rotate(${circleRot} ${cx} ${cy})"` : '';
-      return `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${circleRotateAttr}/>`;
+      const circleRotateAttr = !el.label && circleRot !== 0 ? ` transform="rotate(${circleRot} ${cx} ${cy})"` : '';
+      return withShapeLabel(
+        `<ellipse cx="${cx}" cy="${cy}" rx="${Math.abs(rx)}" ry="${Math.abs(ry)}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'}${opacity}${circleRotateAttr}/>`,
+        el.label, cx, cy, circleRot, opacity,
+      );
     }
     // 菱形（ZOO-217）：四中点顶点 <polygon>（与画布 diamondVertices 同一份推导；
     // PNG/缩略图走 renderElement 自动同语义）。ZOO-223 旋转：顶点恒为局部系
-    // 推导，transform rotate(θ cx cy) 承担旋转（同 rect/ellipse 口径）
+    // 推导，transform rotate(θ cx cy) 承担旋转（同 rect/ellipse 口径）。
+    // ZOO-231 L3：有 label 时 transform 剥到包裹 <g>（withShapeLabel），无 label
+    // 路径逐字节不变
     case 'diamond': {
       const diamondRot = elementRotation(el);
-      const diamondRotateAttr = diamondRot !== 0
-        ? ` transform="rotate(${diamondRot} ${el.x + el.width / 2} ${el.y + el.height / 2})"`
+      const cx = el.x + el.width / 2;
+      const cy = el.y + el.height / 2;
+      const diamondRotateAttr = !el.label && diamondRot !== 0
+        ? ` transform="rotate(${diamondRot} ${cx} ${cy})"`
         : '';
-      return `<polygon points="${diamondVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'} stroke-linejoin="round"${opacity}${diamondRotateAttr}/>`;
+      return withShapeLabel(
+        `<polygon points="${diamondVertices(el).map((p) => `${p.x},${p.y}`).join(' ')}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}"${svgDashAttr(el)}${el.fillColor ? ` fill="${el.fillColor}"` : ' fill="none"'} stroke-linejoin="round"${opacity}${diamondRotateAttr}/>`,
+        el.label, cx, cy, diamondRot, opacity,
+      );
     }
     case 'line':
       return isPolyline(el)

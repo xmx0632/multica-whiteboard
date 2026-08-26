@@ -1,4 +1,4 @@
-import { WhiteboardElement, PathElement, RectangleElement, CircleElement, DiamondElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point } from './types';
+import { WhiteboardElement, PathElement, RectangleElement, CircleElement, DiamondElement, LineElement, ArrowElement, TextElement, MathPlotElement, FrameElement, Viewport, Point, ShapeLabel } from './types';
 import { drawMathPlot, resolvePlotRender, type PlotSpec } from './math/plot';
 import { resolveDragPoints } from './math/dragPoint';
 import type { LibT } from '../i18n/lib';
@@ -7,6 +7,7 @@ import { dashPatternFor } from './stroke';
 import { lineVertices, vertexHandle, VertexHandle, isPolyline, nearestOnPolyline } from './polyline';
 import { FRAME_TITLE_HEIGHT } from './frame';
 import { elementRotation, rotatePointAround, pointerToLocalFrame } from './rotation';
+import { labelFirstLineTop, labelLineHeight, labelLines, SHAPE_LABEL_FONT_FAMILY } from './shapeLabel';
 
 /**
  * MathPlotElement → PlotSpec（ZOO-199 提取共享）：drawMathPlotElement 与
@@ -108,11 +109,39 @@ function drawPath(ctx: CanvasRenderingContext2D, el: PathElement, viewport: View
 }
 
 /**
+ * 形状中心标签绘制（ZOO-232 L1）：fill/stroke 之后绘制居中多行文字。
+ * 锚点 (cx, cy) 为形状几何中心——调用侧保证旋转态在既有 translate(中心) →
+ * rotate 块内传原点（随形状刚体旋转）、直角系传世界中心（负宽高下中心
+ * 数学恒成立）。textAlign='center' + textBaseline='top'，首行 top 由
+ * labelFirstLineTop 垂直居中；字体 / 行高常量与度量同源（shapeLabel.ts）。
+ * 颜色已与描边解耦（落笔快照，见 ShapeLabel）；globalAlpha 沿外层 save 块
+ * 随元素 opacity。溢出不裁剪（v1 决策），不改 bounds / hitTest。
+ */
+function drawShapeLabel(
+  ctx: CanvasRenderingContext2D,
+  label: ShapeLabel,
+  cx: number,
+  cy: number,
+  scale: number
+) {
+  const lines = labelLines(label);
+  const lineHeight = labelLineHeight(label) * scale;
+  ctx.font = `${label.fontSize * scale}px ${SHAPE_LABEL_FONT_FAMILY}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = label.color;
+  const top = labelFirstLineTop(cy, lineHeight, lines.length);
+  lines.forEach((line, i) => ctx.fillText(line, cx, top + i * lineHeight));
+}
+
+/**
  * 矩形绘制（ZOO-221 起支持旋转）：rotation ≠ 0 时 translate 到几何中心 →
  * rotate(顺时针 rad) → 以 (-w/2,-h/2) 为左上角 fill/stroke；rotation = 0 /
  * 缺省保持旧直绘路径——旧文档逐像素等价（坐标运算序都不变）。
+ * ZOO-232 L1：尾部绘制中心标签（el.label 存在时；无 label 路径零新增
+ * canvas 操作，逐字节等价保持）。
  */
-function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, viewport: Viewport) {
+function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, viewport: Viewport, hideLabel = false) {
   const { offsetX, offsetY, scale } = viewport;
   const w = el.width * scale;
   const h = el.height * scale;
@@ -133,6 +162,9 @@ function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, view
       ctx.fillRect(x, y, w, h);
     }
     ctx.strokeRect(x, y, w, h);
+    if (el.label && !hideLabel) {
+      drawShapeLabel(ctx, el.label, (el.x + el.width / 2) * scale + offsetX, (el.y + el.height / 2) * scale + offsetY, scale);
+    }
   } else {
     ctx.translate((el.x + el.width / 2) * scale + offsetX, (el.y + el.height / 2) * scale + offsetY);
     ctx.rotate((rot * Math.PI) / 180);
@@ -141,6 +173,9 @@ function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, view
       ctx.fillRect(-w / 2, -h / 2, w, h);
     }
     ctx.strokeRect(-w / 2, -h / 2, w, h);
+    if (el.label && !hideLabel) {
+      drawShapeLabel(ctx, el.label, 0, 0, scale); // 旋转 ctx 内原点即中心
+    }
   }
   ctx.restore();
 }
@@ -148,14 +183,17 @@ function drawRectangle(ctx: CanvasRenderingContext2D, el: RectangleElement, view
 /**
  * 椭圆绘制（ZOO-223 起支持旋转）：ellipse 自带 rotation 形参（绕中心弧度），
  * 与 drawRectangle 的 translate→rotate 同一口径；rotation = 0 / 缺省传 0，
- * 旧路径逐字节等价。
+ * 旧路径逐字节等价。ZOO-232 L1：尾部绘制中心标签——椭圆本体走 ellipse
+ * 形参旋转，标签自建 translate(中心) → rotate 块随形状刚体旋转（同一
+ * 中心 / 同一角，视觉上同刚体）。
  */
-function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: Viewport) {
+function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: Viewport, hideLabel = false) {
   const { offsetX, offsetY, scale } = viewport;
   const cx = el.x * scale + offsetX + (el.width * scale) / 2;
   const cy = el.y * scale + offsetY + (el.height * scale) / 2;
   const rx = (el.width * scale) / 2;
   const ry = (el.height * scale) / 2;
+  const rot = elementRotation(el);
 
   ctx.save();
   ctx.globalAlpha = el.opacity;
@@ -164,12 +202,21 @@ function drawCircle(ctx: CanvasRenderingContext2D, el: CircleElement, viewport: 
   applyDash(ctx, el, scale);
 
   ctx.beginPath();
-  ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), (elementRotation(el) * Math.PI) / 180, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), (rot * Math.PI) / 180, 0, Math.PI * 2);
   if (el.fillColor) {
     ctx.fillStyle = el.fillColor;
     ctx.fill();
   }
   ctx.stroke();
+  if (el.label && !hideLabel) {
+    if (rot !== 0) {
+      ctx.translate(cx, cy);
+      ctx.rotate((rot * Math.PI) / 180);
+      drawShapeLabel(ctx, el.label, 0, 0, scale);
+    } else {
+      drawShapeLabel(ctx, el.label, cx, cy, scale);
+    }
+  }
   ctx.restore();
 }
 
@@ -192,9 +239,10 @@ export function diamondVertices(el: DiamondElement): [Point, Point, Point, Point
  * 菱形绘制（ZOO-217，与 drawRectangle 同构）：四中点 moveTo/lineTo×4 + closePath。
  * ZOO-223 起支持旋转：rotation ≠ 0 时 translate 到几何中心 → rotate → 顶点按
  * 局部偏移绘制（diamondVertices 恒为局部系推导，世界系占用走 AABB）；rot = 0 /
- * 缺省保持旧直绘路径——旧文档逐像素等价。
+ * 缺省保持旧直绘路径——旧文档逐像素等价。ZOO-232 L1：尾部绘制中心标签
+ * （旋转分支的 translate/rotate 仍生效，原点即中心）。
  */
-function drawDiamond(ctx: CanvasRenderingContext2D, el: DiamondElement, viewport: Viewport) {
+function drawDiamond(ctx: CanvasRenderingContext2D, el: DiamondElement, viewport: Viewport, hideLabel = false) {
   const { offsetX, offsetY, scale } = viewport;
 
   ctx.save();
@@ -228,6 +276,13 @@ function drawDiamond(ctx: CanvasRenderingContext2D, el: DiamondElement, viewport
     ctx.fill();
   }
   ctx.stroke();
+  if (el.label && !hideLabel) {
+    if (rot === 0) {
+      drawShapeLabel(ctx, el.label, (el.x + el.width / 2) * scale + offsetX, (el.y + el.height / 2) * scale + offsetY, scale);
+    } else {
+      drawShapeLabel(ctx, el.label, 0, 0, scale); // 旋转 ctx 内原点即中心
+    }
+  }
   ctx.restore();
 }
 
@@ -407,17 +462,24 @@ export function drawFrame(
   ctx.restore();
 }
 
+/**
+ * 单元素绘制分发。hideLabelOf（ZOO-232 L1）：指定 id 的元素标签跳过绘制——
+ * L2 编辑浮层落位时隐藏画布侧同源标签用；缺省不隐藏（PNG / 缩略图 / 导出
+ * 走本函数自动继承完整标签渲染）。
+ */
 export function renderElement(
   ctx: CanvasRenderingContext2D,
   el: WhiteboardElement,
   viewport: Viewport,
   t?: LibT,
+  hideLabelOf?: string,
 ) {
+  const hideLabel = hideLabelOf === el.id;
   switch (el.type) {
     case 'path': drawPath(ctx, el, viewport); break;
-    case 'rectangle': drawRectangle(ctx, el, viewport); break;
-    case 'circle': drawCircle(ctx, el, viewport); break;
-    case 'diamond': drawDiamond(ctx, el, viewport); break;
+    case 'rectangle': drawRectangle(ctx, el, viewport, hideLabel); break;
+    case 'circle': drawCircle(ctx, el, viewport, hideLabel); break;
+    case 'diamond': drawDiamond(ctx, el, viewport, hideLabel); break;
     case 'line': drawLine(ctx, el, viewport); break;
     case 'arrow': drawArrow(ctx, el, viewport); break;
     case 'text': drawText(ctx, el, viewport); break;
@@ -451,11 +513,11 @@ export function renderElements(
   ctx: CanvasRenderingContext2D,
   elements: WhiteboardElement[],
   viewport: Viewport,
-  viewSize?: { width: number; height: number; t?: LibT }
+  viewSize?: { width: number; height: number; t?: LibT; hideLabelOf?: string }
 ) {
   for (const el of elements) {
     if (viewSize && !elementIntersectsView(el, viewport, viewSize.width, viewSize.height)) continue;
-    renderElement(ctx, el, viewport, viewSize?.t);
+    renderElement(ctx, el, viewport, viewSize?.t, viewSize?.hideLabelOf);
   }
 }
 
