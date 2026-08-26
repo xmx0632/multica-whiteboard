@@ -34,8 +34,12 @@ cd landing && npx serve .                      # → http://localhost:3000
 `landing/` 目录本身即完整产物，**没有构建步骤**，把目录内容原样上传即可：
 
 - **GitHub Pages（已配置，推荐）**：仓库自带 `.github/workflows/landing-pages.yml`，
-  `main` 分支上 `landing/**` 有变更即自动发布，访问 **https://xmx0632.github.io/multica-whiteboard/** 。
-  首次启用需做一次性设置：仓库 **Settings → Pages → Build and deployment → Source 选 "GitHub Actions"**。
+  `main` 分支上 `landing/**` 有变更即自动发布。默认地址 https://xmx0632.github.io/multica-whiteboard/ ，
+  已绑定自定义域名 **https://b.readpodcast.top/**（Cloudflare 托管 DNS）。
+  首次启用需做一次性设置：仓库 **Settings → Pages → Build and deployment → Source 选 "GitHub Actions"**，
+  并在 Settings → Pages → Custom domain 填入 `b.readpodcast.top`；DNS 侧在 Cloudflare 加
+  CNAME 记录：`b` → `xmx0632.github.io`（不带仓库名，建议先 DNS only 灰云，证书签发后再按需开代理）。
+  注意：GitHub Free 账户 Pages 仅支持公开仓库；Actions 部署方式无需 CNAME 文件（官方文档明确会被忽略）。
 - **Vercel / Netlify**：新建独立项目，Root Directory 指向 `landing/`（或把该目录作为独立仓库推送），Framework Preset 选 "Other / Static"。
 - **Nginx / 任意虚拟主机**：`root` 指向 `landing/`，`try_files $uri $uri/ /index.html;`。
 
