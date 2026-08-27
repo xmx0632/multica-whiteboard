@@ -1639,6 +1639,9 @@ export default function Canvas() {
       handlePresentPointerUp(e, cancelled);
       return;
     }
+    // 抬起手指的末次位置须在指针记录删除前捕获（ZOO-253 测试发现）：双指手势
+    // 收尾的两指齐查若在删除之后进行，被抬指恒缺失，「落定最终帧」永不生效
+    const liftedPointer = activePointersRef.current.get(e.pointerId);
     activePointersRef.current.delete(e.pointerId);
 
     // 捕获无条件显式释放（ZOO-223）：pointerdown 无条件 setPointerCapture，
@@ -1654,8 +1657,10 @@ export default function Canvas() {
         cancelAnimationFrame(pinchRafRef.current);
         pinchRafRef.current = null;
       }
-      const a = activePointersRef.current.get(pinch.pointerIds[0]);
-      const b = activePointersRef.current.get(pinch.pointerIds[1]);
+      // 抬起的那一指用删除前捕获的末次位置（见上），另一指仍从活记录取
+      const posOf = (id: number) => (id === e.pointerId ? liftedPointer : activePointersRef.current.get(id));
+      const a = posOf(pinch.pointerIds[0]);
+      const b = posOf(pinch.pointerIds[1]);
       if (a && b) setViewport(pinchViewport(pinch, a, b));
       pinchRef.current = null;
       for (const [id, p] of activePointersRef.current) {
