@@ -35,20 +35,21 @@ cd landing && npx serve .                      # → http://localhost:3000
 
 - **GitHub Pages（已配置，推荐）**：仓库自带 `.github/workflows/landing-pages.yml`，
   `main` 分支上 `landing/**` 有变更即自动发布。默认地址 https://xmx0632.github.io/multica-whiteboard/ ，
-  已绑定自定义域名 **https://b.readpodcast.top/**（Cloudflare 托管 DNS）。
+  已绑定自定义域名 **https://multicaboard.com/**（Cloudflare 托管 DNS；旧域名 b.readpodcast.top 已 301 跳转至此）。
   首次启用需做一次性设置：仓库 **Settings → Pages → Build and deployment → Source 选 "GitHub Actions"**，
-  并在 Settings → Pages → Custom domain 填入 `b.readpodcast.top`；DNS 侧在 Cloudflare 加
-  CNAME 记录：`b` → `xmx0632.github.io`（不带仓库名，建议先 DNS only 灰云，证书签发后再按需开代理）。
+  并在 Settings → Pages → Custom domain 填入 `multicaboard.com`；DNS 侧在 Cloudflare 加
+  A 记录：根域 `@` → `185.199.108.153` / `185.199.109.153` / `185.199.110.153` / `185.199.111.153`，
+  CNAME 记录：`www` → `xmx0632.github.io`（不带仓库名，建议先 DNS only 灰云，证书签发后再按需开代理）。
   注意：GitHub Free 账户 Pages 仅支持公开仓库；Actions 部署方式无需 CNAME 文件（官方文档明确会被忽略）。
 - **Vercel / Netlify**：新建独立项目，Root Directory 指向 `landing/`（或把该目录作为独立仓库推送），Framework Preset 选 "Other / Static"。
 - **Nginx / 任意虚拟主机**：`root` 指向 `landing/`，`try_files $uri $uri/ /index.html;`。
 
 ### 部署前需要确认的两处
 
-1. **主应用入口链接**：搜索 `APP_URL` 注释（`index.html` 中共 5 处 `<a href="https://board.readpodcast.top">`），
+1. **主应用入口链接**：搜索 `APP_URL` 注释（`index.html` 中共 5 处 `<a href="https://board.multicaboard.com">`），
    落地页启用独立域名后如需改指向，统一替换即可。
 2. **SEO 规范地址**：搜索 `SITE_URL` 注释——canonical / og:url / og:image / JSON-LD url 四处
-   当前指向 GitHub Pages 地址；换独立域名时统一替换（og:image 必须是绝对地址，SEO 深度优化见 ZOO-181）。
+   当前指向自定义域名 multicaboard.com；换独立域名时统一替换（og:image 必须是绝对地址，SEO 深度优化见 ZOO-181）。
 
 > 子路径说明：GitHub Pages 项目站点带 `/multica-whiteboard/` 前缀；页面内所有资源引用均为
 > 相对路径（`css/…`、`js/…`、`assets/…`），子路径下直接可用，无需改 base。

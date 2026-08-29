@@ -26,7 +26,7 @@ describe('SITE_URL 解析', () => {
   it('Vercel 生产部署（未显式配置）回退正式域名', async () => {
     vi.stubEnv('VERCEL_ENV', 'production');
     vi.stubEnv('VERCEL_URL', 'whiteboard-xyz.vercel.app');
-    expect(await loadSiteUrl()).toBe('https://board.readpodcast.top');
+    expect(await loadSiteUrl()).toBe('https://board.multicaboard.com');
   });
 
   it('Vercel 预览部署使用部署专属地址', async () => {
