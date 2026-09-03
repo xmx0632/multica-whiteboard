@@ -8,6 +8,7 @@ import TopMenuBar from '@/components/TopMenuBar';
 import HistoryPanel from '@/components/HistoryPanel';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import ImmersiveToggle from '@/components/ImmersiveToggle';
+import SiteEntryBadge from '@/components/SiteEntryBadge';
 import PageBar from '@/components/PageBar';
 import PresentationOverlay from '@/components/PresentationOverlay';
 import { usePresentation } from '@/lib/presentation';
@@ -40,6 +41,9 @@ export default function WhiteboardApp() {
       <PropertyPanel />
       <TopMenuBar />
       <HistoryPanel />
+      {/* 官网跳转徽标（ZOO-357）：全端右上角，新窗口打开 multicaboard.com；
+       * 横屏触屏与全屏钮同排（让位规则见 globals.css .site-entry） */}
+      <SiteEntryBadge />
       {/* 页导航条（ZOO-198）：分页帧的增删 / 复制 / 重排 / 跳转入口 */}
       <PageBar />
       {/* 演示模式浮层（ZOO-200）：放映态仅存的退出钮 + 页码 / 翻页钮（自判 active 渲染） */}

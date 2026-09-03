@@ -76,6 +76,9 @@
     "landscape": "⛶ Landscape fullscreen",
     "enter": "⛶ Fullscreen"
   },
+  "siteEntry": {
+    "aria": "Visit the MulticaBoard website (opens in a new tab)"
+  },
   "immersive": {
     "exit": "✕ Exit immersive",
     "enter": "⛶ Immersive",
