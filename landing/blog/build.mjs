@@ -140,11 +140,14 @@ function parsePost(file) {
     slug,
     title: meta.title,
     description: meta.description,
+    summary: meta.summary || null,
     date: meta.date,
     author: meta.author || DEFAULT_AUTHOR,
     cover: meta.cover || null,
+    ogimage: meta.ogimage || null,
     category: meta.category || null,
     tags: (meta.tags || "")
+      .replace(/^\[|\]$/g, "") /* 兼容 YAML 数组写法 [a, b, c] */
       .split(/[,，]/)
       .map((t) => t.trim())
       .filter(Boolean),
@@ -182,6 +185,8 @@ function renderMarkdown(md, prefix) {
 
   const flushParagraph = (buf) => {
     if (!buf.length) return;
+    // 生产备注（【待补：…】）不进入发布页面——作者待补清单留在源文件里
+    if (buf[0].trimStart().startsWith("【待补")) return;
     const rendered = renderInline(buf.join("\n"), prefix);
     // 整段只有一张图 → figure + figcaption（alt 即题注）
     const fig = rendered.match(/^(<img [^>]*>)$/);
@@ -407,21 +412,54 @@ function tagChips(tags) {
     : "";
 }
 
+// 分类展示顺序（未列出的追加在后）；筛选为渐进增强（js/blog.js）
+const CATEGORY_ORDER = ["函数图像教学", "白板使用教程", "工具选型"];
+
+function categoryGroups(posts) {
+  const groups = new Map();
+  for (const p of posts) {
+    const cat = p.category || "其他";
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(p);
+  }
+  return [...groups.entries()].sort((a, b) => {
+    const ia = CATEGORY_ORDER.indexOf(a[0]);
+    const ib = CATEGORY_ORDER.indexOf(b[0]);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+}
+
 function buildListPage(posts) {
-  const cards = posts
-    .map(
-      (p) => {
-        const cat = p.category || p.tags[0] || "";
-        return `        <a class="post-card" href="${p.slug}/">
-${p.cover ? `          <div class="post-card-thumb"><img src="${relAsset(p.cover, "../")}" alt="" loading="lazy" /></div>\n` : ""}          <div class="post-card-body">
-            <p class="post-card-date">${p.date}${cat ? ` · ${escapeHtml(cat)}` : ""}</p>
+  const card = (p) => `        <a class="post-card" href="${p.slug}/">
+${p.cover ? `          <div class="post-card-thumb"><img src="${relAsset(p.cover, "../")}" alt="" loading="lazy"${sizeAttrs(p.cover)} /></div>\n` : ""}          <div class="post-card-body">
+            <p class="post-card-date">${p.date}${p.category ? ` · ${escapeHtml(p.category)}` : ""}</p>
             <h2>${escapeHtml(p.title)}</h2>
-            <p class="post-card-desc">${escapeHtml(p.description)}</p>
+            <p class="post-card-desc">${escapeHtml(p.summary || p.description)}</p>
             ${tagChips(p.tags)}
             <span class="post-card-more">阅读全文 →</span>
           </div>
         </a>`;
-      },
+
+  const groups = categoryGroups(posts);
+  const chips = [`        <button class="chip is-active" type="button" data-cat="">全部</button>`]
+    .concat(
+      groups
+        .filter(([cat]) => cat !== "其他")
+        .map(
+          ([cat]) =>
+            `        <button class="chip" type="button" data-cat="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`,
+        ),
+    )
+    .join("\n");
+
+  const sections = groups
+    .map(
+      ([cat, ps]) => `      <section class="post-group" data-cat="${escapeHtml(cat)}">
+        <h2 class="post-group-title">${escapeHtml(cat)}</h2>
+        <div class="post-list">
+${ps.map(card).join("\n")}
+        </div>
+      </section>`,
     )
     .join("\n");
 
@@ -431,9 +469,10 @@ ${p.cover ? `          <div class="post-card-thumb"><img src="${relAsset(p.cover
         <h1 class="blog-title">教学博客</h1>
         <p class="section-sub">函数图像教学、白板备课技巧与课堂实战——面向一线教师的原创教程，每篇都可在一块白板上照着做。</p>
       </div>
-      <div class="post-list">
-${cards}
+      <div class="blog-filter" role="group" aria-label="分类筛选">
+${chips}
       </div>
+${sections}
     </section>`;
 
   const jsonLd = {
@@ -462,6 +501,7 @@ ${cards}
     canonical: absUrl(BLOG_PATH),
     ogType: "website",
     ogImage: DEFAULT_OG,
+    scripts: `  <script src="../js/blog.js" defer></script>\n`,
     jsonLd,
     body,
   });
@@ -486,7 +526,7 @@ function relatedPosts(post, all) {
 function buildPostPage(post, newer, older, related) {
   const prefix = "../../"; // blog/<slug>/index.html
   const minutes = readingMinutes(post.markdown);
-  const coverAbs = post.cover || DEFAULT_OG;
+  const ogAbs = post.ogimage || post.cover || DEFAULT_OG;
   const eyebrowBits = ["博客", post.category, post.date, `约 ${minutes} 分钟`]
     .filter(Boolean)
     .join(" · ");
@@ -524,7 +564,7 @@ ${related
       <header class="post-head">
         <p class="post-eyebrow"><span class="sec-no" aria-hidden="true">✎</span>${eyebrowBits}</p>
         <h1 class="post-title">${escapeHtml(post.title)}</h1>
-        <p class="post-lede">${escapeHtml(post.description)}</p>
+        <p class="post-lede">${escapeHtml(post.summary || post.description)}</p>
         <p class="post-meta">${escapeHtml(post.author)} · <a href="../index.html">返回博客</a></p>
         ${tagChips(post.tags)}
       </header>
@@ -554,7 +594,7 @@ ${relatedHtml}${navCells.length ? `      <nav class="post-nav" aria-label="相�
     description: post.description,
     datePublished: post.date,
     dateModified: post.date,
-    image: absUrl(coverAbs),
+    image: absUrl(ogAbs),
     url: absUrl(`blog/${post.slug}/`),
     mainEntityOfPage: absUrl(`blog/${post.slug}/`),
     inLanguage: "zh-CN",
@@ -575,7 +615,7 @@ ${relatedHtml}${navCells.length ? `      <nav class="post-nav" aria-label="相�
     keywords: [...post.tags, "教学白板", "数学教学工具"].filter(Boolean).join(","),
     canonical: absUrl(`blog/${post.slug}/`),
     ogType: "article",
-    ogImage: coverAbs,
+    ogImage: ogAbs,
     extraMeta: `  <meta property="article:published_time" content="${post.date}" />\n`,
     scripts: `  <script src="${prefix}js/blog.js" defer></script>\n`,
     jsonLd,

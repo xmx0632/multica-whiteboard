@@ -67,6 +67,7 @@ cd landing && npx serve .                      # → http://localhost:3000
   title / description / keywords / canonical / og / article 元数据与
   JSON-LD `BlogPosting` 结构化数据
 - `blog/sitemap-urls.json` —— 博客全部 URL 清单，供 sitemap 任务合并
+- 列表页按 `category` 分组展示，顶部分类筛选 chips（渐进增强）
 
 生成产物不进 git（见根 `.gitignore`）；本地预览先跑一次 `node blog/build.mjs`
 再起静态服务即可。
@@ -79,20 +80,28 @@ cd landing && npx serve .                      # → http://localhost:3000
 
    ```
    ---
-   title: "用教学白板讲清 y=sin(x)：从单位圆到图像变换"
-   description: "50-160 字的摘要，会进 meta description 与 og:description"
+   title: "用教学白板画 y=sin(x)：把三角函数图像变换讲成看得见的一节课"
+   description: "50-160 字，进 meta description 与 og:description"
    date: 2026-09-09
-   category: 函数图像
-   tags: 教学白板,数学教学工具,函数图像绘制
-   cover: assets/blog/<slug>/cover.png
+   category: 函数图像教学
+   tags: [教学白板, 三角函数, 函数图像绘制]
+   cover: assets/blog/<slug>/board-sin-plot.png
+   ogimage: assets/blog/<slug>/og.png
+   summary: 列表卡片与文章导语用的摘要（可长于 description；缺省回落 description）
    author: MulticaBoard 团队
    ---
 
    正文从这里开始（## 二级标题起，# 留给文章主标题）……
    ```
 
-   `category`（函数图像 / 白板教程）显示在列表卡片与文章页眉；`cover` 缺省
-   回落站点分享图；完整示例见 `posts/sin-function-graph-transform.md`。
+   - `category` 枚举：**函数图像教学 / 白板使用教程 / 工具选型**（列表页按此
+     分组并支持筛选，未列值自动追加分组）
+   - `tags` 逗号或 YAML 数组写法均可
+   - `ogimage`：1200×630 分享图（缺省回落 cover → 站点 og.png）；封面截图
+     建议 1200×786，og 版由封面中心裁切 1200×630（`sips -c 630 1200`）
+   - 文内以「【待补：…】」开头的段落是**作者生产备注，构建时自动剔除**，
+     不会出现在发布页面
+   - 完整示例见 `posts/sin-function-graph-teaching.md`
 
 3. 配图放 `assets/blog/<slug>/`，正文里按**站点根相对路径**引用
    （`![题注会显示在图下方](assets/blog/<slug>/fig1.png)`）；整段单图自动

@@ -2,9 +2,10 @@
 title: "用教学白板讲清 y=sin(x)：从单位圆到图像变换"
 description: "面向中学数学课堂，用在线白板把 y=sin(x) 的周期、振幅、平移和伸缩变化变成可观察、可操作的函数图像绘制过程。"
 date: 2026-09-09
-category: 函数图像
+category: 函数图像教学
 tags: 教学白板,数学教学工具,函数图像绘制,在线白板
 cover: assets/app-mathplot.png
+ogimage: assets/blog/sin-function-graph-transform/og.png
 ---
 
 三角函数第一次出现时，学生常常能背出"正弦是对边比斜边"，却很难把单位圆上的点、角度变化和坐标系中的波形联系起来。与其先让学生记住一张静态图，不如用教学白板把图像一步步"长出来"：先确定关键点，再观察参数改变后曲线如何移动、拉伸和压缩。

@@ -1,11 +1,30 @@
 // ============================================================
-// MulticaBoard 教学博客 · 文章配图点击放大（零依赖，渐进增强）
-// 文章页内容完全静态可读，本脚本仅提供 lightbox 交互：
-//   点击/回车图片 → <dialog> 原尺寸查看，Esc 或点击背景关闭，
-//   关闭后焦点还给原图片。prefers-reduced-motion 下不做过渡。
+// MulticaBoard 教学博客 · 交互增强（零依赖，渐进增强）
+// · 列表页：分类筛选 chips（.blog-filter + .post-group）
+// · 文章页：配图点击放大 lightbox（dialog：Esc/背景关闭、键盘可达）
+// 两类页面内容均完全静态可读；本脚本缺失时只是少了交互。
 // ============================================================
 (function () {
   "use strict";
+
+  /* ---------- 列表页：分类筛选 ---------- */
+
+  var filter = document.querySelector(".blog-filter");
+  if (filter) {
+    filter.addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-cat]");
+      if (!btn) return;
+      filter.querySelectorAll("button").forEach(function (b) {
+        b.classList.toggle("is-active", b === btn);
+      });
+      var cat = btn.getAttribute("data-cat");
+      document.querySelectorAll(".post-group").forEach(function (g) {
+        g.hidden = cat !== "" && g.getAttribute("data-cat") !== cat;
+      });
+    });
+  }
+
+  /* ---------- 文章页：配图放大 ---------- */
 
   var dialog = null;
 
