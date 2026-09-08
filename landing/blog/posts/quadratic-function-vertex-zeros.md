@@ -15,9 +15,9 @@ summary: 配方求顶点、因式分解求零点、系数定开口——二次�
 
 ## 一条抛物线，三个考点
 
-打开 [MulticaBoard](https://board.multicaboard.com/)，点 ƒ 方程工具，在模板里选"二次函数 y=x²-2x-3"（也可以直接输入），回车插入。
+打开 MulticaBoard，点左侧的 ƒ 方程工具（快捷键 Alt+G），在模板里选"二次函数 y=x²-2x-3"，回车插入。
 
-![y=x²-2x-3 的图像：零点、顶点、开口在一张图上](assets/blog/quadratic-function-vertex-zeros/board-parabola.png)
+![y=x²-2x-3 的图像：与 x 轴交于 -1 和 3，最低点在 (1,-4)](assets/blog/quadratic-function-vertex-zeros/board-parabola.png)
 
 对着图讲三个考点：
 
@@ -50,5 +50,3 @@ summary: 配方求顶点、因式分解求零点、系数定开口——二次�
 ---
 
 下次备二次函数，先用三十秒在 [board.multicaboard.com](https://board.multicaboard.com/) 把这条抛物线画好，课堂时间留给提问。
-
-【待补：若作者有学生改方程猜切点的课堂片段，可补一节"学生实录"】

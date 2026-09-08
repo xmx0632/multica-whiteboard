@@ -15,13 +15,13 @@ summary: 对数图像是高频失分点：学生总把它画成过 (0,1)，或�
 
 ## 先画指数，让学生自己推出对数
 
-打开 [MulticaBoard 教学白板](https://board.multicaboard.com/)，按 Alt+G 输入 `y=2^x`，回车。曲线过 (0,1)，左边贴着 x 轴，右边陡然上升。
+打开 MulticaBoard 教学白板，按 Alt+G 输入 `y=2^x`，回车。曲线过 (0,1)，左边贴着 x 轴，右边陡然上升。
 
 停在这里提问：把 x 和 y 对调，这条曲线长什么样？过哪个点？
 
 学生讨论之后，输入 `y=log(x,2)`，回车验证。
 
-![y=2^x 与 y=log(x,2) 同屏：关于 y=x 对称](assets/blog/exponential-logarithm-graph/board-explog.png)
+![y=2^x 与 y=log(x,2) 同屏：两条曲线关于直线 y=x 对称](assets/blog/exponential-logarithm-graph/board-explog.png)
 
 ## 三件事在同一张图上看清
 
@@ -40,5 +40,3 @@ summary: 对数图像是高频失分点：学生总把它画成过 (0,1)，或�
 ---
 
 你的学生常把哪个点画错？打开 [board.multicaboard.com](https://board.multicaboard.com/) 把两条曲线画出来，下次课用五分钟让他们自己找对称轴。
-
-【待补：作者若使用过导出 PNG 发学生的做法，可补一句真实反馈】

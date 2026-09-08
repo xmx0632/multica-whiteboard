@@ -15,9 +15,9 @@ summary: 黑板最无解的问题不是画不圆，是写满就擦——讲最�
 
 ## 多页：一页一个知识点
 
-在 [MulticaBoard](https://board.multicaboard.com/) 底部点"＋ 新页"，画布就多出一页。页签支持重命名、复制、拖动排序。
+在 MulticaBoard 底部点"＋ 新页"，画布就多出一页。页签支持重命名、复制、拖动排序。
 
-![底部多页栏：每页一个知识点，可增删排序](assets/blog/multipage-presentation-mode/board-pages.png)
+![底部多页栏：每页一个知识点，可增删排序，右侧是图形属性面板](assets/blog/multipage-presentation-mode/board-pages.png)
 
 建议这样分页：
 
@@ -29,7 +29,7 @@ summary: 黑板最无解的问题不是画不圆，是写满就擦——讲最�
 
 页建好之后，右上角"▶ 演示"亮起。点击进入：当前页铺满整个屏幕，底部出现页码和左右箭头，键盘也能翻页。
 
-![演示模式：全屏放映当前页，底部页码与翻页控制](assets/blog/multipage-presentation-mode/board-presentation.png)
+![演示模式：全屏放映当前页，底部页码与翻页控制，右上角可退出](assets/blog/multipage-presentation-mode/board-presentation.png)
 
 放映中右键拖动，调出的是激光指针——指曲线的振幅、指圆的圆心，不用转身挡屏幕。触屏设备横滑即可翻页，平板上课同样适用。
 
@@ -46,5 +46,3 @@ summary: 黑板最无解的问题不是画不圆，是写满就擦——讲最�
 ---
 
 下次备课时试一次：把一节课拆成"例题各一页"，上课用演示模式翻页，讲完一节再看看翻页回顾的效果。打开 [board.multicaboard.com](https://board.multicaboard.com/) 从第一页开始建。
-
-【待补：导出讲义的工作流（PNG/SVG 进 PPT）将在后续教程单独成篇】
