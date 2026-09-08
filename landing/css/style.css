@@ -857,6 +857,86 @@ img { max-width: 100%; display: block; }
   .contact-grid { grid-template-columns: 1fr; }
 }
 
+/* ---------- /terms · /privacy 法务长文页 ---------- */
+
+.legal {
+  max-width: 760px;
+  padding-bottom: 120px;
+}
+
+.legal-title {
+  font-size: clamp(1.7rem, 3.2vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
+.legal-card {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 38px 44px 34px;
+}
+
+.legal-meta {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  margin: 14px 0 0;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* 条款长文：单栏、行高收紧到 1.7，条款间虚线分隔（坐标纸语言） */
+.legal-body { line-height: 1.7; }
+
+.legal-body p { margin: 13px 0 0; }
+
+.legal-body section + section {
+  margin-top: 30px;
+  padding-top: 28px;
+  border-top: 1px dashed var(--line);
+}
+
+.legal-body h2 {
+  font-size: 1.16rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.legal-body ul,
+.legal-body ol { margin: 12px 0 0; padding-left: 1.5em; }
+.legal-body li + li { margin-top: 8px; }
+
+.legal-body a {
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(36, 86, 166, 0.3);
+}
+.legal-body a:hover { color: var(--blue-deep); border-color: var(--blue-deep); }
+
+/* 邮箱明文 + mailto（注释断开反混淆见页面内注释），与 /contact 同款视觉 */
+.legal-email {
+  display: inline-block;
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 2px solid rgba(36, 86, 166, 0.28);
+  padding-bottom: 2px;
+  word-break: break-all;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.legal-email:hover { color: var(--blue-deep); border-color: var(--blue-deep); }
+
+@media (max-width: 640px) {
+  .legal { padding-bottom: 88px; }
+  .legal-card { padding: 28px 22px; }
+}
+
 /* ---------- 动效克制 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
