@@ -857,6 +857,106 @@ img { max-width: 100%; display: block; }
   .contact-grid { grid-template-columns: 1fr; }
 }
 
+/* ---------- /about 关于页 ---------- */
+
+.about {
+  max-width: 760px;
+  padding-bottom: 120px;
+}
+
+.about-title {
+  font-size: clamp(1.7rem, 3.2vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
+.about-mission { color: var(--blue); }
+
+.about-body h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.32rem;
+  font-weight: 700;
+  margin: 54px 0 16px;
+}
+.about-body h2::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--blue);
+  flex: none;
+}
+
+.about-body > p { color: var(--ink-2); }
+.about-body strong { color: var(--ink); }
+
+.about-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.about-list li {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 18px 24px;
+  color: var(--ink-2);
+}
+
+.about-shot { margin-top: 30px; }
+
+.about-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 0 6px;
+  border-left: 2px dashed var(--line);
+  display: grid;
+  gap: 16px;
+}
+.about-timeline li { position: relative; padding-left: 20px; color: var(--ink-2); }
+.about-timeline li::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 2px solid var(--paper);
+}
+.about-timeline time {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--blue);
+  margin-right: 10px;
+}
+
+.about-contact {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 20px 24px;
+}
+.about-contact p { margin: 0; color: var(--ink-2); }
+.about-contact a {
+  color: var(--blue);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .about { padding-bottom: 88px; }
+  .about-body h2 { margin-top: 42px; font-size: 1.2rem; }
+  .about-list li { padding: 15px 18px; }
+}
+
 /* ---------- 动效克制 ---------- */
 
 @media (prefers-reduced-motion: reduce) {

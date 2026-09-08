@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- ============================================================
+       MulticaBoard 教学白板 · 关于我们页（纯静态，零构建，无脚本）
+       · 文案定稿见 ZOO-420（产品经理交付），事实点出处：
+         仓库 README / git 提交历史 / 官网首页现有口径 / docs/prd/mathplot-prd.md
+       · 配图为 board.multicaboard.com 实拍（方程出图实际操作画面）
+       · 邮箱口径：不在本页展示，统一引导至 /contact（ZOO-421 定稿）
+       ============================================================ -->
+  <title>关于我们 - MulticaBoard 教学白板</title>
+  <meta name="description" content="MulticaBoard 是面向课堂教学的在线白板：写下方程式即生成可编辑的函数矢量图形。这里记录我们的产品理念与开发历程。" />
+
+  <!-- SITE_URL：自定义域名 multicaboard.com（与 index.html 同一套替换点） -->
+  <link rel="canonical" href="https://multicaboard.com/about" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="MulticaBoard" />
+  <meta property="og:title" content="关于我们 - MulticaBoard 教学白板" />
+  <meta property="og:description" content="MulticaBoard 是面向课堂教学的在线白板：写下方程式即生成可编辑的函数矢量图形。这里记录我们的产品理念与开发历程。" />
+  <meta property="og:url" content="https://multicaboard.com/about" />
+  <meta property="og:image" content="https://multicaboard.com/assets/og.png" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232456A6'/%3E%3Cpath d='M10 36 C 20 12, 28 12, 34 32 S 48 54, 54 30' fill='none' stroke='%23EFEAD9' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+  <link rel="stylesheet" href="css/style.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "AboutPage",
+    "url": "https://multicaboard.com/about",
+    "name": "关于我们 - MulticaBoard 教学白板",
+    "description": "MulticaBoard 是面向课堂教学的在线白板：写下方程式即生成可编辑的函数矢量图形。这里记录我们的产品理念与开发历程。",
+    "inLanguage": "zh-CN",
+    "mainEntity": {
+      "@type": "Organization",
+      "name": "MulticaBoard",
+      "url": "https://multicaboard.com",
+      "logo": "https://multicaboard.com/assets/og.png",
+      "slogan": "让数学可视化进入每一间教室"
+    }
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <!-- ======================= 导航 ======================= -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html" aria-label="MulticaBoard 教学白板 首页">
+        <svg class="brand-glyph" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--blue)"/><path d="M10 36 C 20 12, 28 12, 34 32 S 48 54, 54 30" fill="none" stroke="var(--chalk)" stroke-width="5" stroke-linecap="round"/></svg>
+        <span class="brand-name" data-i18n="brand.name">MulticaBoard</span>
+        <span class="brand-sub" data-i18n="brand.sub">教学白板</span>
+      </a>
+      <nav class="nav-links" aria-label="页面导航">
+        <a href="index.html#equation" data-i18n="nav.equation">方程出图</a>
+        <a href="index.html#whiteboard" data-i18n="nav.whiteboard">白板能力</a>
+        <a href="index.html#scenes" data-i18n="nav.scenes">使用场景</a>
+        <a href="index.html#gallery" data-i18n="nav.gallery">产品实拍</a>
+      </nav>
+      <!-- APP_URL：主应用入口 -->
+      <a class="btn btn-primary btn-sm" href="https://board.multicaboard.com" data-i18n="nav.cta">免费开始使用</a>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ======================= 关于我们 ======================= -->
+    <section class="section about">
+      <div class="section-head">
+        <p class="section-eyebrow"><span class="sec-no" aria-hidden="true">✎</span><span data-i18n="about.eyebrow">关于我们 · About</span></p>
+        <h1 class="about-title" data-i18n="about.title">关于 MulticaBoard</h1>
+        <p class="section-sub" data-i18n="about.lead">
+          MulticaBoard 是一个面向课堂教学的在线白板：具备常规白板的全部能力，并让数学方程式直接变成可编辑的矢量图形。我们的使命是——<strong class="about-mission">让数学可视化进入每一间教室</strong>。
+        </p>
+      </div>
+
+      <div class="about-body">
+        <h2 data-i18n="about.whyTitle">为什么做这块白板</h2>
+        <p data-i18n="about.why">
+          数学课上有一幕反复出现：老师想讲 <span class="eq-inline">y&nbsp;=&nbsp;sin(x)</span> 的图像变换，却在黑板前徒手画波浪线——画不准，擦掉重画又耽误讲课。市面上的白板工具很多，画笔、形状、便签样样齐全，却没有一块为数学课堂做过什么。我们决定补上这一块：<strong>写下方程式，图形随之成形</strong>。
+        </p>
+
+        <h2 data-i18n="about.howTitle">我们的做法</h2>
+        <ul class="about-list">
+          <li>
+            <strong data-i18n="about.how1t">方程出图是核心差异</strong>：<span data-i18n="about.how1d">输入 <span class="eq-inline">y&nbsp;=&nbsp;sin(x)</span>、<span class="eq-inline">y&nbsp;=&nbsp;x²&nbsp;−&nbsp;2x&nbsp;−&nbsp;3</span> 或圆的方程 <span class="eq-inline">(x−1)²+(y−2)²=9</span>，即得到一个自带坐标系的矢量图形——和普通白板元素一样可选中、移动、缩放，还可调整定义域、颜色与线宽；覆盖一次/多项式/三角/幂/根/反比例/指数/对数/绝对值/圆/椭圆等常见方程族，内置 13 个即用模板。</span>
+          </li>
+          <li>
+            <strong data-i18n="about.how2t">白板能力一样不少</strong>：<span data-i18n="about.how2d">画笔、形状、文本、撤销重做、自动保存、导出 PNG/JPG/SVG；浏览器打开即用，无需安装、免费上手。</span>
+          </li>
+          <li>
+            <strong data-i18n="about.how3t">实现可查</strong>：<span data-i18n="about.how3d">渲染基于 Canvas 2D 自研，不依赖第三方绘图库；源代码在 GitHub 公开，欢迎审阅。</span>
+          </li>
+        </ul>
+
+        <!-- 配图：board.multicaboard.com 实拍（2026-09，ZOO-420），非插画/占位图 -->
+        <figure class="shot about-shot">
+          <img src="assets/app-mathplot-live.png" alt="MulticaBoard 白板实拍：输入方程 y=sin(x) 后画布生成带坐标系的正弦曲线，呈选中态，右侧为方程属性面板" loading="lazy" width="1600" height="1000" />
+          <figcaption data-i18n="about.shotCaption">MulticaBoard 实拍（board.multicaboard.com）——输入 y = sin(x)，画布即生成自带坐标系的矢量曲线，选中可调定义域、颜色与线宽</figcaption>
+        </figure>
+
+        <h2 data-i18n="about.storyTitle">我们是如何走到这里的</h2>
+        <ul class="about-timeline">
+          <li>
+            <time datetime="2026-05" data-i18n="about.t1time">2026.05</time><span data-i18n="about.t1">项目启动，交付第一版白板：画笔、形状、文本、撤销重做、导出。</span>
+          </li>
+          <li>
+            <time datetime="2026-08" data-i18n="about.t2time">2026.08</time><span data-i18n="about.t2">方程出图（MathPlot）技术方案定稿并投入开发，官网落地页上线。</span>
+          </li>
+          <li>
+            <time datetime="2026-09" data-i18n="about.t3time">2026.09</time><span data-i18n="about.t3">启用自有域名 multicaboard.com，白板开放使用：board.multicaboard.com。</span>
+          </li>
+        </ul>
+
+        <h2 data-i18n="about.contactTitle">联系我们</h2>
+        <div class="about-contact">
+          <p data-i18n="about.contact">
+            合作洽谈、功能建议或问题反馈，欢迎前往<a href="contact.html">联系我们</a>页面，我们通常在 1-3 个工作日内回复。
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================= 页脚 ======================= -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <a class="brand brand-footer" href="index.html" aria-label="MulticaBoard">
+        <svg class="brand-glyph" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--chalk)"/><path d="M10 36 C 20 12, 28 12, 34 32 S 48 54, 54 30" fill="none" stroke="var(--board)" stroke-width="5" stroke-linecap="round"/></svg>
+        <span class="brand-name">MulticaBoard</span>
+      </a>
+      <nav class="footer-links" aria-label="页脚导航">
+        <!-- APP_URL：主应用入口 -->
+        <a href="https://board.multicaboard.com" data-i18n="footer.app">打开白板</a>
+        <a href="index.html#equation" data-i18n="footer.feature">方程出图</a>
+        <!-- DOCS_URL：产品文档（飞书） -->
+        <a href="https://acn88pi8oldt.feishu.cn/docx/MLQodLJeqoeUgfxvszBcB1FZnDc" target="_blank" rel="noopener" data-i18n="footer.docs">使用文档</a>
+        <a href="about.html" aria-current="page" data-i18n="footer.about">关于我们</a>
+        <a href="contact.html" data-i18n="footer.contact">联系我们</a>
+        <a href="https://github.com/xmx0632/multica-whiteboard" data-i18n="footer.repo">源码仓库</a>
+      </nav>
+      <p class="footer-copy">© 2026 MulticaBoard</p>
+    </div>
+  </footer>
+</body>
+</html>
