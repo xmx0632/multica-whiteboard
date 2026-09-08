@@ -9,7 +9,8 @@
 landing/
 ├── index.html      # 单页主体（语义化标签 + SEO/OG 元数据 + JSON-LD）
 ├── contact.html    # 联系我们页（/contact，邮箱明文 + mailto，无脚本）
-├── privacy.html    # 隐私政策页（/privacy，AdSense 合规长文版式，无脚本）
+├── privacy.html    # 隐私政策页（/privacy，法务长文版式，无脚本）
+├── terms.html      # 服务条款页（/terms，法务长文版式，无脚本）
 ├── sitemap.xml     # 站点地图（ZOO-423，只收录已上线页面，见下方「SEO 基础设施」）
 ├── robots.txt      # 全站允许抓取 + Sitemap 引用（ZOO-423）
 ├── css/style.css   # 全部样式（坐标纸设计系统、响应式、reduced-motion）
@@ -60,8 +61,8 @@ cd landing && npx serve .                      # → http://localhost:3000
 
 ## SEO 基础设施（sitemap / robots / GSC，ZOO-423）
 
-- **`sitemap.xml`**：只收录**已上线**的页面，首版为 `/` 与 `/contact`。
-  **新页面（/privacy /terms /about、/blog 及文章页）合并上线时，必须同步把 `<url>` 条目追加进该文件**
+- **`sitemap.xml`**：只收录**已上线**的页面，当前为 `/`、`/contact`、`/privacy`、`/terms`。
+  **新页面（/about、/blog 及文章页）合并上线时，必须同步把 `<url>` 条目追加进该文件**
   （文件头注释里有维护规则），避免搜索引擎抓到 404。GSC 提交过一次后无需重复提交，Google 会自动重抓。
 - **`robots.txt`**：全站允许抓取 + `Sitemap: https://multicaboard.com/sitemap.xml` 引用。
   源站提供本文件后，Cloudflare 不再用默认 content-signals 文本兜底（若仍在其前追加注释块属正常，不影响解析）。
