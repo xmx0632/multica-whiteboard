@@ -76,6 +76,9 @@
     "landscape": "⛶ 横屏全屏",
     "enter": "⛶ 全屏"
   },
+  "siteEntry": {
+    "aria": "访问 MulticaBoard 官网（新窗口打开）"
+  },
   "immersive": {
     "exit": "✕ 退出沉浸",
     "enter": "⛶ 沉浸",

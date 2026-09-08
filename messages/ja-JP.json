@@ -76,6 +76,9 @@
     "landscape": "⛶ 横画面全画面",
     "enter": "⛶ 全画面"
   },
+  "siteEntry": {
+    "aria": "MulticaBoard 公式サイトを開く（新しいタブで開きます）"
+  },
   "immersive": {
     "exit": "✕ イマーシブ解除",
     "enter": "⛶ イマーシブ",
