@@ -957,6 +957,74 @@ img { max-width: 100%; display: block; }
   .about-list li { padding: 15px 18px; }
 }
 
+/* ---------- /privacy 等政策长文页 ---------- */
+
+.policy {
+  max-width: 760px;
+  padding-bottom: 120px;
+}
+
+.policy-title {
+  font-size: clamp(1.7rem, 3.2vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
+.policy-effective {
+  margin-top: 18px;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+.policy-effective strong { color: var(--ink); font-weight: 600; }
+
+/* 正文卡片：与 contact-card 同款纸面，承载 h2 小节长文 */
+.policy-body {
+  margin-top: 40px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 40px 44px 36px;
+}
+
+.policy-body h2 {
+  font-size: 1.28rem;
+  font-weight: 700;
+  margin: 38px 0 14px;
+  padding-top: 30px;
+  border-top: 1px dashed var(--line);
+}
+.policy-body h2:first-of-type { margin-top: 28px; padding-top: 0; border-top: none; }
+
+.policy-body p { color: var(--ink); }
+.policy-body p + p { margin-top: 12px; }
+.policy-body p:last-child { margin-bottom: 0; }
+.policy-body strong { font-weight: 600; }
+
+.policy-body ul {
+  margin: 14px 0;
+  padding-left: 1.5em;
+}
+.policy-body li + li { margin-top: 10px; }
+.policy-body li { color: var(--ink-2); }
+.policy-body li strong { color: var(--ink); }
+
+.policy-body a {
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(36, 86, 166, 0.35);
+}
+.policy-body a:hover { color: var(--blue-deep); border-color: var(--blue-deep); }
+
+.policy-email { word-break: break-all; }
+
+@media (max-width: 640px) {
+  .policy { padding-bottom: 88px; }
+  .policy-body { margin-top: 30px; padding: 26px 22px 24px; }
+  .policy-body h2 { font-size: 1.12rem; margin-top: 30px; padding-top: 24px; }
+}
+
 /* ---------- 动效克制 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
