@@ -9,6 +9,7 @@
 landing/
 ├── index.html      # 单页主体（语义化标签 + SEO/OG 元数据 + JSON-LD）
 ├── contact.html    # 联系我们页（/contact，邮箱明文 + mailto，无脚本）
+├── privacy.html    # 隐私政策页（/privacy，AdSense 合规长文版式，无脚本）
 ├── sitemap.xml     # 站点地图（ZOO-423，只收录已上线页面，见下方「SEO 基础设施」）
 ├── robots.txt      # 全站允许抓取 + Sitemap 引用（ZOO-423）
 ├── css/style.css   # 全部样式（坐标纸设计系统、响应式、reduced-motion）
