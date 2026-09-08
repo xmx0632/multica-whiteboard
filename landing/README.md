@@ -8,6 +8,7 @@
 ```
 landing/
 ├── index.html      # 单页主体（语义化标签 + SEO/OG 元数据 + JSON-LD）
+├── contact.html    # 联系我们页（/contact，邮箱明文 + mailto，无脚本）
 ├── css/style.css   # 全部样式（坐标纸设计系统、响应式、reduced-motion）
 ├── js/main.js      # 方程出图演示（采样绘图 + 打字机）、滚动进场、i18n 脚手架
 ├── assets/         # og.png（分享图）与主应用实拍截图

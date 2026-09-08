@@ -786,6 +786,77 @@ img { max-width: 100%; display: block; }
   .cta-inner { padding-top: 72px; }
 }
 
+/* ---------- /contact 联系页 ---------- */
+
+.contact {
+  max-width: 760px;
+  padding-bottom: 120px;
+}
+
+.contact-title {
+  font-size: clamp(1.7rem, 3.2vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
+.contact-card {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 34px 36px 30px;
+}
+
+.contact-label {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+  margin-bottom: 10px;
+}
+
+/* 邮箱明文 + mailto：保持可复制可爬取的真实文本 */
+.contact-email {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: clamp(1.15rem, 2.6vw, 1.5rem);
+  font-weight: 600;
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 2px solid rgba(36, 86, 166, 0.28);
+  padding-bottom: 2px;
+  word-break: break-all;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.contact-email:hover { color: var(--blue-deep); border-color: var(--blue-deep); }
+
+.contact-reply { margin-top: 22px; color: var(--ink-2); }
+.contact-reply strong { color: var(--ink); }
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin-top: 22px;
+}
+
+.contact-note {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px 26px;
+}
+.contact-note h2 { font-size: 1.05rem; margin-bottom: 10px; }
+.contact-note p { color: var(--ink-2); }
+.contact-note ul { margin: 0; padding-left: 1.2em; color: var(--ink-2); }
+.contact-note li + li { margin-top: 6px; }
+
+@media (max-width: 640px) {
+  .contact { padding-bottom: 88px; }
+  .contact-card { padding: 26px 22px; }
+  .contact-grid { grid-template-columns: 1fr; }
+}
+
 /* ---------- 动效克制 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
