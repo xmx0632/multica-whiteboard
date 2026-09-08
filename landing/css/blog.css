@@ -1,0 +1,291 @@
+/* ============================================================
+   MulticaBoard 教学博客 · /blog 排版样式
+   依赖 style.css 的设计变量（坐标纸设计系统），仅作用于
+   博客列表页与文章详情页；由 blog/build.mjs 生成的页面引入。
+   ============================================================ */
+
+/* ---------- 列表页 ---------- */
+
+.blog-index {
+  max-width: 760px;
+  padding-bottom: 120px;
+}
+
+.blog-title {
+  font-size: clamp(1.7rem, 3.2vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
+.post-list {
+  display: grid;
+  gap: 18px;
+}
+
+.post-card {
+  display: block;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 26px 28px 22px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.post-card:hover {
+  transform: translateY(-3px);
+  border-color: #c6d3e2;
+}
+
+.post-card-date {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+
+.post-card h2 {
+  margin-top: 10px;
+  font-size: 1.28rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.post-card:hover h2 { color: var(--blue); }
+
+.post-card-desc {
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-size: 0.95rem;
+  line-height: 1.75;
+}
+
+.post-card-more {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 0.88rem;
+  color: var(--blue);
+}
+
+.post-tags {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.post-tag {
+  font-size: 0.78rem;
+  color: var(--ink-2);
+  background: var(--blue-soft);
+  border-radius: 999px;
+  padding: 3px 12px;
+}
+
+/* ---------- 文章详情页 ---------- */
+
+.post {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 64px 24px 56px;
+}
+
+.post-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+  margin-bottom: 16px;
+}
+
+.post-title {
+  font-size: clamp(1.6rem, 3.4vw, 2.3rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  line-height: 1.3;
+}
+
+.post-meta {
+  margin-top: 14px;
+  font-size: 0.88rem;
+  color: var(--ink-3);
+}
+.post-meta a { color: var(--blue); }
+
+.post .post-tags { margin-top: 18px; }
+
+.post-cover {
+  margin: 30px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+.post-cover img { width: 100%; height: auto; display: block; }
+
+/* ---------- 正文排版（.prose） ---------- */
+
+.prose {
+  margin-top: 34px;
+  font-size: 1.02rem;
+  line-height: 1.95;
+}
+
+.prose h2 {
+  margin: 2.1em 0 0.8em;
+  padding-bottom: 0.35em;
+  font-size: 1.32rem;
+  font-weight: 700;
+  border-bottom: 1px dashed var(--line);
+}
+.prose h2::before {
+  content: "§";
+  margin-right: 10px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--red);
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 1px 7px;
+  vertical-align: 3px;
+}
+
+.prose h3 {
+  margin: 1.8em 0 0.6em;
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+
+.prose p { margin: 1em 0; color: var(--ink); }
+
+.prose a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
+.prose a:hover { color: var(--blue-deep); }
+
+.prose strong { font-weight: 650; color: var(--ink); }
+
+.prose ul,
+.prose ol { margin: 1em 0; padding-left: 1.6em; }
+.prose li + li { margin-top: 6px; }
+.prose li::marker { color: var(--blue); }
+
+/* 行内代码：纸面条纹，与设计系统的 mono/蓝呼应 */
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  color: var(--blue-deep);
+  background: var(--blue-soft);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+/* 代码块：黑板配色（--board 绿板 + 粉笔白），呼应 CTA 黑板 */
+.post-code {
+  position: relative;
+  margin: 1.4em 0;
+  padding: 18px 20px;
+  background: var(--board);
+  color: var(--chalk);
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  box-shadow: var(--shadow-card);
+}
+.post-code code {
+  font-family: var(--mono);
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+.post-code[data-lang]::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: rgba(239, 234, 217, 0.45);
+}
+
+/* 引用：红批注笔 */
+.prose blockquote {
+  margin: 1.4em 0;
+  padding: 14px 20px;
+  border-left: 3px solid var(--red);
+  background: var(--paper-3);
+  border-radius: 0 10px 10px 0;
+  color: var(--ink-2);
+}
+.prose blockquote p { margin: 0; }
+
+/* 图片：卡片化 + 题注（markdown 图注写在 alt 里） */
+.post-fig {
+  margin: 1.6em 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper-2);
+  box-shadow: var(--shadow-card);
+}
+.post-fig img { width: 100%; height: auto; display: block; }
+.post-fig figcaption {
+  padding: 12px 18px;
+  font-size: 0.85rem;
+  color: var(--ink-3);
+  text-align: center;
+  border-top: 1px solid var(--line);
+}
+
+.prose hr {
+  margin: 2.2em 0;
+  border: none;
+  border-top: 1px dashed var(--line);
+}
+
+/* ---------- 相邻文章导航 ---------- */
+
+.post-nav {
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.post-nav-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.post-nav-item:hover { border-color: var(--blue); transform: translateY(-2px); }
+
+.post-nav-item span {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+.post-nav-item strong { font-size: 0.94rem; font-weight: 650; line-height: 1.5; }
+
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 640px) {
+  .post { padding: 48px 18px 40px; }
+  .post-card { padding: 22px 20px 18px; }
+  .post-nav { grid-template-columns: 1fr; }
+  .prose { font-size: 1rem; }
+}

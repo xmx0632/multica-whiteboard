@@ -10,8 +10,10 @@ landing/
 ├── index.html      # 单页主体（语义化标签 + SEO/OG 元数据 + JSON-LD）
 ├── contact.html    # 联系我们页（/contact，邮箱明文 + mailto，无脚本）
 ├── css/style.css   # 全部样式（坐标纸设计系统、响应式、reduced-motion）
+├── css/blog.css    # /blog 博客排版（文章卡片、正文、代码块、图片题注）
 ├── js/main.js      # 方程出图演示（采样绘图 + 打字机）、滚动进场、i18n 脚手架
-├── assets/         # og.png（分享图）与主应用实拍截图
+├── blog/           # 教学博客（ZOO-422）：posts/*.md 投稿 + build.mjs 静态生成
+├── assets/         # og.png（分享图）与主应用实拍截图（博客配图放 assets/blog/）
 └── README.md       # 本文件
 ```
 
@@ -54,6 +56,49 @@ cd landing && npx serve .                      # → http://localhost:3000
 
 > 子路径说明：GitHub Pages 项目站点带 `/multica-whiteboard/` 前缀；页面内所有资源引用均为
 > 相对路径（`css/…`、`js/…`、`assets/…`），子路径下直接可用，无需改 base。
+
+## 教学博客 /blog（ZOO-422）
+
+多页面静态生成：**投稿只写 markdown，不碰任何 HTML**。部署时 CI 会执行
+`node blog/build.mjs`（零依赖，仅 Node 内置模块），从 `blog/posts/*.md` 生成：
+
+- `blog/index.html` —— 列表页 `https://multicaboard.com/blog/`
+- `blog/<slug>/index.html` —— 每篇文章独立 URL，自动带上各自的
+  title / description / keywords / canonical / og / article 元数据与
+  JSON-LD `BlogPosting` 结构化数据
+- `blog/sitemap-urls.json` —— 博客全部 URL 清单，供 sitemap 任务合并
+
+生成产物不进 git（见根 `.gitignore`）；本地预览先跑一次 `node blog/build.mjs`
+再起静态服务即可。
+
+### 投稿规范（内容运营直接照此执行）
+
+1. 在 `blog/posts/` 新建 `<slug>.md`，**文件名即 URL**（小写字母/数字/连字符，
+   如 `sin-graph-teaching.md` → `/blog/sin-graph-teaching/`）；
+2. 文件头是 frontmatter（title / description / date 三项必填）：
+
+   ```
+   ---
+   title: "y = sin(x)：一节课讲透三角函数图像与变换的白板实操"
+   description: "50-160 字的摘要，会进 meta description 与 og:description"
+   date: 2026-09-09
+   tags: 三角函数,函数图像,课堂实操
+   cover: assets/blog/<slug>/cover.png
+   author: MulticaBoard 团队
+   ---
+
+   正文从这里开始（## 二级标题起，# 留给文章主标题）……
+   ```
+
+3. 配图放 `assets/blog/<slug>/`，正文里按**站点根相对路径**引用
+   （`![题注会显示在图下方](assets/blog/<slug>/fig1.png)`）；整段单图自动
+   转成带题注的 figure；截图用 board.multicaboard.com 实操截取；
+4. 正文支持 markdown 子集：`## / ###` 标题、段落、**粗体**、*斜体*、
+   `` `行内代码` ``、``` 围栏代码块、无序/有序列表、`>` 引用、`---` 分隔线、
+   `[链接](url)` 与 `![题注](图片)`；
+5. 本地验证：`cd landing && node blog/build.mjs`，再按上方方式起静态服务预览；
+6. 提交 `posts/<slug>.md`（连同 `assets/blog/<slug>/` 配图）推送即可，
+   合并到 `main` 后由 CI 自动生成并发布。
 
 ## 与主应用的关系（零影响）
 
