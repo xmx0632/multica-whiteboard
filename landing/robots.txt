@@ -1,0 +1,9 @@
+# multicaboard.com robots.txt（ZOO-423）
+# 官网全部页面均为公开内容（营销页 / 合规页 / 博客），全站允许抓取。
+# 源站（GitHub Pages）提供本文件后，Cloudflare 不再用默认 content-signals 文本兜底；
+# 若 Cloudflare 仍在其前追加 content-signals 注释块，为正常行为，注释行不影响爬虫解析。
+# 验证地址：https://multicaboard.com/robots.txt
+User-agent: *
+Disallow:
+
+Sitemap: https://multicaboard.com/sitemap.xml
