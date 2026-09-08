@@ -68,6 +68,48 @@ function readingMinutes(markdown) {
   return Math.max(1, Math.round(chars / 450));
 }
 
+/* ---------- 图片固有尺寸提取（防 CLS：给 img 带上 width/height） ---------- */
+
+function imageSize(siteRelPath) {
+  if (/^(https?:)?\/\//i.test(siteRelPath) || /^data:/i.test(siteRelPath)) return null;
+  try {
+    const buf = readFileSync(join(LANDING, String(siteRelPath).replace(/^\//, "")));
+    // PNG：8 字节签名 + IHDR 段，宽高在偏移 16/20
+    if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+    // JPEG：逐段扫描，SOF0..SOF15（除 C4/C8/CC）含宽高
+    if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+      let off = 2;
+      while (off + 9 < buf.length) {
+        if (buf[off] !== 0xff) {
+          off++;
+          continue;
+        }
+        const marker = buf[off + 1];
+        if (
+          marker >= 0xc0 &&
+          marker <= 0xcf &&
+          marker !== 0xc4 &&
+          marker !== 0xc8 &&
+          marker !== 0xcc
+        ) {
+          return { height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7) };
+        }
+        off += 2 + buf.readUInt16BE(off + 2);
+      }
+    }
+  } catch {
+    // 文件缺失或格式不识别：不带尺寸即可
+  }
+  return null;
+}
+
+function sizeAttrs(siteRelPath) {
+  const size = imageSize(siteRelPath);
+  return size ? ` width="${size.width}" height="${size.height}"` : "";
+}
+
 /* ---------- frontmatter ---------- */
 
 function parsePost(file) {
@@ -101,6 +143,7 @@ function parsePost(file) {
     date: meta.date,
     author: meta.author || DEFAULT_AUTHOR,
     cover: meta.cover || null,
+    category: meta.category || null,
     tags: (meta.tags || "")
       .split(/[,，]/)
       .map((t) => t.trim())
@@ -120,7 +163,7 @@ function renderInline(text, prefix) {
     (_m, code, alt, src, label, href, bold) => {
       if (code !== undefined) return `<code>${code}</code>`;
       if (src !== undefined)
-        return `<img src="${relAsset(src, prefix)}" alt="${alt}" loading="lazy" />`;
+        return `<img src="${relAsset(src, prefix)}" alt="${alt}" loading="lazy"${sizeAttrs(src)} />`;
       if (href !== undefined) {
         const external = /^https?:\/\//i.test(href);
         return `<a href="${href}"${external ? ' target="_blank" rel="noopener"' : ""}>${label}</a>`;
@@ -307,6 +350,7 @@ function pageShell({
   ogType,
   ogImage,
   extraMeta = "",
+  scripts = "",
   jsonLd,
   body,
 }) {
@@ -348,7 +392,7 @@ ${body}
   </main>
 
 ${chromeFooter(prefix, { onBlog })}
-</body>
+${scripts}</body>
 </html>
 `;
 }
@@ -366,13 +410,18 @@ function tagChips(tags) {
 function buildListPage(posts) {
   const cards = posts
     .map(
-      (p) => `        <a class="post-card" href="${p.slug}/">
-          <p class="post-card-date">${p.date}${p.tags.length ? ` · ${escapeHtml(p.tags[0])}` : ""}</p>
-          <h2>${escapeHtml(p.title)}</h2>
-          <p class="post-card-desc">${escapeHtml(p.description)}</p>
-          ${tagChips(p.tags)}
-          <span class="post-card-more">阅读全文 →</span>
-        </a>`,
+      (p) => {
+        const cat = p.category || p.tags[0] || "";
+        return `        <a class="post-card" href="${p.slug}/">
+${p.cover ? `          <div class="post-card-thumb"><img src="${relAsset(p.cover, "../")}" alt="" loading="lazy" /></div>\n` : ""}          <div class="post-card-body">
+            <p class="post-card-date">${p.date}${cat ? ` · ${escapeHtml(cat)}` : ""}</p>
+            <h2>${escapeHtml(p.title)}</h2>
+            <p class="post-card-desc">${escapeHtml(p.description)}</p>
+            ${tagChips(p.tags)}
+            <span class="post-card-more">阅读全文 →</span>
+          </div>
+        </a>`;
+      },
     )
     .join("\n");
 
@@ -418,10 +467,29 @@ ${cards}
   });
 }
 
-function buildPostPage(post, newer, older) {
+// 相关文章：同分类优先，其次共享标签；新→旧，最多 2 篇
+function relatedPosts(post, all) {
+  return all
+    .filter((p) => p.slug !== post.slug)
+    .map((p) => {
+      let score = 0;
+      if (post.category && p.category === post.category) score += 2;
+      score += p.tags.filter((t) => post.tags.includes(t)).length;
+      return { p, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || (a.p.date < b.p.date ? 1 : -1))
+    .slice(0, 2)
+    .map((x) => x.p);
+}
+
+function buildPostPage(post, newer, older, related) {
   const prefix = "../../"; // blog/<slug>/index.html
   const minutes = readingMinutes(post.markdown);
   const coverAbs = post.cover || DEFAULT_OG;
+  const eyebrowBits = ["博客", post.category, post.date, `约 ${minutes} 分钟`]
+    .filter(Boolean)
+    .join(" · ");
 
   const navCells = [];
   if (newer) {
@@ -435,17 +503,35 @@ function buildPostPage(post, newer, older) {
     );
   }
 
+  const relatedHtml = related.length
+    ? `      <aside class="post-related" aria-label="相关文章">
+        <h2>相关文章</h2>
+        <div class="post-related-grid">
+${related
+  .map(
+    (p) => `          <a class="post-card post-card-mini" href="../${p.slug}/">
+            <p class="post-card-date">${p.date}${p.category ? ` · ${escapeHtml(p.category)}` : ""}</p>
+            <h3>${escapeHtml(p.title)}</h3>
+          </a>`,
+  )
+  .join("\n")}
+        </div>
+      </aside>
+`
+    : "";
+
   const body = `    <article class="post">
       <header class="post-head">
-        <p class="post-eyebrow"><span class="sec-no" aria-hidden="true">✎</span>博客 · ${post.date} · 约 ${minutes} 分钟</p>
+        <p class="post-eyebrow"><span class="sec-no" aria-hidden="true">✎</span>${eyebrowBits}</p>
         <h1 class="post-title">${escapeHtml(post.title)}</h1>
+        <p class="post-lede">${escapeHtml(post.description)}</p>
         <p class="post-meta">${escapeHtml(post.author)} · <a href="../index.html">返回博客</a></p>
         ${tagChips(post.tags)}
       </header>
-${post.cover ? `      <figure class="post-cover"><img src="${relAsset(post.cover, prefix)}" alt="${escapeHtml(post.title)}" /></figure>\n` : ""}      <div class="prose">
+${post.cover ? `      <figure class="post-cover"><img src="${relAsset(post.cover, prefix)}" alt="${escapeHtml(post.title)}"${sizeAttrs(post.cover)} /></figure>\n` : ""}      <div class="prose">
 ${renderMarkdown(post.markdown, prefix)}
       </div>
-${navCells.length ? `      <nav class="post-nav" aria-label="相邻文章">\n        ${navCells.join("\n        ")}\n      </nav>` : ""}
+${relatedHtml}${navCells.length ? `      <nav class="post-nav" aria-label="相邻文章">\n        ${navCells.join("\n        ")}\n      </nav>` : ""}
     </article>
 
     <section class="cta-board">
@@ -491,6 +577,7 @@ ${navCells.length ? `      <nav class="post-nav" aria-label="相邻文章">\n   
     ogType: "article",
     ogImage: coverAbs,
     extraMeta: `  <meta property="article:published_time" content="${post.date}" />\n`,
+    scripts: `  <script src="${prefix}js/blog.js" defer></script>\n`,
     jsonLd,
     body,
   });
@@ -534,7 +621,7 @@ function main() {
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, "index.html"),
-      buildPostPage(p, posts[idx - 1] || null, posts[idx + 1] || null),
+      buildPostPage(p, posts[idx - 1] || null, posts[idx + 1] || null, relatedPosts(p, posts)),
     );
   });
 

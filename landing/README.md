@@ -79,10 +79,11 @@ cd landing && npx serve .                      # → http://localhost:3000
 
    ```
    ---
-   title: "y = sin(x)：一节课讲透三角函数图像与变换的白板实操"
+   title: "用教学白板讲清 y=sin(x)：从单位圆到图像变换"
    description: "50-160 字的摘要，会进 meta description 与 og:description"
    date: 2026-09-09
-   tags: 三角函数,函数图像,课堂实操
+   category: 函数图像
+   tags: 教学白板,数学教学工具,函数图像绘制
    cover: assets/blog/<slug>/cover.png
    author: MulticaBoard 团队
    ---
@@ -90,9 +91,14 @@ cd landing && npx serve .                      # → http://localhost:3000
    正文从这里开始（## 二级标题起，# 留给文章主标题）……
    ```
 
+   `category`（函数图像 / 白板教程）显示在列表卡片与文章页眉；`cover` 缺省
+   回落站点分享图；完整示例见 `posts/sin-function-graph-transform.md`。
+
 3. 配图放 `assets/blog/<slug>/`，正文里按**站点根相对路径**引用
    （`![题注会显示在图下方](assets/blog/<slug>/fig1.png)`）；整段单图自动
-   转成带题注的 figure；截图用 board.multicaboard.com 实操截取；
+   转成带题注的 figure，**PNG/JPEG 的宽高会被生成器自动读出**写进
+   `width`/`height`（防 CLS），并支持点击放大；截图用
+   board.multicaboard.com 实操截取；
 4. 正文支持 markdown 子集：`## / ###` 标题、段落、**粗体**、*斜体*、
    `` `行内代码` ``、``` 围栏代码块、无序/有序列表、`>` 引用、`---` 分隔线、
    `[链接](url)` 与 `![题注](图片)`；

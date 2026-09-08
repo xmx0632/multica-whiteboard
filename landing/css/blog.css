@@ -4,10 +4,9 @@
    博客列表页与文章详情页；由 blog/build.mjs 生成的页面引入。
    ============================================================ */
 
-/* ---------- 列表页 ---------- */
+/* ---------- 列表页（内容宽度与官网一致 1120px，双列卡片） ---------- */
 
 .blog-index {
-  max-width: 760px;
   padding-bottom: 120px;
 }
 
@@ -19,24 +18,41 @@
 
 .post-list {
   display: grid;
-  gap: 18px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
 }
 
 .post-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
   background: var(--paper-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  padding: 26px 28px 22px;
   text-decoration: none;
   color: inherit;
+  overflow: hidden;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .post-card:hover {
   transform: translateY(-3px);
   border-color: #c6d3e2;
 }
+
+/* 封面缩略图：16:9 裁切（img 带 width/height，无 CLS） */
+.post-card-thumb {
+  aspect-ratio: 16 / 9;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-3);
+}
+.post-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.post-card-body { padding: 24px 26px 20px; }
 
 .post-card-date {
   font-family: var(--mono);
@@ -101,10 +117,18 @@
 }
 
 .post-title {
-  font-size: clamp(1.6rem, 3.4vw, 2.3rem);
+  font-size: clamp(1.875rem, 3.4vw, 2.5rem); /* 30 → 40px */
   font-weight: 700;
   letter-spacing: 0.005em;
-  line-height: 1.3;
+  line-height: 1.2; /* 48/40 */
+}
+
+/* 摘要导语：紧随标题，字号介于标题与正文之间 */
+.post-lede {
+  margin-top: 18px;
+  font-size: 1.12rem;
+  line-height: 1.75;
+  color: var(--ink-2);
 }
 
 .post-meta {
@@ -129,8 +153,8 @@
 
 .prose {
   margin-top: 34px;
-  font-size: 1.02rem;
-  line-height: 1.95;
+  font-size: 1.0625rem; /* 17px */
+  line-height: 1.765;    /* 30/17 */
 }
 
 .prose h2 {
@@ -158,7 +182,7 @@
   font-weight: 650;
 }
 
-.prose p { margin: 1em 0; color: var(--ink); }
+.prose p { margin: 1.2em 0; color: var(--ink); }
 
 .prose a {
   color: var(--blue);
@@ -185,18 +209,18 @@
   padding: 2px 7px;
 }
 
-/* 代码块：黑板配色（--board 绿板 + 粉笔白），呼应 CTA 黑板 */
+/* 代码块：浅灰底卡片（UI 规格），语言角标右上 */
 .post-code {
   position: relative;
   margin: 1.4em 0;
   padding: 18px 20px;
-  background: var(--board);
-  color: var(--chalk);
+  background: var(--paper-3);
+  color: var(--ink);
+  border: 1px solid var(--line);
   border-radius: 12px;
   overflow-x: auto;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   line-height: 1.7;
-  box-shadow: var(--shadow-card);
 }
 .post-code code {
   font-family: var(--mono);
@@ -212,7 +236,7 @@
   font-family: var(--mono);
   font-size: 0.7rem;
   letter-spacing: 0.1em;
-  color: rgba(239, 234, 217, 0.45);
+  color: var(--ink-3);
 }
 
 /* 引用：红批注笔 */
@@ -226,14 +250,18 @@
 }
 .prose blockquote p { margin: 0; }
 
-/* 图片：卡片化 + 题注（markdown 图注写在 alt 里） */
+/* 图片：12px 圆角细边框卡片 + 题注；可点击放大（js/blog.js） */
 .post-fig {
   margin: 1.6em 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 12px;
   overflow: hidden;
   background: var(--paper-2);
   box-shadow: var(--shadow-card);
+}
+.post-fig img,
+.post-cover img {
+  cursor: zoom-in;
 }
 .post-fig img { width: 100%; height: auto; display: block; }
 .post-fig figcaption {
@@ -281,11 +309,64 @@
 }
 .post-nav-item strong { font-size: 0.94rem; font-weight: 650; line-height: 1.5; }
 
+/* ---------- 相关文章 ---------- */
+
+.post-related {
+  margin-top: 48px;
+  padding-top: 28px;
+  border-top: 1px dashed var(--line);
+}
+.post-related h2 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin-bottom: 16px;
+}
+.post-related-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+.post-card-mini { padding: 18px 20px; }
+.post-card-mini h3 { margin-top: 8px; font-size: 1rem; line-height: 1.5; }
+.post-card-mini:hover h3 { color: var(--blue); }
+
+/* ---------- 图片放大（js/blog.js，渐进增强） ---------- */
+
+dialog.lightbox {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: min(92vw, 1280px);
+  max-height: 92vh;
+}
+dialog.lightbox::backdrop {
+  background: rgba(15, 38, 32, 0.72); /* --board-2 半透明 */
+  backdrop-filter: blur(2px);
+}
+dialog.lightbox img {
+  display: block;
+  max-width: 100%;
+  max-height: 88vh;
+  border-radius: 8px;
+}
+
 /* ---------- 响应式 ---------- */
+
+@media (max-width: 980px) {
+  .post-list { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 640px) {
   .post { padding: 48px 18px 40px; }
-  .post-card { padding: 22px 20px 18px; }
-  .post-nav { grid-template-columns: 1fr; }
-  .prose { font-size: 1rem; }
+  .post-card-body { padding: 20px 20px 16px; }
+  .post-nav,
+  .post-related-grid { grid-template-columns: 1fr; }
+  .post-title { font-size: 1.875rem; line-height: 1.267; } /* 30/38 */
+  .prose { font-size: 1rem; line-height: 1.75; }            /* 16/28 */
+}
+
+/* 图片放大为渐进增强；动效克制与全站一致 */
+@media (prefers-reduced-motion: reduce) {
+  .post-card, .post-card-mini, .post-nav-item { transition: none; }
+  .post-card:hover, .post-card-mini:hover, .post-nav-item:hover { transform: none; }
 }
