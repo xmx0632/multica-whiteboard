@@ -32,6 +32,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 博客静态生成（ZOO-422）：由 landing/blog/posts/*.md 生成 /blog 列表页、
+      # 各文章页与 sitemap-urls.json。零依赖（仅 Node 内置模块），产物不入 git。
+      - name: Build blog pages
+        working-directory: landing
+        run: node blog/build.mjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

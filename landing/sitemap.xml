@@ -6,7 +6,8 @@
   1. 只收录已上线的页面：新页面合并到 main 前，先把 url 条目加进本文件，
      避免搜索引擎抓到 404 拉低站点质量评分。
   2. lastmod 取该页面最后一次实质性变更日期（git log 查 landing 目录下对应 html 的最后提交日）。
-  3. 待纳入：/blog 及全部文章页（ZOO-422，预计 09-15，文章页随发布追加）。
+  3. 博客文章页（ZOO-422）随每批发布追加：URL 清单直接取构建产物
+     blog/sitemap-urls.json（node blog/build.mjs 生成）。
   4. 已提交 GSC 后修改本文件无需重新提交，Google 会按抓取节奏自动重新拉取。
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -17,8 +18,56 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://multicaboard.com/blog/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/blog/circle-conic-sections/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/blog/exponential-logarithm-graph/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/blog/multipage-presentation-mode/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/blog/quadratic-function-vertex-zeros/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/blog/sin-function-graph-teaching/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/blog/sin-function-graph-transform/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://multicaboard.com/contact</loc>
     <lastmod>2026-09-08</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://multicaboard.com/about</loc>
+    <lastmod>2026-09-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
@@ -33,11 +82,5 @@
     <lastmod>2026-09-09</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://multicaboard.com/about</loc>
-    <lastmod>2026-09-09</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
   </url>
 </urlset>

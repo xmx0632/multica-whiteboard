@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .whiteboard-data/
+
+# 博客生成产物（ZOO-422）：源文件为 landing/blog/posts/*.md，
+# 部署时由 CI 执行 node landing/blog/build.mjs 现场生成
+/landing/blog/index.html
+/landing/blog/*/index.html
+/landing/blog/sitemap-urls.json

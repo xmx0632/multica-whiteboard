@@ -1,6 +1,6 @@
 # MulticaBoard 落地页（landing/）
 
-教学白板产品官网单页。**纯静态、零构建、零依赖**——与主应用（Next.js）完全隔离，
+教学白板产品官网（首页 + 联系/隐私/条款/关于/教学博客等多页）。**纯静态、零构建、零依赖**——与主应用（Next.js）完全隔离，
 不进入主应用的构建、路由与依赖树；可部署到任意静态托管。
 
 ## 目录结构
@@ -14,8 +14,10 @@ landing/
 ├── sitemap.xml     # 站点地图（ZOO-423，只收录已上线页面，见下方「SEO 基础设施」）
 ├── robots.txt      # 全站允许抓取 + Sitemap 引用（ZOO-423）
 ├── css/style.css   # 全部样式（坐标纸设计系统、响应式、reduced-motion）
+├── css/blog.css    # /blog 博客排版（文章卡片、正文、代码块、图片题注）
 ├── js/main.js      # 方程出图演示（采样绘图 + 打字机）、滚动进场、i18n 脚手架
-├── assets/         # og.png（分享图）与主应用实拍截图
+├── blog/           # 教学博客（ZOO-422）：posts/*.md 投稿 + build.mjs 静态生成
+├── assets/         # og.png（分享图）与主应用实拍截图（博客配图放 assets/blog/）
 └── README.md       # 本文件
 ```
 
@@ -61,15 +63,75 @@ cd landing && npx serve .                      # → http://localhost:3000
 
 ## SEO 基础设施（sitemap / robots / GSC，ZOO-423）
 
-- **`sitemap.xml`**：只收录**已上线**的页面，当前为 `/`、`/contact`、`/privacy`、`/terms`。
-  **新页面（/about、/blog 及文章页）合并上线时，必须同步把 `<url>` 条目追加进该文件**
+- **`sitemap.xml`**：只收录**已上线**的页面，当前为 `/`、`/contact`、`/privacy`、`/terms`、`/about`、`/blog/` 及文章页。
+  **新页面合并上线时，必须同步把 `<url>` 条目追加进该文件**
   （文件头注释里有维护规则），避免搜索引擎抓到 404。GSC 提交过一次后无需重复提交，Google 会自动重抓。
+  博客文章页的 URL 清单可直接取构建产物 `blog/sitemap-urls.json`。
 - **`robots.txt`**：全站允许抓取 + `Sitemap: https://multicaboard.com/sitemap.xml` 引用。
   源站提供本文件后，Cloudflare 不再用默认 content-signals 文本兜底（若仍在其前追加注释块属正常，不影响解析）。
 - **Google Search Console 验证**：需所有者人工操作（DNS TXT 或 HTML 验证文件），
   完整步骤与记录值格式见 [`docs/dev/gsc-verification.md`](../docs/dev/gsc-verification.md)。
   HTML 文件方式无需改任何代码——把 `google<token>.html` 放进本目录部署即可。
 - **重提门槛监控**：GSC 已编入索引页数 ≥ 15–20 时在 ZOO-423 评论报告，项目经理确认后才重提 AdSense。
+
+## 教学博客 /blog（ZOO-422）
+
+多页面静态生成：**投稿只写 markdown，不碰任何 HTML**。部署时 CI 会执行
+`node blog/build.mjs`（零依赖，仅 Node 内置模块），从 `blog/posts/*.md` 生成：
+
+- `blog/index.html` —— 列表页 `https://multicaboard.com/blog/`
+- `blog/<slug>/index.html` —— 每篇文章独立 URL，自动带上各自的
+  title / description / keywords / canonical / og / article 元数据与
+  JSON-LD `BlogPosting` 结构化数据
+- `blog/sitemap-urls.json` —— 博客全部 URL 清单，供 sitemap 任务合并
+- 列表页按 `category` 分组展示，顶部分类筛选 chips（渐进增强）
+
+生成产物不进 git（见根 `.gitignore`）；本地预览先跑一次 `node blog/build.mjs`
+再起静态服务即可。
+
+### 投稿规范（内容运营直接照此执行）
+
+1. 在 `blog/posts/` 新建 `<slug>.md`，**文件名即 URL**（小写字母/数字/连字符，
+   如 `sin-graph-teaching.md` → `/blog/sin-graph-teaching/`）；
+2. 文件头是 frontmatter（title / description / date 三项必填）：
+
+   ```
+   ---
+   title: "用教学白板画 y=sin(x)：把三角函数图像变换讲成看得见的一节课"
+   description: "50-160 字，进 meta description 与 og:description"
+   date: 2026-09-09
+   category: 函数图像教学
+   tags: [教学白板, 三角函数, 函数图像绘制]
+   cover: assets/blog/<slug>/board-sin-plot.png
+   ogimage: assets/blog/<slug>/og.png
+   summary: 列表卡片与文章导语用的摘要（可长于 description；缺省回落 description）
+   author: MulticaBoard 团队
+   ---
+
+   正文从这里开始（## 二级标题起，# 留给文章主标题）……
+   ```
+
+   - `category` 枚举：**函数图像教学 / 白板使用教程 / 工具选型**（列表页按此
+     分组并支持筛选，未列值自动追加分组）
+   - `tags` 逗号或 YAML 数组写法均可
+   - `ogimage`：1200×630 分享图（缺省回落 cover → 站点 og.png）；封面截图
+     建议 1200×786，og 版由封面中心裁切 1200×630（`sips -c 630 1200`）
+   - 文内以「【待补：…】」开头的段落是**作者生产备注，构建时自动剔除**，
+     不会出现在发布页面
+   - 完整示例见 `posts/sin-function-graph-teaching.md`
+
+3. 配图放 `assets/blog/<slug>/`，正文里按**站点根相对路径**引用
+   （`![题注会显示在图下方](assets/blog/<slug>/fig1.png)`）；整段单图自动
+   转成带题注的 figure，**PNG/JPEG 的宽高会被生成器自动读出**写进
+   `width`/`height`（防 CLS），并支持点击放大；截图用
+   board.multicaboard.com 实操截取；
+4. 正文支持 markdown 子集：`## / ###` 标题、段落、**粗体**、*斜体*、
+   `` `行内代码` ``、``` 围栏代码块、无序/有序列表、`>` 引用、`---` 分隔线、
+   `[链接](url)` 与 `![题注](图片)`；
+5. 本地验证：`cd landing && node blog/build.mjs`，再按上方方式起静态服务预览；
+6. 提交 `posts/<slug>.md`（连同 `assets/blog/<slug>/` 配图）推送即可，
+   合并到 `main` 后由 CI 自动生成并发布；**文章上线时记得同步把 URL 追加进
+   `sitemap.xml`**（可直接取 `blog/sitemap-urls.json` 清单）。
 
 ## 与主应用的关系（零影响）
 
